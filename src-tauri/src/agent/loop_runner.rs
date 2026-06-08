@@ -1,4 +1,5 @@
-use crate::agent::provider::{provider_for};
+use crate::agent::provider::provider_for;
+use crate::agent::session_title::{is_default_session_title, summarize_session_title};
 use crate::agent::provider::openai_compat::{effort_from_str, messages_from_store, model_from_str};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ToolCall,
@@ -113,6 +114,12 @@ pub async fn run_turn(
                 Some(turn.content.as_str()),
                 Some(turn.reasoning_content.as_str()),
                 None,
+            )?;
+            maybe_autotitle_session(
+                &state,
+                &session_id,
+                &user_text,
+                Some(turn.content.as_str()),
             )?;
             emit(
                 &app,
@@ -284,6 +291,35 @@ fn persist_assistant(
         }
     }
     Ok(msg)
+}
+
+fn maybe_autotitle_session(
+    state: &AppState,
+    session_id: &str,
+    user_text: &str,
+    assistant_text: Option<&str>,
+) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let session = store
+        .get_session(session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "session not found".to_string())?;
+
+    if !is_default_session_title(&session.title) {
+        return Ok(());
+    }
+
+    let messages = store.list_messages(session_id).map_err(|e| e.to_string())?;
+    let user_count = messages.iter().filter(|m| m.role == "user").count();
+    if user_count != 1 {
+        return Ok(());
+    }
+
+    let title = summarize_session_title(user_text, assistant_text);
+    store
+        .update_session(session_id, Some(&title), None, None, None)
+        .map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn emit(app: &AppHandle, event: AgentEvent) {

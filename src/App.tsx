@@ -83,12 +83,17 @@ function App() {
         invoke<MessageBundle>("list_messages", { sessionId: activeSessionId })
           .then((bundle) => setMessages(bundle.messages))
           .catch(console.error);
+        if (activeProjectId) {
+          invoke<Session[]>("list_sessions", { projectId: activeProjectId })
+            .then(setSessions)
+            .catch(console.error);
+        }
       }
     });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, activeProjectId]);
 
   const activeProjectName = useMemo(
     () => projects.find((p) => p.id === activeProjectId)?.name,
@@ -160,6 +165,7 @@ function App() {
           }
         />
         <ChatPanel
+          sessionId={activeSessionId}
           messages={messages}
           streamingReasoning={stream.streamingReasoning}
           streamingContent={stream.streamingContent}

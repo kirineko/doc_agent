@@ -33,6 +33,7 @@ pub fn run() {
             ipc::list_sessions,
             ipc::create_session,
             ipc::update_session,
+            ipc::delete_session,
             ipc::list_messages,
             ipc::send_message,
             ipc::set_api_key,

@@ -280,6 +280,21 @@ impl Store {
         })
     }
 
+    pub fn delete_session(&mut self, id: &str) -> Result<(), StoreError> {
+        let tx = self.conn.transaction()?;
+        tx.execute(
+            "DELETE FROM tool_calls WHERE message_id IN (SELECT id FROM messages WHERE session_id = ?1)",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM messages WHERE session_id = ?1", params![id])?;
+        let deleted = tx.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
+        if deleted == 0 {
+            return Err(StoreError::Message("session not found".into()));
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn next_seq(&self, session_id: &str) -> Result<i64, StoreError> {
         let mut stmt = self
             .conn
@@ -450,7 +465,7 @@ mod tests {
     #[test]
     fn project_session_message_crud() {
         let dir = tempdir().unwrap();
-        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let mut store = Store::open(dir.path().join("test.db")).unwrap();
         let project = store.create_project("demo", "/tmp/demo").unwrap();
         let session = store
             .create_session(&project.id, "s1", "mock", true, "high")
@@ -489,6 +504,11 @@ mod tests {
         assert_eq!(tool_calls.len(), 1);
         assert_eq!(tool_calls[0].status, "done");
         assert_eq!(tool_calls[0].duration_ms, 12);
+
+        store.delete_session(&session.id).unwrap();
+        assert!(store.get_session(&session.id).unwrap().is_none());
+        assert!(store.list_messages(&session.id).unwrap().is_empty());
+        assert!(store.list_tool_calls_for_session(&session.id).unwrap().is_empty());
     }
 
     #[test]

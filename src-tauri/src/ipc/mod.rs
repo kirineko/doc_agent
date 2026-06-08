@@ -73,7 +73,7 @@ pub fn create_session(
         .create_session(
             &req.project_id,
             &req.title,
-            req.model.as_deref().unwrap_or("mock"),
+            req.model.as_deref().unwrap_or("deepseek-v4-flash"),
             true,
             "high",
         )
@@ -96,6 +96,16 @@ pub fn update_session(
             req.thinking_enabled,
             req.thinking_effort.as_deref(),
         )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn delete_session(state: State<AppState>, session_id: String) -> Result<(), String> {
+    state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .delete_session(&session_id)
         .map_err(|e| e.to_string())
 }
 

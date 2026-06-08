@@ -52,7 +52,6 @@ export type AgentEvent =
   | { kind: "error"; session_id: string; turn_id: string; message: string };
 
 export const MODEL_OPTIONS = [
-  { id: "mock", label: "Mock（本地调试）", provider: "mock", supportsEffort: false },
   { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", provider: "deepseek", supportsEffort: true },
   { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", provider: "deepseek", supportsEffort: true },
   { id: "kimi-k2.6", label: "Kimi K2.6", provider: "kimi", supportsEffort: false },

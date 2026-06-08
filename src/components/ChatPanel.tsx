@@ -1,7 +1,9 @@
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { MarkdownView } from "./MarkdownView";
 import { Message } from "../types";
 
 interface ChatPanelProps {
+  sessionId?: string;
   messages: Message[];
   streamingReasoning: string;
   streamingContent: string;
@@ -35,6 +37,7 @@ function isVisibleMessage(message: Message): boolean {
 }
 
 export function ChatPanel({
+  sessionId,
   messages,
   streamingReasoning,
   streamingContent,
@@ -43,12 +46,47 @@ export function ChatPanel({
   onInputChange,
   onSend,
 }: ChatPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const visibleMessages = messages.filter(isVisibleMessage);
+  const lastMessageId = visibleMessages.at(-1)?.id;
+
+  const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
+    bottomRef.current?.scrollIntoView({ behavior, block: "end" });
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = gap < 72;
+  };
+
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (busy) {
+      stickToBottomRef.current = true;
+    }
+  }, [busy]);
+
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current) return;
+    const instant = Boolean(streamingReasoning || streamingContent || busy);
+    scrollToBottom(instant ? "auto" : "smooth");
+  }, [lastMessageId, streamingReasoning, streamingContent, busy]);
 
   return (
     <section className="panel flex min-w-0 flex-1 flex-col p-3">
       <div className="mb-2 text-xs font-medium text-slate-200">会话</div>
-      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2"
+      >
         {visibleMessages.map((message) => {
           const isUser = message.role === "user";
           const isPending = message.id.startsWith("pending-");
@@ -95,6 +133,7 @@ export function ChatPanel({
             助手正在回复…
           </div>
         )}
+        <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
       </div>
 
       <div className="mt-3 flex gap-2">

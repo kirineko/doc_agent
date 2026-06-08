@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { MODEL_OPTIONS } from "./types";
 
 describe("MODEL_OPTIONS", () => {
-  it("includes mock and production models", () => {
+  it("includes production models with deepseek as default option", () => {
     const ids = MODEL_OPTIONS.map((item) => item.id);
-    expect(ids).toContain("mock");
-    expect(ids).toContain("deepseek-v4-flash");
+    expect(ids).not.toContain("mock");
+    expect(ids[0]).toBe("deepseek-v4-flash");
     expect(ids).toContain("kimi-k2.6");
   });
 

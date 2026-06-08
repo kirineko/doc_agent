@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { formatSessionTime } from "../lib/formatTime";
 import { MODEL_OPTIONS, Project, Session, providerLabel } from "../types";
 
 interface SidebarProps {
@@ -12,7 +13,7 @@ interface SidebarProps {
   onProjectsChange: (projects: Project[]) => void;
   onSessionsChange: (sessions: Session[]) => void;
   onSelectProject: (projectId: string) => void;
-  onSelectSession: (sessionId: string) => void;
+  onSelectSession: (sessionId: string | undefined) => void;
   onSessionUpdated: (session: Session) => void;
   onApiKeyStatusChange: (provider: string, has: boolean) => void;
 }
@@ -32,13 +33,15 @@ export function Sidebar({
 }: SidebarProps) {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const activeModel = MODEL_OPTIONS.find((m) => m.id === activeSession?.model);
-  const activeProvider = activeModel && activeModel.provider !== "mock" ? activeModel.provider : null;
+  const activeProvider = activeModel?.provider ?? null;
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [keyError, setKeyError] = useState<string>();
+  const [showKeyReplace, setShowKeyReplace] = useState(false);
 
   useEffect(() => {
     setApiKeyInput("");
     setKeyError(undefined);
+    setShowKeyReplace(false);
   }, [activeProvider]);
 
   async function pickProject() {
@@ -57,8 +60,8 @@ export function Sidebar({
     const session = await invoke<Session>("create_session", {
       req: {
         project_id: activeProjectId,
-        title: `会话 ${sessions.length + 1}`,
-        model: "mock",
+        title: "新会话",
+        model: "deepseek-v4-flash",
       },
     });
     onSessionsChange([session, ...sessions]);
@@ -92,6 +95,7 @@ export function Sidebar({
       onApiKeyStatusChange(activeProvider, has);
       setApiKeyInput("");
       setKeyError(undefined);
+      setShowKeyReplace(false);
     } catch (error) {
       setKeyError(String(error));
     }
@@ -105,14 +109,28 @@ export function Sidebar({
       onApiKeyStatusChange(activeProvider, has);
       setApiKeyInput("");
       setKeyError(undefined);
+      setShowKeyReplace(false);
     } catch (error) {
       setKeyError(String(error));
     }
   }
 
+  async function deleteSession(sessionId: string) {
+    try {
+      await invoke("delete_session", { sessionId });
+      const next = sessions.filter((item) => item.id !== sessionId);
+      onSessionsChange(next);
+      if (activeSessionId === sessionId) {
+        onSelectSession(next[0]?.id);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   return (
     <aside className="panel flex h-full w-72 shrink-0 flex-col gap-2.5 p-3">
-      <div>
+      <div className="shrink-0">
         <div className="mb-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">项目</div>
         <button
           className="mb-2 w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium hover:bg-indigo-500"
@@ -120,7 +138,7 @@ export function Sidebar({
         >
           选择目录创建项目
         </button>
-        <div className="max-h-36 space-y-1 overflow-y-auto">
+        <div className="max-h-28 space-y-1 overflow-y-auto">
           {projects.map((project) => (
             <button
               key={project.id}
@@ -138,8 +156,8 @@ export function Sidebar({
         </div>
       </div>
 
-      <div>
-        <div className="mb-1 flex items-center justify-between">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="mb-1 flex shrink-0 items-center justify-between">
           <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">会话</div>
           <button
             className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] hover:border-slate-500"
@@ -149,26 +167,38 @@ export function Sidebar({
             新建
           </button>
         </div>
-        <div className="max-h-40 space-y-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {sessions.map((session) => (
-            <button
+            <div
               key={session.id}
-              className={`w-full rounded-md border px-2.5 py-1.5 text-left text-xs ${
+              className={`group flex items-stretch rounded-md border text-xs ${
                 session.id === activeSessionId
                   ? "border-cyan-500 bg-cyan-950/30"
                   : "border-slate-800 hover:border-slate-600"
               }`}
-              onClick={() => onSelectSession(session.id)}
             >
-              <div className="font-medium">{session.title}</div>
-              <div className="text-[11px] text-slate-400">{session.model}</div>
-            </button>
+              <button
+                className="min-w-0 flex-1 px-2.5 py-1.5 text-left"
+                onClick={() => onSelectSession(session.id)}
+              >
+                <div className="truncate font-medium">{session.title}</div>
+                <div className="text-[11px] text-slate-400">{formatSessionTime(session.updated_at)}</div>
+              </button>
+              <button
+                type="button"
+                className="shrink-0 border-l border-transparent px-2 text-slate-500 opacity-0 transition hover:text-rose-400 group-hover:border-slate-700 group-hover:opacity-100"
+                title="删除会话"
+                onClick={() => void deleteSession(session.id)}
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
       </div>
 
       {activeSession && (
-        <div className="mt-auto space-y-2 border-t border-slate-800 pt-2.5">
+        <div className="shrink-0 space-y-2 border-t border-slate-800 pt-2.5">
           <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">模型配置</div>
           <select
             className="w-full rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs"
@@ -202,48 +232,88 @@ export function Sidebar({
             </select>
           )}
 
-          {activeProvider && (
-            <div className="space-y-1.5 rounded-md border border-slate-800 bg-slate-950/40 p-2">
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">{providerLabel(activeProvider)} API Key</span>
-                {apiKeyStatus[activeProvider] ? (
+          {activeProvider &&
+            (apiKeyStatus[activeProvider] ? (
+              <details className="rounded-md border border-slate-800 bg-slate-950/40 p-1.5">
+                <summary className="flex cursor-pointer list-none items-center justify-between text-[11px] marker:content-none [&::-webkit-details-marker]:hidden">
+                  <span className="text-slate-400">{providerLabel(activeProvider)} API Key</span>
                   <span className="text-emerald-400">已保存</span>
-                ) : (
+                </summary>
+                <div className="mt-1 space-y-1">
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-400 hover:border-slate-500 hover:text-slate-200"
+                      onClick={() => setShowKeyReplace((value) => !value)}
+                    >
+                      更换 Key
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] text-slate-400 hover:border-rose-500 hover:text-rose-300"
+                      onClick={() => void clearApiKey()}
+                    >
+                      清空
+                    </button>
+                  </div>
+                  {showKeyReplace && (
+                    <div className="space-y-1">
+                      <input
+                        type="password"
+                        className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs outline-none focus:border-indigo-500"
+                        placeholder="输入新 Key 可覆盖保存"
+                        value={apiKeyInput}
+                        onChange={(e) => {
+                          setApiKeyInput(e.target.value);
+                          setKeyError(undefined);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") void saveApiKey();
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="w-full rounded-md border border-indigo-700 bg-indigo-950/40 px-2 py-0.5 text-[11px] hover:border-indigo-500"
+                        onClick={() => void saveApiKey()}
+                      >
+                        保存
+                      </button>
+                    </div>
+                  )}
+                  {keyError && <div className="text-[11px] text-rose-400">{keyError}</div>}
+                </div>
+              </details>
+            ) : (
+              <div className="rounded-md border border-slate-800 bg-slate-950/40 p-1.5">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">{providerLabel(activeProvider)} API Key</span>
                   <span className="text-amber-400">未配置</span>
-                )}
-              </div>
-              <input
-                type="password"
-                className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs outline-none focus:border-indigo-500"
-                placeholder={apiKeyStatus[activeProvider] ? "输入新 Key 可覆盖保存" : "输入 API Key"}
-                value={apiKeyInput}
-                onChange={(e) => {
-                  setApiKeyInput(e.target.value);
-                  setKeyError(undefined);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveApiKey();
-                }}
-              />
-              <div className="flex gap-1.5">
-                <button
-                  className="flex-1 rounded-md border border-indigo-700 bg-indigo-950/40 px-2 py-1 text-[11px] hover:border-indigo-500"
-                  onClick={() => void saveApiKey()}
-                >
-                  保存
-                </button>
-                {apiKeyStatus[activeProvider] && (
+                </div>
+                <div className="mt-1 space-y-1">
+                  <input
+                    type="password"
+                    className="w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs outline-none focus:border-indigo-500"
+                    placeholder="输入 API Key"
+                    value={apiKeyInput}
+                    onChange={(e) => {
+                      setApiKeyInput(e.target.value);
+                      setKeyError(undefined);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void saveApiKey();
+                    }}
+                  />
                   <button
-                    className="rounded-md border border-slate-700 px-2 py-1 text-[11px] text-slate-300 hover:border-rose-500 hover:text-rose-300"
-                    onClick={() => void clearApiKey()}
+                    type="button"
+                    className="w-full rounded-md border border-indigo-700 bg-indigo-950/40 px-2 py-0.5 text-[11px] hover:border-indigo-500"
+                    onClick={() => void saveApiKey()}
                   >
-                    清空
+                    保存
                   </button>
-                )}
+                  {keyError && <div className="text-[11px] text-rose-400">{keyError}</div>}
+                </div>
               </div>
-              {keyError && <div className="text-[11px] text-rose-400">{keyError}</div>}
-            </div>
-          )}
+            ))}
         </div>
       )}
     </aside>

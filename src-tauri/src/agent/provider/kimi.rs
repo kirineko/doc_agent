@@ -10,7 +10,7 @@ pub struct KimiProvider {
 impl Default for KimiProvider {
     fn default() -> Self {
         Self {
-            client: OpenAiCompatClient::new("https://api.moonshot.ai"),
+            client: OpenAiCompatClient::new("https://api.moonshot.cn"),
         }
     }
 }
