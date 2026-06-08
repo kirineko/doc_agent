@@ -1,0 +1,130 @@
+use super::{ToolContext, ToolError, ToolSpec};
+use serde_json::{json, Value};
+use std::fs;
+use walkdir::WalkDir;
+
+pub fn list_tool() -> ToolSpec {
+    ToolSpec {
+        name: "fs_list",
+        description: "List files and directories under a project-relative path",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Relative path, default '.'" }
+            }
+        }),
+        handler: list_handler,
+    }
+}
+
+pub fn read_tool() -> ToolSpec {
+    ToolSpec {
+        name: "fs_read",
+        description: "Read a UTF-8 text file inside the project",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" }
+            },
+            "required": ["path"]
+        }),
+        handler: read_handler,
+    }
+}
+
+pub fn write_tool() -> ToolSpec {
+    ToolSpec {
+        name: "fs_write",
+        description: "Write UTF-8 text to a file inside the project",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string" },
+                "content": { "type": "string" }
+            },
+            "required": ["path", "content"]
+        }),
+        handler: write_handler,
+    }
+}
+
+pub fn search_tool() -> ToolSpec {
+    ToolSpec {
+        name: "fs_search",
+        description: "Search for files by name substring inside the project",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string" }
+            },
+            "required": ["query"]
+        }),
+        handler: search_handler,
+    }
+}
+
+fn list_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
+    let path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+    let resolved = ctx.sandbox.resolve(path)?;
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&resolved).map_err(|e| ToolError::Execution(e.to_string()))? {
+        let entry = entry.map_err(|e| ToolError::Execution(e.to_string()))?;
+        let meta = entry
+            .metadata()
+            .map_err(|e| ToolError::Execution(e.to_string()))?;
+        entries.push(json!({
+            "name": entry.file_name().to_string_lossy(),
+            "is_dir": meta.is_dir(),
+        }));
+    }
+    Ok(json!({ "entries": entries }))
+}
+
+fn read_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArgs("path required".into()))?;
+    let resolved = ctx.sandbox.resolve(path)?;
+    let content = fs::read_to_string(&resolved).map_err(|e| ToolError::Execution(e.to_string()))?;
+    Ok(json!({ "content": content }))
+}
+
+fn write_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
+    let path = args
+        .get("path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArgs("path required".into()))?;
+    let content = args
+        .get("content")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArgs("content required".into()))?;
+    let resolved = ctx.sandbox.resolve_for_write(path)?;
+    if let Some(parent) = resolved.parent() {
+        fs::create_dir_all(parent).map_err(|e| ToolError::Execution(e.to_string()))?;
+    }
+    fs::write(&resolved, content).map_err(|e| ToolError::Execution(e.to_string()))?;
+    Ok(json!({ "written": resolved.display().to_string() }))
+}
+
+fn search_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
+    let query = args
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArgs("query required".into()))?;
+    let query_lower = query.to_lowercase();
+    let mut matches = Vec::new();
+    for entry in WalkDir::new(ctx.sandbox.root()).into_iter().filter_map(|e| e.ok()) {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name.contains(&query_lower) {
+            let path = entry
+                .path()
+                .strip_prefix(ctx.sandbox.root())
+                .unwrap_or(entry.path())
+                .display()
+                .to_string();
+            matches.push(json!({ "path": path, "is_dir": entry.file_type().is_dir() }));
+        }
+    }
+    Ok(json!({ "matches": matches }))
+}

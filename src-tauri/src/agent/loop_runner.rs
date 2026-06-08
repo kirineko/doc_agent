@@ -1,0 +1,312 @@
+use crate::agent::provider::{provider_for};
+use crate::agent::provider::openai_compat::{effort_from_str, messages_from_store, model_from_str};
+use crate::agent::types::{
+    AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ToolCall,
+};
+use crate::core::sandbox::Sandbox;
+use crate::core::store::Message;
+use crate::state::AppState;
+use crate::tools::ToolContext;
+use serde_json::{json, Value};
+use std::time::Instant;
+use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
+
+const MAX_TOOL_STEPS: usize = 8;
+
+pub async fn run_turn(
+    app: AppHandle,
+    state: AppState,
+    session_id: String,
+    user_text: String,
+) -> Result<(), String> {
+    let turn_id = Uuid::new_v4().to_string();
+    let (_session, project, history, tool_call_history, model, thinking_enabled, thinking_effort) = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let session = store
+            .get_session(&session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
+        let project = store
+            .get_project(&session.project_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "project not found".to_string())?;
+        let history = store.list_messages(&session_id).map_err(|e| e.to_string())?;
+        let tool_call_history = store
+            .list_tool_calls_for_session(&session_id)
+            .map_err(|e| e.to_string())?;
+        (
+            session.clone(),
+            project,
+            history,
+            tool_call_history,
+            session.model.clone(),
+            session.thinking_enabled,
+            session.thinking_effort.clone(),
+        )
+    };
+
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .add_message(&session_id, "user", Some(&user_text), None, None)
+            .map_err(|e| e.to_string())?;
+    }
+
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let model_id = model_from_str(&model);
+    let api_key = if model_id == ModelId::Mock {
+        None
+    } else {
+        state
+            .secrets
+            .get_api_key(model_id.provider_key())
+            .map_err(|e| e.to_string())?
+    };
+
+    let provider = provider_for(model_id);
+    let tool_defs = state.tools.definitions();
+    let mut working_messages = build_working_messages(&history, &tool_call_history, &user_text);
+
+    for _step in 0..MAX_TOOL_STEPS {
+        let request = ChatRequest {
+            session_id: session_id.clone(),
+            turn_id: turn_id.clone(),
+            model: model_id,
+            messages: working_messages.clone(),
+            tools: tool_defs.clone(),
+            thinking: ThinkingConfig {
+                enabled: thinking_enabled,
+                effort: effort_from_str(&thinking_effort),
+            },
+        };
+
+        let session_id_for_events = session_id.clone();
+        let turn_id_for_events = turn_id.clone();
+        let app_for_events = app.clone();
+        let mut on_event = move |event: AgentEvent| {
+            let mapped = match event {
+                AgentEvent::ReasoningToken { delta, .. } => AgentEvent::ReasoningToken {
+                    session_id: session_id_for_events.clone(),
+                    turn_id: turn_id_for_events.clone(),
+                    delta,
+                },
+                AgentEvent::ContentToken { delta, .. } => AgentEvent::ContentToken {
+                    session_id: session_id_for_events.clone(),
+                    turn_id: turn_id_for_events.clone(),
+                    delta,
+                },
+                other => other,
+            };
+            emit(&app_for_events, mapped);
+        };
+
+        let turn = provider
+            .chat_stream(request, api_key.as_deref(), &mut on_event)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if turn.tool_calls.is_empty() {
+            persist_assistant(
+                &state,
+                &session_id,
+                Some(turn.content.as_str()),
+                Some(turn.reasoning_content.as_str()),
+                None,
+            )?;
+            emit(
+                &app,
+                AgentEvent::TurnComplete {
+                    session_id,
+                    turn_id,
+                },
+            );
+            return Ok(());
+        }
+
+        let _assistant_msg = persist_assistant(
+            &state,
+            &session_id,
+            if turn.content.is_empty() {
+                None
+            } else {
+                Some(&turn.content)
+            },
+            Some(&turn.reasoning_content),
+            Some(&turn.tool_calls),
+        )?;
+
+        working_messages.push(ChatMessage {
+            role: "assistant".into(),
+            content: if turn.content.is_empty() {
+                None
+            } else {
+                Some(turn.content.clone())
+            },
+            reasoning_content: Some(turn.reasoning_content.clone()),
+            tool_calls: Some(turn.tool_calls.clone()),
+            tool_call_id: None,
+        });
+
+        let ctx = ToolContext {
+            sandbox: &sandbox,
+        };
+
+        for call in &turn.tool_calls {
+            let args: Value = serde_json::from_str(&call.function.arguments)
+                .unwrap_or_else(|_| Value::Object(Default::default()));
+            emit(
+                &app,
+                AgentEvent::ToolCall {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    id: call.id.clone(),
+                    name: call.function.name.clone(),
+                    args: args.clone(),
+                    status: "running".into(),
+                },
+            );
+
+            let started = Instant::now();
+            let result = state
+                .tools
+                .execute(&ctx, &call.function.name, args.clone());
+            let duration_ms = started.elapsed().as_millis() as i64;
+            let (ok, summary, result_json) = match result {
+                Ok(value) => (true, value.to_string(), value.to_string()),
+                Err(err) => (false, err.to_string(), json!({ "error": err.to_string() }).to_string()),
+            };
+
+            {
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                store
+                    .finish_tool_call(
+                        &call.id,
+                        &result_json,
+                        if ok { "done" } else { "error" },
+                        duration_ms,
+                    )
+                    .map_err(|e| e.to_string())?;
+                store
+                    .add_message(
+                        &session_id,
+                        "tool",
+                        Some(&result_json),
+                        None,
+                        Some(&call.id),
+                    )
+                    .map_err(|e| e.to_string())?;
+            }
+
+            emit(
+                &app,
+                AgentEvent::ToolResult {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    id: call.id.clone(),
+                    ok,
+                    summary,
+                    duration_ms,
+                },
+            );
+
+            working_messages.push(ChatMessage {
+                role: "tool".into(),
+                content: Some(result_json),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: Some(call.id.clone()),
+            });
+        }
+    }
+
+    emit(
+        &app,
+        AgentEvent::Error {
+            session_id,
+            turn_id,
+            message: "Reached maximum tool steps".into(),
+        },
+    );
+    Ok(())
+}
+
+fn build_working_messages(
+    history: &[Message],
+    tool_calls: &[crate::core::store::ToolCallRecord],
+    user_text: &str,
+) -> Vec<ChatMessage> {
+    let mut messages = messages_from_store(history, tool_calls);
+    if messages
+        .last()
+        .map(|m| m.role.as_str() == "user" && m.content.as_deref() == Some(user_text))
+        .unwrap_or(false)
+    {
+        return messages;
+    }
+    messages.push(ChatMessage {
+        role: "user".into(),
+        content: Some(user_text.to_string()),
+        reasoning_content: None,
+        tool_calls: None,
+        tool_call_id: None,
+    });
+    messages
+}
+
+fn persist_assistant(
+    state: &AppState,
+    session_id: &str,
+    content: Option<&str>,
+    reasoning_content: Option<&str>,
+    tool_calls: Option<&[ToolCall]>,
+) -> Result<Message, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let msg = store
+        .add_message(
+            session_id,
+            "assistant",
+            content,
+            reasoning_content,
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    if let Some(calls) = tool_calls {
+        for call in calls {
+            store
+                .add_tool_call(
+                    &msg.id,
+                    &call.id,
+                    &call.function.name,
+                    &call.function.arguments,
+                )
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(msg)
+}
+
+fn emit(app: &AppHandle, event: AgentEvent) {
+    let _ = app.emit("agent-event", event);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::core::store::Store;
+    use tempfile::tempdir;
+
+    #[test]
+    fn reasoning_content_is_persisted_with_assistant() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", dir.path().to_str().unwrap()).unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        store
+            .add_message(&session.id, "assistant", Some("answer"), Some("thought"), None)
+            .unwrap();
+        let messages = store.list_messages(&session.id).unwrap();
+        assert_eq!(messages[0].reasoning_content.as_deref(), Some("thought"));
+    }
+}

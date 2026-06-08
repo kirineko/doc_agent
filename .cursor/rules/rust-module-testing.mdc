@@ -1,0 +1,38 @@
+---
+description: Rust 后端模块划分与测试要求（src-tauri）
+globs: src-tauri/**/*
+alwaysApply: false
+---
+
+# Rust 模块与测试
+
+## 模块边界
+
+- `core/`：store、sandbox、secrets — 无 HTTP/TAURI 依赖
+- `agent/`：provider、loop — 可 Mock Provider 单测
+- `tools/`：每个工具一个文件，经 `registry` 注册
+- `ipc/`：仅 Tauri command/event，业务逻辑下沉到 agent/core/tools
+
+## 测试要求
+
+每个模块至少具备一类验证：
+
+| 模块 | 最低要求 |
+|------|----------|
+| `core/sandbox` | 越界、`..`、路径校验单元测试 |
+| `core/store` | CRUD 与 `reasoning_content` 持久化测试 |
+| `agent/loop` | Mock Provider 多轮工具调用测试 |
+| `tools/*` | 工具 handler 测试；Office 输出做 OOXML 结构校验 |
+| `ipc` | 关键 command 集成测试（可选 e2e） |
+
+## 示例
+
+```rust
+// ✅ tools/word.rs 旁或 tools/tests.rs
+#[test]
+fn word_create_emits_valid_docx() { /* zip 含 [Content_Types].xml */ }
+
+// ❌ 仅手动点 UI 验证、无自动化测试的新工具
+```
+
+新增工具 = 新增 JSON Schema + handler + 至少 1 个测试。

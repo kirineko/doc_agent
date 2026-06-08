@@ -1,0 +1,37 @@
+---
+description: 文件与模块体量上限，保障长期可维护性
+alwaysApply: true
+---
+
+# 体量与可维护性
+
+## 文件行数（软上限，超出须拆分）
+
+| 类型 | 建议 | 硬上限 |
+|------|------|--------|
+| Rust 源文件 | ≤ 300 行 | 500 行 |
+| React 组件 | ≤ 150 行 | 250 行 |
+| 测试文件 | ≤ 400 行 | 600 行 |
+| OpenSpec artifact | 聚焦单主题 | 避免单文件 > 200 行 prose |
+
+## 模块原则
+
+- **单一职责**：一个文件一种主要能力（如 `tools/excel.rs` 只做 Excel）
+- **浅层目录**：优先 `src-tauri/src/agent/provider/deepseek.rs`，避免超 3 层无意义嵌套
+- **依赖方向**：`ipc → agent → tools/core`，禁止 `core` 依赖 `ipc`
+- **新增依赖**：Cargo/npm 新 crate 包需在 `design.md` 或 PR 说明理由
+
+## 何时拆分
+
+- 单文件出现 2+ 独立 `impl` 块或 3+ 同级子模块职责 → 拆文件
+- 函数超过 ~50 行或 3 层嵌套 → 提取 helper
+- 重复逻辑出现 2 次 → 提取共用模块，勿 copy-paste
+
+## 示例
+
+```text
+# ✅ agent/provider/ 按厂商拆分
+deepseek.rs  kimi.rs  mock.rs  sse.rs
+
+# ❌ provider.rs 800 行含全部 Provider + SSE + 类型
+```

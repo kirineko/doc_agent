@@ -1,0 +1,30 @@
+---
+description: CI/CD 与 Win/macOS 双平台发布规范，流水线必须跑测试
+alwaysApply: true
+---
+
+# CI 与发布
+
+## CI 必跑项（PR 与 main 均需通过）
+
+1. **Rust**：`cargo fmt --check`、`cargo clippy -- -D warnings`、`cargo test`
+2. **前端**：`npm run lint`、`npm run typecheck`、`npm test`
+3. **集成**：`npm run build` + `cargo build --manifest-path src-tauri/Cargo.toml`
+
+任一失败则禁止合并。
+
+## 发布流水线（Release）
+
+- **目标平台**：Windows（x86_64）+ macOS（aarch64，必要时 x86_64）
+- **发布前**：必须复跑完整 test suite（与 CI 相同）
+- **产物**：Tauri bundle（`.dmg` / `.msi` 或 `.exe`），记录版本号与 changelog
+- **禁止**：跳过 test 的 release、未打 tag 的生产构建
+
+## 本地合并前自检
+
+```bash
+cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+cd .. && npm run lint && npm run typecheck && npm test && npm run build
+```
+
+CI 配置文件应放在 `.github/workflows/`（如 `ci.yml`、`release.yml`）。

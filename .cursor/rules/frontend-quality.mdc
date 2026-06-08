@@ -1,0 +1,39 @@
+---
+description: 前端 lint、类型检查、测试与组件规范（src）
+globs: src/**/*
+alwaysApply: false
+---
+
+# 前端质量
+
+## 必过检查
+
+提交前必须通过：
+
+- `npm run lint`（ESLint）
+- `npm run typecheck`（`tsc --noEmit`）
+- `npm test`（Vitest 或项目选定 runner）
+
+CI 与 release 流水线必须包含以上三步。
+
+## 结构
+
+- `components/`：展示组件，无直接业务编排
+- `hooks/`：Tauri invoke、event 订阅、状态逻辑
+- `types.ts`：与 Rust 序列化结构对齐的类型定义
+- 禁止在 `App.tsx` 堆超过 ~200 行逻辑，应拆 hook/组件
+
+## 测试范围
+
+- 工具函数、hooks：单元测试
+- 关键 UI（Markdown 渲染、工具链卡片）：组件测试
+- 与 Rust 的契约：types 与 event payload 形状保持一致
+
+## 示例
+
+```tsx
+// ✅ 事件处理抽到 hook
+const { liveTools, streamingContent } = useAgentEvents(sessionId);
+
+// ❌ 在组件内 300+ 行 listen + invoke + setState
+```
