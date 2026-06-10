@@ -112,7 +112,7 @@ fn xlsx_to_dataframe(path: &Path, sheet: Option<&str>) -> Result<DataFrame, Tool
         .enumerate()
         .map(|(i, name)| Column::new(name.into(), columns.get(i).cloned().unwrap_or_default()))
         .collect();
-    Ok(DataFrame::from_iter(cols))
+    DataFrame::new_infer_height(cols).map_err(|e| ToolError::Execution(e.to_string()))
 }
 
 fn dataframe_to_json(df: &DataFrame) -> Result<Value, ToolError> {
