@@ -64,18 +64,18 @@ jobs:
       - name: Frontend build
         run: npm run build
 
-  release:
+  build:
     needs: check
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
+            artifact: macos
           - platform: windows-latest
             args: ""
+            artifact: windows
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
@@ -99,11 +99,39 @@ jobs:
         with:
           workspaces: src-tauri -> target
 
-      - uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Tauri bundles
+        run: npm run tauri build -- ${{ matrix.args }}
+
+      - name: Upload platform bundles
+        uses: actions/upload-artifact@v4
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Doc Agent ${{ github.ref_name }}
-          releaseBody: 从下方 Assets 下载对应平台的安装包。
-          args: ${{ matrix.args }}
+          name: bundles-${{ matrix.artifact }}
+          path: |
+            src-tauri/target/**/release/bundle/dmg/*.dmg
+            src-tauri/target/**/release/bundle/msi/*.msi
+            src-tauri/target/**/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: bundles-*
+          merge-multiple: true
+
+      - name: List release artifacts
+        run: find dist -type f | sort
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Doc Agent ${{ github.ref_name }}
+          body: 从下方 Assets 下载对应平台的安装包。
+          draft: false
+          overwrite_files: true
+          files: dist/**/*

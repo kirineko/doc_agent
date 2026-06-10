@@ -19,7 +19,7 @@ alwaysApply: true
 ## 发布流水线（Release）
 
 - **触发**：推送**纯数字版本 tag**（SemVer，**不带 `v` 前缀**），如 `0.1.0`，匹配 `*.*.*`
-- **流程**：先跑与 CI 相同的 check job，通过后并行构建安装包
+- **流程**：先跑 check → 各平台并行 `tauri build` 上传 artifact → **单一 publish job** 汇总发布（避免 matrix 并行调用 `tauri-action` 互相覆盖 Release 资源）
 - **目标平台**：Windows（x86_64，`.msi` / `.nsis`）+ macOS（aarch64，`.dmg`）
 - **不支持 Linux** 安装包
 - **产物**：GitHub Release 附件
