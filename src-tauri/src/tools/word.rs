@@ -53,4 +53,3 @@ fn create_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     Ok(json!({ "path": resolved.display().to_string(), "mode": "docx-rs" }))
 }
-

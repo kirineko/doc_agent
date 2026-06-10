@@ -19,7 +19,7 @@ interface SidebarProps {
   apiKeyStatus: Record<string, boolean>;
   onProjectsChange: (projects: Project[]) => void;
   onSessionsChange: (sessions: Session[]) => void;
-  onSelectProject: (projectId: string) => void;
+  onSelectProject: (projectId: string | undefined) => void;
   onSelectSession: (sessionId: string | undefined) => void;
   onSessionUpdated: (session: Session) => void;
   onApiKeyStatusChange: (provider: string, has: boolean) => void;
@@ -122,6 +122,19 @@ export function Sidebar({
     }
   }
 
+  async function hideProject(projectId: string) {
+    try {
+      await invoke("hide_project", { projectId });
+      const next = projects.filter((item) => item.id !== projectId);
+      onProjectsChange(next);
+      if (activeProjectId === projectId) {
+        onSelectProject(next[0]?.id);
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
   async function deleteSession(sessionId: string) {
     try {
       await invoke("delete_session", { sessionId });
@@ -145,20 +158,32 @@ export function Sidebar({
         >
           选择目录创建项目
         </button>
-        <div className="max-h-28 space-y-1 overflow-y-auto">
+        <div className="max-h-52 space-y-1 overflow-y-auto">
           {projects.map((project) => (
-            <button
+            <div
               key={project.id}
-              className={`w-full rounded-md border px-2.5 py-1.5 text-left text-xs ${
+              className={`group flex items-stretch rounded-md border text-xs ${
                 project.id === activeProjectId
                   ? "border-indigo-500 bg-indigo-950/40"
                   : "border-slate-800 hover:border-slate-600"
               }`}
-              onClick={() => onSelectProject(project.id)}
             >
-              <div className="font-medium">{project.name}</div>
-              <div className="truncate text-[11px] text-slate-400">{project.root_path}</div>
-            </button>
+              <button
+                className="min-w-0 flex-1 px-2.5 py-1.5 text-left"
+                onClick={() => onSelectProject(project.id)}
+              >
+                <div className="font-medium">{project.name}</div>
+                <div className="truncate text-[11px] text-slate-400">{project.root_path}</div>
+              </button>
+              <button
+                type="button"
+                className="shrink-0 border-l border-transparent px-2 text-slate-500 opacity-0 transition hover:text-rose-400 group-hover:border-slate-700 group-hover:opacity-100"
+                title="从列表移除"
+                onClick={() => void hideProject(project.id)}
+              >
+                ×
+              </button>
+            </div>
           ))}
         </div>
       </div>

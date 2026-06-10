@@ -82,6 +82,8 @@ pub async fn run_turn(
                 enabled: thinking_enabled,
                 effort: effort_from_str(&thinking_effort),
             },
+            response_format: None,
+            max_tokens: None,
         };
 
         let session_id_for_events = session_id.clone();
@@ -247,7 +249,8 @@ fn build_working_messages(
             ChatMessage {
                 role: "system".into(),
                 content: Some(format!(
-                    "You are doc-agent, an office document assistant.\n\n{}",
+                    "You are doc-agent, an office document assistant.\n\
+                     用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。\n\n{}",
                     crate::core::skills::index_markdown()
                 )),
                 reasoning_content: None,

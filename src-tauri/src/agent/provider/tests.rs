@@ -27,6 +27,8 @@ mod provider_tests {
                 enabled: true,
                 effort: ThinkingEffort::High,
             },
+            response_format: None,
+            max_tokens: None,
         }
     }
 

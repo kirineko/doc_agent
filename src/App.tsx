@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ChatPanel } from "./components/ChatPanel";
@@ -6,12 +6,25 @@ import { Sidebar } from "./components/Sidebar";
 import { formatCharCount, ToolChainPanel } from "./components/ToolChainPanel";
 import { toolLabel } from "./lib/toolLabels";
 import {
+  countChatMessages,
+  isStaleSessionResult,
+  shouldDiscardFollowup,
+  shouldRunStarter,
+} from "./lib/suggestions";
+import {
   AgentStreamState,
   applyAgentEvent,
   initialAgentStreamState,
   markAgentBusy,
 } from "./lib/agentEvents";
-import { AgentEvent, Message, MessageBundle, Project, Session } from "./types";
+import {
+  AgentEvent,
+  Message,
+  MessageBundle,
+  Project,
+  ProjectFileList,
+  Session,
+} from "./types";
 
 type StreamAction =
   | { type: "event"; event: AgentEvent; sessionId?: string }
@@ -41,12 +54,23 @@ function App() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState<string>();
   const [activeSessionId, setActiveSessionId] = useState<string>();
   const [input, setInput] = useState("");
   const [stream, dispatchStream] = useReducer(streamReducer, initialAgentStreamState);
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
+  const [initializing, setInitializing] = useState(false);
+  const [starterSuggestions, setStarterSuggestions] = useState<string[]>([]);
+  const [followupSuggestions, setFollowupSuggestions] = useState<string[]>([]);
+  const [filePaths, setFilePaths] = useState<string[]>([]);
   const sendingRef = useRef(false);
+  const activeSessionRef = useRef<string | undefined>(undefined);
+  const messagesRef = useRef<Message[]>([]);
+  const starterStartedRef = useRef<string | undefined>(undefined);
+
+  activeSessionRef.current = activeSessionId;
+  messagesRef.current = messages;
 
   useEffect(() => {
     invoke<Project[]>("list_projects").then(setProjects).catch(console.error);
@@ -59,42 +83,137 @@ function App() {
   useEffect(() => {
     if (!activeProjectId) {
       setSessions([]);
+      setFilePaths([]);
       return;
     }
     invoke<Session[]>("list_sessions", { projectId: activeProjectId })
       .then(setSessions)
+      .catch(console.error);
+    invoke<ProjectFileList>("list_project_files_cmd", { projectId: activeProjectId })
+      .then((list) => setFilePaths(list.entries.map((e) => e.path)))
       .catch(console.error);
   }, [activeProjectId]);
 
   useEffect(() => {
     if (!activeSessionId) {
       setMessages([]);
+      setMessagesLoaded(false);
+      setStarterSuggestions([]);
+      setFollowupSuggestions([]);
+      setInitializing(false);
+      starterStartedRef.current = undefined;
       return;
     }
+    let cancelled = false;
+    setMessages([]);
+    setMessagesLoaded(false);
+    setStarterSuggestions([]);
+    setFollowupSuggestions([]);
+    setInitializing(false);
+    starterStartedRef.current = undefined;
+
     invoke<MessageBundle>("list_messages", { sessionId: activeSessionId })
-      .then((bundle) => setMessages(bundle.messages))
+      .then((bundle) => {
+        if (cancelled) return;
+        setMessages(bundle.messages);
+        setMessagesLoaded(true);
+      })
       .catch(console.error);
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId]);
+
+  const chatMessageCount = useMemo(() => countChatMessages(messages), [messages]);
+
+  const runStarter = useCallback(async (sessionId: string) => {
+    if (!apiKeyStatus.deepseek) return;
+    if (starterStartedRef.current === sessionId) return;
+    starterStartedRef.current = sessionId;
+
+    setInitializing(true);
+    setStarterSuggestions([]);
+    try {
+      const items = await invoke<string[]>("generate_suggestions", {
+        req: { session_id: sessionId, kind: "starter" },
+      });
+      if (isStaleSessionResult(sessionId, activeSessionRef.current)) return;
+      if (countChatMessages(messagesRef.current) > 0) return;
+      setStarterSuggestions(items);
+    } catch {
+      // key 未配置或调用失败：静默
+    } finally {
+      if (!isStaleSessionResult(sessionId, activeSessionRef.current)) {
+        setInitializing(false);
+      }
+    }
+  }, [apiKeyStatus.deepseek]);
+
+  useEffect(() => {
+    if (!activeSessionId || !messagesLoaded) return;
+
+    if (!shouldRunStarter(apiKeyStatus.deepseek, chatMessageCount, initializing)) {
+      if (chatMessageCount > 0) {
+        setStarterSuggestions([]);
+        setInitializing(false);
+        starterStartedRef.current = undefined;
+      }
+      return;
+    }
+
+    void runStarter(activeSessionId);
+  }, [
+    activeSessionId,
+    messagesLoaded,
+    chatMessageCount,
+    apiKeyStatus.deepseek,
+    initializing,
+    runStarter,
+  ]);
+
+  const runFollowup = useCallback(async (sessionId: string, messageCount: number) => {
+    if (!apiKeyStatus.deepseek) return;
+    try {
+      const items = await invoke<string[]>("generate_suggestions", {
+        req: { session_id: sessionId, kind: "followup" },
+      });
+      if (isStaleSessionResult(sessionId, activeSessionRef.current)) return;
+      if (
+        shouldDiscardFollowup(messageCount, countChatMessages(messagesRef.current))
+      ) {
+        return;
+      }
+      setFollowupSuggestions(items);
+    } catch {
+      // 静默
+    }
+  }, [apiKeyStatus.deepseek]);
 
   useEffect(() => {
     const unlisten = listen<AgentEvent>("agent-event", (event) => {
       const payload = event.payload;
-      dispatchStream({ type: "event", event: payload, sessionId: activeSessionId });
-      if (payload.kind === "turn_complete" && activeSessionId) {
-        invoke<MessageBundle>("list_messages", { sessionId: activeSessionId })
-          .then((bundle) => setMessages(bundle.messages))
+      dispatchStream({ type: "event", event: payload, sessionId: activeSessionRef.current });
+      if (payload.kind === "turn_complete" && activeSessionRef.current) {
+        const sessionId = activeSessionRef.current;
+        invoke<MessageBundle>("list_messages", { sessionId })
+          .then((bundle) => {
+            setMessages(bundle.messages);
+            setFollowupSuggestions([]);
+            if (activeProjectId) {
+              invoke<Session[]>("list_sessions", { projectId: activeProjectId })
+                .then(setSessions)
+                .catch(console.error);
+            }
+            void runFollowup(sessionId, countChatMessages(bundle.messages));
+          })
           .catch(console.error);
-        if (activeProjectId) {
-          invoke<Session[]>("list_sessions", { projectId: activeProjectId })
-            .then(setSessions)
-            .catch(console.error);
-        }
       }
     });
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [activeSessionId, activeProjectId]);
+  }, [activeProjectId, runFollowup]);
 
   const activeProjectName = useMemo(
     () => projects.find((p) => p.id === activeProjectId)?.name,
@@ -116,16 +235,19 @@ function App() {
   async function reloadMessages(sessionId: string) {
     const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
     setMessages(bundle.messages);
+    setMessagesLoaded(true);
   }
 
-  async function sendMessage() {
-    const content = input.trim();
+  async function sendMessageContent(content: string) {
     if (!activeSessionId || !content || stream.busy || sendingRef.current) {
       return;
     }
 
     sendingRef.current = true;
     setInput("");
+    setStarterSuggestions([]);
+    setFollowupSuggestions([]);
+    starterStartedRef.current = undefined;
     dispatchStream({ type: "busy" });
     setMessages((prev) => [...prev, createOptimisticUserMessage(activeSessionId, content)]);
 
@@ -151,6 +273,24 @@ function App() {
     }
   }
 
+  async function sendMessage() {
+    await sendMessageContent(input.trim());
+  }
+
+  function handleApiKeyStatusChange(provider: string, has: boolean) {
+    setApiKeyStatus((prev) => ({ ...prev, [provider]: has }));
+    if (
+      provider === "deepseek" &&
+      has &&
+      activeSessionId &&
+      messagesLoaded &&
+      shouldRunStarter(true, chatMessageCount, initializing)
+    ) {
+      starterStartedRef.current = undefined;
+      void runStarter(activeSessionId);
+    }
+  }
+
   return (
     <div className="flex h-full flex-col bg-[#0b1020]">
       <header className="flex items-center gap-3 border-b border-slate-800 px-3 py-1.5">
@@ -173,9 +313,7 @@ function App() {
           onSessionUpdated={(session) =>
             setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)))
           }
-          onApiKeyStatusChange={(provider, has) =>
-            setApiKeyStatus((prev) => ({ ...prev, [provider]: has }))
-          }
+          onApiKeyStatusChange={handleApiKeyStatusChange}
         />
         <ChatPanel
           sessionId={activeSessionId}
@@ -183,6 +321,10 @@ function App() {
           streamingReasoning={stream.streamingReasoning}
           streamingContent={stream.streamingContent}
           activity={activity}
+          initializing={initializing}
+          starterSuggestions={starterSuggestions}
+          followupSuggestions={followupSuggestions}
+          filePaths={filePaths}
           input={input}
           busy={stream.busy}
           onInputChange={setInput}

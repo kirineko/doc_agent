@@ -158,6 +158,8 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     pub tools: Vec<ToolDefinition>,
     pub thinking: ThinkingConfig,
+    pub response_format: Option<Value>,
+    pub max_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

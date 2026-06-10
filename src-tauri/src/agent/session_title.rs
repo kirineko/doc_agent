@@ -116,10 +116,7 @@ mod tests {
 
     #[test]
     fn strips_inline_markdown_from_titles() {
-        let title = summarize_session_title(
-            "你好",
-            Some("我是 **doc-agent**，你的办公文档助手。"),
-        );
+        let title = summarize_session_title("你好", Some("我是 **doc-agent**，你的办公文档助手。"));
         assert_eq!(title, "我是 doc-agent，你的办公文档助手。");
 
         let title = summarize_session_title("看下 `tasks.md`", None);

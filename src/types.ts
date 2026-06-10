@@ -1,3 +1,13 @@
+export interface ProjectFileEntry {
+  path: string;
+  is_dir: boolean;
+}
+
+export interface ProjectFileList {
+  entries: ProjectFileEntry[];
+  truncated: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;

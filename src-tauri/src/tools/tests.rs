@@ -383,11 +383,7 @@ async function main() {
         let ctx = ToolContext { sandbox: &sandbox };
         let registry = ToolRegistry::default_tools();
         let out = registry
-            .execute(
-                &ctx,
-                "skill_read",
-                json!({ "skill": "pptxgenjs.md" }),
-            )
+            .execute(&ctx, "skill_read", json!({ "skill": "pptxgenjs.md" }))
             .unwrap();
         assert_eq!(out["skill"], "pptx");
         assert_eq!(out["doc"], "pptxgenjs.md");
@@ -991,7 +987,7 @@ async function main() {
     #[test]
     fn office_read_rejects_unsupported_extension() {
         let dir = tempdir().unwrap();
-        fs::write(dir.path().join("notes.txt"), "hello").unwrap();
+        fs::write(dir.path().join("data.xyz"), "hello").unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext { sandbox: &sandbox };
         let registry = ToolRegistry::default_tools();
@@ -999,7 +995,7 @@ async function main() {
             .execute(
                 &ctx,
                 "office_read_to_markdown",
-                json!({ "path": "notes.txt" }),
+                json!({ "path": "data.xyz" }),
             )
             .unwrap_err();
         assert!(err.to_string().contains("unsupported"));

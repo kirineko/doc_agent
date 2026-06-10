@@ -30,6 +30,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ipc::list_projects,
             ipc::create_project,
+            ipc::hide_project,
+            ipc::list_project_files_cmd,
+            ipc::generate_suggestions,
             ipc::list_sessions,
             ipc::create_session,
             ipc::update_session,

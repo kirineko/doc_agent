@@ -1,7 +1,10 @@
 use crate::agent::loop_runner;
+use crate::agent::suggest;
+use crate::core::project_files::{list_project_files, ProjectFileList};
 use crate::core::store::{Message, Project, Session, ToolCallRecord};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
@@ -41,6 +44,50 @@ pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
         .map_err(|e| e.to_string())?
         .list_projects()
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn hide_project(state: State<AppState>, project_id: String) -> Result<(), String> {
+    state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .hide_project(&project_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn list_project_files_cmd(
+    state: State<AppState>,
+    project_id: String,
+) -> Result<ProjectFileList, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let project = store
+        .get_project(&project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "project not found".to_string())?;
+    Ok(list_project_files(
+        PathBuf::from(&project.root_path).as_path(),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GenerateSuggestionsRequest {
+    pub session_id: String,
+    pub kind: String,
+}
+
+#[tauri::command]
+pub async fn generate_suggestions(
+    state: State<'_, AppState>,
+    req: GenerateSuggestionsRequest,
+) -> Result<Vec<String>, String> {
+    let shared = AppState {
+        store: state.store.clone(),
+        secrets: state.secrets.clone(),
+        tools: state.tools.clone(),
+    };
+    suggest::generate_suggestions(shared, req.session_id, &req.kind).await
 }
 
 #[tauri::command]

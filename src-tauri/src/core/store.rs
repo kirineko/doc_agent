@@ -79,7 +79,8 @@ impl Store {
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 root_path TEXT NOT NULL UNIQUE,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                hidden INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY,
@@ -120,14 +121,31 @@ impl Store {
             );
             ",
         )?;
+        // 兼容旧库：列已存在则忽略
+        let _ = self.conn.execute(
+            "ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
         Ok(())
     }
 
     pub fn create_project(&self, name: &str, root_path: &str) -> Result<Project, StoreError> {
+        if let Some(existing) = self.get_project_by_root_path(root_path)? {
+            self.conn.execute(
+                "UPDATE projects SET hidden = 0, name = ?1 WHERE id = ?2",
+                params![name, existing.id],
+            )?;
+            return Ok(Project {
+                id: existing.id,
+                name: name.to_string(),
+                root_path: existing.root_path,
+                created_at: existing.created_at,
+            });
+        }
         let id = Uuid::new_v4().to_string();
         let created_at = now();
         self.conn.execute(
-            "INSERT INTO projects (id, name, root_path, created_at) VALUES (?1, ?2, ?3, ?4)",
+            "INSERT INTO projects (id, name, root_path, created_at, hidden) VALUES (?1, ?2, ?3, ?4, 0)",
             params![id, name, root_path, created_at],
         )?;
         Ok(Project {
@@ -138,9 +156,36 @@ impl Store {
         })
     }
 
+    pub fn hide_project(&self, id: &str) -> Result<(), StoreError> {
+        let updated = self
+            .conn
+            .execute("UPDATE projects SET hidden = 1 WHERE id = ?1", params![id])?;
+        if updated == 0 {
+            return Err(StoreError::Message("project not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn get_project_by_root_path(&self, root_path: &str) -> Result<Option<Project>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, root_path, created_at FROM projects WHERE root_path = ?1")?;
+        let mut rows = stmt.query(params![root_path])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                root_path: row.get(2)?,
+                created_at: row.get(3)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn list_projects(&self) -> Result<Vec<Project>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, name, root_path, created_at FROM projects ORDER BY created_at DESC",
+            "SELECT id, name, root_path, created_at FROM projects WHERE hidden = 0 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(Project {
@@ -529,6 +574,29 @@ mod tests {
             store.list_sessions(&p1.id).unwrap()[0].id,
             store.list_sessions(&p2.id).unwrap()[0].id
         );
+    }
+
+    #[test]
+    fn hide_and_restore_project_preserves_sessions() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store
+            .create_project("demo", dir.path().to_str().unwrap())
+            .unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+
+        store.hide_project(&project.id).unwrap();
+        assert!(store.list_projects().unwrap().is_empty());
+
+        let restored = store
+            .create_project("demo-restored", dir.path().to_str().unwrap())
+            .unwrap();
+        assert_eq!(restored.id, project.id);
+        assert_eq!(store.list_projects().unwrap().len(), 1);
+        assert_eq!(store.list_sessions(&project.id).unwrap().len(), 1);
+        assert_eq!(store.list_sessions(&project.id).unwrap()[0].id, session.id);
     }
 
     #[test]

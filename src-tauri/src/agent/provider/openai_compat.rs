@@ -42,6 +42,12 @@ impl OpenAiCompatClient {
         });
 
         if let Some(obj) = body.as_object_mut() {
+            if let Some(response_format) = request.response_format {
+                obj.insert("response_format".into(), response_format);
+            }
+            if let Some(max_tokens) = request.max_tokens {
+                obj.insert("max_tokens".into(), json!(max_tokens));
+            }
             if let Some(extra) = extra_body.as_object() {
                 for (k, v) in extra {
                     obj.insert(k.clone(), v.clone());
@@ -184,6 +190,8 @@ mod tests {
             messages: vec![],
             tools: vec![],
             thinking: ThinkingConfig { enabled, effort },
+            response_format: None,
+            max_tokens: None,
         }
     }
 
