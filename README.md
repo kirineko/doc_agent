@@ -1,25 +1,134 @@
-# doc-agent
+# Doc Agent
 
-本地 Office 文档 Agent（Tauri 2 + Rust + React）。
+面向办公场景的本地 AI 助手。以**项目文件夹**为工作边界，在 Word、Excel、PPT、PDF 等文档上通过对话完成阅读、分析、改写与生成。数据与 API Key 均保存在本机，文档文件不离开你选择的目录。
 
-## Document Skills 运行时（内置）
+**技术栈**：Tauri 2 · Rust · React
 
-内置 docx / pdf / pptx / xlsx 四类 skill 知识库，Agent 可通过 `skill_read` 渐进披露全文，通过 `skill_run` 执行 JavaScript（内置 exceljs / docx / pptxgenjs / pdf-lib bundle，按需加载）。
+**支持平台**：Windows（x86_64）· macOS（Apple Silicon / aarch64）
 
-新增工具：`ooxml_unpack` / `ooxml_pack`、`docx_comment`、`docx_accept_changes`、`docx_extract_table`、`data_query`（polars-sql）、`xlsx_recalc`（IronCalc）、`pdf_merge` / `pdf_split` / `pdf_rotate` / `pdf_delete_pages`。
+---
 
-构建前需打包 JS 库：`npm run bundle:js`
+## 主要功能
 
-体积增量约 +50–70MB（polars、boa_engine、IronCalc 等）。
+### 项目与会话
 
-## 开发
+- 选择一个本地文件夹作为**项目**，Agent 只能在该目录内读写文件
+- 每个项目可创建多个**独立会话**，历史消息与工具调用记录持久化保存
+- 左侧栏管理项目列表（可隐藏项目）、会话列表，以及模型 / 思考模式配置
+
+### 对话与界面
+
+- **三栏布局**：左侧配置 · 中间对话 · 右侧工具调用链
+- 流式 Markdown 渲染（代码高亮、表格、公式）
+- 模型**思考过程**默认折叠，点击可展开
+- 多轮工具调用时，每一步 assistant 回复独立展示，不会混在同一流式框中
+- 输入框支持 `@` **引用项目内文件**（模糊搜索文件名）
+- **智能推荐问**（需配置 DeepSeek Key）：空会话生成 3–4 条起步问题；每轮对话结束后生成 2–3 条 follow-up，点击填入输入框
+
+### 支持的模型
+
+| 模型 | 提供商 | 思考模式 | 思考强度 |
+|------|--------|----------|----------|
+| DeepSeek V4 Flash | DeepSeek | 可开关 | high / max |
+| DeepSeek V4 Pro | DeepSeek | 可开关 | high / max |
+| Kimi K2.6 | Kimi | 可开关 | — |
+
+在侧栏为 DeepSeek / Kimi 分别配置 API Key 后即可使用对应模型。
+
+### 文档与工具能力
+
+Agent 通过工具链操作项目内文件，主要包括：
+
+| 类别 | 能力 |
+|------|------|
+| 文件 | 列出 / 读取 / 写入 / 搜索 |
+| Office 读取 | 将 Word / Excel / PPT / PDF 等转为 Markdown 供模型理解 |
+| Word | 创建与编辑 `.docx` |
+| Excel | 读取 / 写入 `.xlsx` |
+| PDF | 合并、拆分、旋转、删除页面 |
+| OOXML | 解包 / 打包、批注、接受修订 |
+| 数据分析 | 从 Word 表格提取数据、`polars-sql` 查询、IronCalc 重算公式 |
+| Document Skills | 内置 docx / pdf / pptx / xlsx 四类 skill 知识库；`skill_read` 按需加载指南，`skill_run` 执行 JavaScript（内置 exceljs、docx、pptxgenjs、pdf-lib） |
+
+所有文件操作受**沙箱**约束，路径不能逃出项目根目录。
+
+---
+
+## 数据存储
+
+应用数据统一保存在系统应用数据目录（与安装包位置无关）：
+
+| 内容 | macOS | Windows |
+|------|-------|---------|
+| 会话 / 项目元数据（SQLite） | `~/Library/Application Support/com.kirineko.doc-agent/doc_agent.db` | `%APPDATA%\com.kirineko.doc-agent\doc_agent.db` |
+| API Key（`config.toml`） | 同上目录 | 同上目录 |
+| **文档文件** | 创建项目时选择的文件夹 | 同左 |
+
+---
+
+## 安装
+
+从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载对应平台安装包：
+
+- **Windows**：`.msi` 或 `.exe`（NSIS）
+- **macOS**：`.dmg`（Apple Silicon）
+
+> 暂不提供 Linux 安装包。
+
+---
+
+## 快速开始
+
+1. 安装并启动 Doc Agent
+2. 在左侧点击添加项目，选择你的工作文件夹
+3. 在侧栏配置 **DeepSeek** 和 / 或 **Kimi** 的 API Key
+4. 新建会话，选择模型，即可开始对话
+5. 尝试：「列出目录里的 docx 文件」「总结 @某文件.docx 的要点」「根据 xlsx 数据生成一份 Word 报告」
+
+**快捷键**：`Enter` 发送 · `Shift+Enter` 换行 · `@` 引用文件
+
+---
+
+## 从源码构建
+
+**环境要求**：Node.js 22+ · Rust stable · 各平台 Tauri 前置依赖（见 [Tauri 文档](https://v2.tauri.app/start/prerequisites/)）
+
+```bash
+npm ci
+npm run bundle:js    # 打包 skill 运行时 JS 库（构建前必须执行）
+npm run tauri dev    # 开发模式
+```
+
+**测试**
+
+```bash
+cd src-tauri && cargo test
+npm test
+```
+
+**本地打 release 包**
 
 ```bash
 npm run bundle:js
-npm run tauri dev
-cd src-tauri && cargo test
+npm run tauri build
 ```
 
-## Recommended IDE Setup
+---
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+## 发版说明（维护者）
+
+- **CI**：仅 `pull_request → main` 触发测试门禁；push main **不**触发构建
+- **Release**：推送纯数字 SemVer tag 时触发 Windows / macOS 安装包构建，例如：
+
+  ```bash
+  git tag 0.1.0
+  git push origin 0.1.0
+  ```
+
+- tag **不要**加 `v` 前缀；版本号需与 `src-tauri/tauri.conf.json` 中的 `version` 一致
+
+---
+
+## 许可证
+
+见仓库 LICENSE（如有）。
