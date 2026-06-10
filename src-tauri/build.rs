@@ -85,10 +85,10 @@ fn download_pdfium(url: &str, dest: &Path, lib_name: &str) -> Result<(), String>
         .map_err(|e| format!("download read failed: {e}"))?;
 
     let temp_dir = env::temp_dir().join(format!("doc-agent-pdfium-{PDFIUM_RELEASE}"));
-    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
-    if temp_dir.join("lib").exists() {
-        fs::remove_dir_all(temp_dir.join("lib")).map_err(|e| e.to_string())?;
+    if temp_dir.exists() {
+        fs::remove_dir_all(&temp_dir).map_err(|e| e.to_string())?;
     }
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
 
     let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(archive_bytes.as_slice()));
     for entry in archive
@@ -97,17 +97,22 @@ fn download_pdfium(url: &str, dest: &Path, lib_name: &str) -> Result<(), String>
     {
         let mut entry = entry.map_err(|e| format!("extract failed: {e}"))?;
         let path = entry.path().map_err(|e| format!("extract failed: {e}"))?;
-        if path.starts_with("lib") {
+        let top_level = path
+            .components()
+            .next()
+            .and_then(|component| component.as_os_str().to_str());
+        if matches!(top_level, Some("lib" | "bin")) {
             entry
                 .unpack_in(&temp_dir)
                 .map_err(|e| format!("extract failed: {e}"))?;
         }
     }
 
-    let extracted = temp_dir.join("lib").join(lib_name);
-    if !extracted.exists() {
-        return Err(format!("missing {lib_name} in PDFium archive"));
-    }
+    let extracted = ["lib", "bin"]
+        .iter()
+        .map(|dir| temp_dir.join(dir).join(lib_name))
+        .find(|path| path.exists())
+        .ok_or_else(|| format!("missing {lib_name} in PDFium archive"))?;
 
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
