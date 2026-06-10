@@ -60,6 +60,12 @@ export type AgentEvent =
   | { kind: "tool_call"; session_id: string; turn_id: string; id: string; name: string; args: unknown; status: string }
   | { kind: "tool_result"; session_id: string; turn_id: string; id: string; ok: boolean; summary: string; duration_ms: number }
   | { kind: "turn_complete"; session_id: string; turn_id: string }
+  | {
+      kind: "assistant_step_done";
+      session_id: string;
+      turn_id: string;
+      message: Message;
+    }
   | { kind: "error"; session_id: string; turn_id: string; message: string };
 
 export const MODEL_OPTIONS = [

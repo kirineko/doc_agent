@@ -17,6 +17,7 @@ import {
   initialAgentStreamState,
   markAgentBusy,
 } from "./lib/agentEvents";
+import { appendAssistantStepDone } from "./lib/messages";
 import {
   AgentEvent,
   Message,
@@ -194,8 +195,14 @@ function App() {
     const unlisten = listen<AgentEvent>("agent-event", (event) => {
       const payload = event.payload;
       dispatchStream({ type: "event", event: payload, sessionId: activeSessionRef.current });
+      if (payload.kind === "assistant_step_done") {
+        setMessages((prev) =>
+          appendAssistantStepDone(prev, payload, activeSessionRef.current),
+        );
+      }
       if (payload.kind === "turn_complete" && activeSessionRef.current) {
         const sessionId = activeSessionRef.current;
+        if (isStaleSessionResult(payload.session_id, sessionId)) return;
         invoke<MessageBundle>("list_messages", { sessionId })
           .then((bundle) => {
             setMessages(bundle.messages);

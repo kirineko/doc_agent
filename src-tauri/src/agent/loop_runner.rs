@@ -112,7 +112,7 @@ pub async fn run_turn(
             .map_err(|e| e.to_string())?;
 
         if turn.tool_calls.is_empty() {
-            persist_assistant(
+            let msg = persist_assistant(
                 &state,
                 &session_id,
                 Some(turn.content.as_str()),
@@ -120,6 +120,7 @@ pub async fn run_turn(
                 None,
             )?;
             maybe_autotitle_session(&state, &session_id, &user_text, Some(turn.content.as_str()))?;
+            emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
             emit(
                 &app,
                 AgentEvent::TurnComplete {
@@ -130,7 +131,7 @@ pub async fn run_turn(
             return Ok(());
         }
 
-        let _assistant_msg = persist_assistant(
+        let assistant_msg = persist_assistant(
             &state,
             &session_id,
             if turn.content.is_empty() {
@@ -141,6 +142,7 @@ pub async fn run_turn(
             Some(&turn.reasoning_content),
             Some(&turn.tool_calls),
         )?;
+        emit_assistant_step_done(&app, &session_id, &turn_id, &assistant_msg);
 
         working_messages.push(ChatMessage {
             role: "assistant".into(),
@@ -335,10 +337,43 @@ fn emit(app: &AppHandle, event: AgentEvent) {
     let _ = app.emit("agent-event", event);
 }
 
+fn emit_assistant_step_done(app: &AppHandle, session_id: &str, turn_id: &str, message: &Message) {
+    emit(
+        app,
+        AgentEvent::AssistantStepDone {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            message: message.clone(),
+        },
+    );
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::core::store::Store;
+    use crate::agent::types::AgentEvent;
+    use crate::core::store::{Message, Store};
     use tempfile::tempdir;
+
+    #[test]
+    fn assistant_step_done_event_serializes() {
+        let event = AgentEvent::AssistantStepDone {
+            session_id: "s1".into(),
+            turn_id: "t1".into(),
+            message: Message {
+                id: "m1".into(),
+                session_id: "s1".into(),
+                role: "assistant".into(),
+                content: Some("answer".into()),
+                reasoning_content: Some("thought".into()),
+                tool_call_id: None,
+                seq: 1,
+                created_at: "2026-01-01".into(),
+            },
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "assistant_step_done");
+        assert_eq!(value["message"]["id"], "m1");
+    }
 
     #[test]
     fn reasoning_content_is_persisted_with_assistant() {

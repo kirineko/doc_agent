@@ -13,7 +13,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            crate::core::secrets::Secrets::cleanup_legacy_keychain();
             if let Ok(resource_dir) = app.path().resource_dir() {
                 crate::tools::pdf::configure_resource_dir(resource_dir.join("pdfium"));
             }
@@ -21,9 +20,7 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
-            std::fs::create_dir_all(&data_dir).ok();
-            let db_path = data_dir.join("doc_agent.db");
-            let state = AppState::new(db_path).expect("failed to initialize app state");
+            let state = AppState::new(data_dir).expect("failed to initialize app state");
             app.manage(state);
             Ok(())
         })

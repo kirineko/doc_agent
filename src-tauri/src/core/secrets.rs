@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 const CONFIG_FILE: &str = "config.toml";
-const LEGACY_CONFIG_FILE: &str = "config.json";
 
 #[derive(Debug, Error)]
 pub enum SecretError {
@@ -35,17 +34,10 @@ impl Secrets {
         Self { config_path }
     }
 
-    pub fn new_default() -> Result<Self, SecretError> {
-        let dir = home_config_dir()?;
-        fs::create_dir_all(&dir)?;
-        restrict_dir_permissions(&dir)?;
-        let secrets = Self::new(dir.join(CONFIG_FILE));
-        secrets.migrate_legacy_json_config()?;
-        Ok(secrets)
-    }
-
-    pub fn config_dir() -> Result<PathBuf, SecretError> {
-        home_config_dir()
+    pub fn open_in_data_dir(data_dir: PathBuf) -> Result<Self, SecretError> {
+        fs::create_dir_all(&data_dir)?;
+        restrict_dir_permissions(&data_dir)?;
+        Ok(Self::new(data_dir.join(CONFIG_FILE)))
     }
 
     pub fn set_api_key(&self, provider: &str, value: &str) -> Result<(), SecretError> {
@@ -75,29 +67,6 @@ impl Secrets {
         self.save_config(&config)
     }
 
-    /// Remove API keys stored in the legacy OS keychain (pre file-based config).
-    pub fn cleanup_legacy_keychain() {
-        #[cfg(target_os = "macos")]
-        cleanup_macos_keychain();
-    }
-
-    fn migrate_legacy_json_config(&self) -> Result<(), SecretError> {
-        let Some(dir) = self.config_path.parent() else {
-            return Ok(());
-        };
-        let legacy_path = dir.join(LEGACY_CONFIG_FILE);
-        if !legacy_path.exists() || self.config_path.exists() {
-            return Ok(());
-        }
-
-        let raw = fs::read_to_string(&legacy_path)?;
-        let config: SecretsConfig = serde_json::from_str(&raw)
-            .map_err(|e| SecretError::Config(format!("legacy config.json invalid: {e}")))?;
-        self.save_config(&config)?;
-        fs::remove_file(&legacy_path)?;
-        Ok(())
-    }
-
     fn load_config(&self) -> Result<SecretsConfig, SecretError> {
         if !self.config_path.exists() {
             return Ok(SecretsConfig::default());
@@ -116,13 +85,6 @@ impl Secrets {
         restrict_file_permissions(&self.config_path)?;
         Ok(())
     }
-}
-
-fn home_config_dir() -> Result<PathBuf, SecretError> {
-    let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|e| SecretError::Config(format!("home directory not found: {e}")))?;
-    Ok(PathBuf::from(home).join(".doc-agent"))
 }
 
 #[cfg(unix)]
@@ -147,17 +109,6 @@ fn restrict_file_permissions(path: &Path) -> Result<(), SecretError> {
 #[cfg(not(unix))]
 fn restrict_file_permissions(_path: &Path) -> Result<(), SecretError> {
     Ok(())
-}
-
-#[cfg(target_os = "macos")]
-fn cleanup_macos_keychain() {
-    for account in ["deepseek", "kimi", "mock", "doc-agent"] {
-        let _ = std::process::Command::new("security")
-            .args(["delete-generic-password", "-s", "doc-agent", "-a", account])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
 }
 
 #[cfg(test)]
@@ -189,22 +140,14 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_json_config() {
+    fn open_in_data_dir_uses_app_data_path() {
         let dir = tempdir().unwrap();
-        fs::write(
-            dir.path().join(LEGACY_CONFIG_FILE),
-            r#"{"api_keys":{"kimi":"sk-kimi"}}"#,
-        )
-        .unwrap();
-
-        let secrets = Secrets::new(dir.path().join(CONFIG_FILE));
-        secrets.migrate_legacy_json_config().unwrap();
-
+        let secrets = Secrets::open_in_data_dir(dir.path().to_path_buf()).unwrap();
+        secrets.set_api_key("kimi", "sk-kimi").unwrap();
+        assert!(dir.path().join(CONFIG_FILE).exists());
         assert_eq!(
             secrets.get_api_key("kimi").unwrap().as_deref(),
             Some("sk-kimi")
         );
-        assert!(!dir.path().join(LEGACY_CONFIG_FILE).exists());
-        assert!(dir.path().join(CONFIG_FILE).exists());
     }
 }

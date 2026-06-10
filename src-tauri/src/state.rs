@@ -12,11 +12,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db_path: PathBuf) -> Result<Self, String> {
-        let store = Store::open(db_path).map_err(|e| e.to_string())?;
+    pub fn new(data_dir: PathBuf) -> Result<Self, String> {
+        std::fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+        let store = Store::open(data_dir.join("doc_agent.db")).map_err(|e| e.to_string())?;
         Ok(Self {
             store: Arc::new(Mutex::new(store)),
-            secrets: Secrets::new_default().map_err(|e| e.to_string())?,
+            secrets: Secrets::open_in_data_dir(data_dir).map_err(|e| e.to_string())?,
             tools: ToolRegistry::default_tools(),
         })
     }

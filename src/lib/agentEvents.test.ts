@@ -133,4 +133,76 @@ describe("applyAgentEvent", () => {
     expect(state.liveTools[0].id).toBe("call_1");
     expect(state.liveTools[0].status).toBe("running");
   });
+
+  it("clears streaming buffers on assistant_step_done", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "reasoning_token",
+        session_id: sessionId,
+        turn_id: "t1",
+        delta: "think",
+      },
+      sessionId,
+    );
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "content_token",
+        session_id: sessionId,
+        turn_id: "t1",
+        delta: " answer",
+      },
+      sessionId,
+    );
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "assistant_step_done",
+        session_id: sessionId,
+        turn_id: "t1",
+        message: {
+          id: "m1",
+          session_id: sessionId,
+          role: "assistant",
+          content: " answer",
+          reasoning_content: "think",
+          tool_call_id: null,
+          seq: 1,
+          created_at: "2026-01-01",
+        },
+      },
+      sessionId,
+    );
+    expect(state.streamingReasoning).toBe("");
+    expect(state.streamingContent).toBe("");
+    expect(state.busy).toBe(true);
+  });
+
+  it("ignores assistant_step_done from other sessions", () => {
+    const state = applyAgentEvent(
+      {
+        ...initialAgentStreamState,
+        streamingContent: "partial",
+      },
+      {
+        kind: "assistant_step_done",
+        session_id: "other",
+        turn_id: "t1",
+        message: {
+          id: "m1",
+          session_id: "other",
+          role: "assistant",
+          content: "x",
+          reasoning_content: null,
+          tool_call_id: null,
+          seq: 1,
+          created_at: "2026-01-01",
+        },
+      },
+      sessionId,
+    );
+    expect(state.streamingContent).toBe("partial");
+  });
 });

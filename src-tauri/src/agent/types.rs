@@ -143,6 +143,11 @@ pub enum AgentEvent {
         session_id: String,
         turn_id: String,
     },
+    AssistantStepDone {
+        session_id: String,
+        turn_id: String,
+        message: crate::core::store::Message,
+    },
     Error {
         session_id: String,
         turn_id: String,

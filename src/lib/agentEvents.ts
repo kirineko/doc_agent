@@ -15,6 +15,18 @@ export const initialAgentStreamState: AgentStreamState = {
   busy: false,
 };
 
+function clearStreamingBuffers(
+  state: AgentStreamState,
+  busy: boolean = state.busy,
+): AgentStreamState {
+  return {
+    ...state,
+    busy,
+    streamingReasoning: "",
+    streamingContent: "",
+  };
+}
+
 export function applyAgentEvent(
   state: AgentStreamState,
   event: AgentEvent,
@@ -94,12 +106,9 @@ export function applyAgentEvent(
         ),
       };
     case "turn_complete":
-      return {
-        ...state,
-        busy: false,
-        streamingReasoning: "",
-        streamingContent: "",
-      };
+      return clearStreamingBuffers(state, false);
+    case "assistant_step_done":
+      return clearStreamingBuffers(state);
     case "error":
       return {
         ...state,

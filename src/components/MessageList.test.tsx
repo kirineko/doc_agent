@@ -1,0 +1,107 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { makeAssistantMessage, makeUserMessage } from "../test/fixtures/messages";
+import { MessageList } from "./MessageList";
+
+const userMessage = makeUserMessage({ id: "u1", session_id: "s1", content: "hello" });
+
+function assistantMessage(id: string, content: string, reasoning?: string) {
+  return makeAssistantMessage({
+    id,
+    session_id: "s1",
+    content,
+    reasoning_content: reasoning ?? null,
+    seq: Number(id.replace(/\D/g, "")) || 1,
+  });
+}
+
+describe("MessageList smoke scenarios", () => {
+  it("single turn without tools: one persisted assistant, no merged streaming", () => {
+    const { rerender } = render(
+      <MessageList
+        messages={[userMessage]}
+        streamingReasoning="thinking"
+        streamingContent="partial answer"
+        busy
+      />,
+    );
+
+    expect(screen.getByText("思考中…")).toBeInTheDocument();
+    expect(screen.queryByText("思考过程")).not.toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        messages={[userMessage, assistantMessage("a1", "final answer", "thinking")]}
+        streamingReasoning=""
+        streamingContent=""
+        busy={false}
+      />,
+    );
+
+    expect(screen.getByText("思考过程")).toBeInTheDocument();
+    expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
+    expect(screen.getByText("final answer")).toBeInTheDocument();
+  });
+
+  it("single tool one step: two assistant bubbles, streaming resets between steps", () => {
+    const step1 = assistantMessage("a1", "", "plan tool");
+    const { rerender } = render(
+      <MessageList
+        messages={[userMessage, step1]}
+        streamingReasoning="step2 think"
+        streamingContent="step2 answer"
+        activity="正在执行「列出目录」…"
+        busy
+      />,
+    );
+
+    expect(screen.getAllByText("思考过程")).toHaveLength(1);
+    expect(screen.getByText("思考中…")).toBeInTheDocument();
+    expect(screen.getByText(/正在执行/)).toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        messages={[userMessage, step1, assistantMessage("a2", "done", "step2 think")]}
+        streamingReasoning=""
+        streamingContent=""
+        busy={false}
+      />,
+    );
+
+    expect(screen.getAllByText("思考过程")).toHaveLength(2);
+    expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
+  });
+
+  it("multi tool three steps: three persisted assistants, never more than one streaming bubble", () => {
+    const midMessages = [
+      userMessage,
+      assistantMessage("a1", "", "step1"),
+      assistantMessage("a2", "", "step2"),
+    ];
+    const finalMessages = [...midMessages, assistantMessage("a3", "final", "step3")];
+    const { rerender } = render(
+      <MessageList
+        messages={midMessages}
+        streamingReasoning="step3"
+        streamingContent="final"
+        activity="正在执行工具…"
+        busy
+      />,
+    );
+
+    expect(screen.getAllByText("思考过程")).toHaveLength(2);
+    expect(screen.getByText("思考中…")).toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        messages={finalMessages}
+        streamingReasoning=""
+        streamingContent=""
+        busy={false}
+      />,
+    );
+
+    expect(screen.getAllByText("思考过程")).toHaveLength(3);
+    expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
+  });
+});
