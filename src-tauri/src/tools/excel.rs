@@ -1,8 +1,8 @@
 use super::{ToolContext, ToolError, ToolSpec};
 use calamine::{open_workbook, Reader, Xlsx};
-use std::io::BufReader;
-use std::fs::File;
 use serde_json::{json, Value};
+use std::fs::File;
+use std::io::BufReader;
 
 pub fn read_tool() -> ToolSpec {
     ToolSpec {
@@ -52,8 +52,8 @@ fn read_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidArgs("path required".into()))?;
     let resolved = ctx.sandbox.resolve(path)?;
-    let mut workbook: Xlsx<BufReader<File>> =
-        open_workbook(&resolved).map_err(|e: calamine::XlsxError| ToolError::Execution(e.to_string()))?;
+    let mut workbook: Xlsx<BufReader<File>> = open_workbook(&resolved)
+        .map_err(|e: calamine::XlsxError| ToolError::Execution(e.to_string()))?;
     let sheet_names = workbook.sheet_names().to_owned();
     let sheet = args
         .get("sheet")

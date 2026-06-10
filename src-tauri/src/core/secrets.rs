@@ -54,7 +54,9 @@ impl Secrets {
             return Err(SecretError::Config("api key is empty".into()));
         }
         let mut config = self.load_config()?;
-        config.api_keys.insert(provider.to_string(), trimmed.to_string());
+        config
+            .api_keys
+            .insert(provider.to_string(), trimmed.to_string());
         self.save_config(&config)
     }
 

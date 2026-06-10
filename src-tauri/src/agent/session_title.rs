@@ -16,8 +16,30 @@ fn strip_markdown_prefix(line: &str) -> String {
     while s.starts_with('#') {
         s = s.trim_start_matches('#').trim();
     }
-    s = s.trim_start_matches(['-', '*', '•']).trim();
-    s.to_string()
+    s = s.trim_start_matches(['-', '*', '•', '>']).trim();
+    strip_inline_markdown(s)
+}
+
+/// 去除行内 Markdown 标记（加粗/斜体/行内代码/删除线/链接），用于纯文本标题
+fn strip_inline_markdown(line: &str) -> String {
+    let mut s = line.to_string();
+    for marker in ["**", "__", "~~", "`", "*"] {
+        s = s.replace(marker, "");
+    }
+    // [文本](链接) → 文本
+    while let Some(open) = s.find('[') {
+        let Some(close_rel) = s[open..].find("](") else {
+            break;
+        };
+        let close = open + close_rel;
+        let Some(end_rel) = s[close..].find(')') else {
+            break;
+        };
+        let end = close + end_rel;
+        let text = s[open + 1..close].to_string();
+        s.replace_range(open..=end, &text);
+    }
+    s.trim().to_string()
 }
 
 fn clean_question(text: &str) -> String {
@@ -93,9 +115,27 @@ mod tests {
     }
 
     #[test]
+    fn strips_inline_markdown_from_titles() {
+        let title = summarize_session_title(
+            "你好",
+            Some("我是 **doc-agent**，你的办公文档助手。"),
+        );
+        assert_eq!(title, "我是 doc-agent，你的办公文档助手。");
+
+        let title = summarize_session_title("看下 `tasks.md`", None);
+        assert_eq!(title, "看下 tasks.md");
+
+        let title = summarize_session_title("参考 [文档](https://example.com) 修改", None);
+        assert_eq!(title, "参考 文档 修改");
+    }
+
+    #[test]
     fn truncates_long_titles() {
         let title = truncate_title("这是一段非常非常非常非常非常非常长的会话标题内容还需要更长");
         assert!(title.chars().count() <= MAX_TITLE_CHARS + 1);
-        assert_ne!(title, "这是一段非常非常非常非常非常非常长的会话标题内容还需要更长");
+        assert_ne!(
+            title,
+            "这是一段非常非常非常非常非常非常长的会话标题内容还需要更长"
+        );
     }
 }

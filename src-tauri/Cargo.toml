@@ -36,7 +36,19 @@ async-trait = "0.1"
 toml = "0.8"
 walkdir = "2"
 pdfium-render = "0.9"
+boa_engine = { version = "0.21.1", features = ["annex-b", "js"] }
+polars = { version = "0.46", default-features = false, features = ["lazy", "sql", "csv", "serde"] }
+ironcalc = "0.7.1"
+lopdf = "0.38"
+quick-xml = { version = "0.37", features = ["serialize"] }
+zip = "7.2.0"
+base64 = "0.22"
+
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"
-zip = "7.2.0"
+
+[[example]]
+name = "spike_js"
+path = "examples/spike_js.rs"

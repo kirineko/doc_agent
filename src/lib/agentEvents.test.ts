@@ -79,4 +79,58 @@ describe("applyAgentEvent", () => {
     expect(state.liveTools).toHaveLength(1);
     expect(state.liveTools[0].status).toBe("done");
   });
+
+  it("shows streaming placeholder while tool args are being generated", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call_stream",
+        session_id: sessionId,
+        turn_id: "t1",
+        index: 0,
+        name: "skill_run",
+        args_chars: 1200,
+      },
+      sessionId,
+    );
+
+    expect(state.liveTools).toHaveLength(1);
+    expect(state.liveTools[0].status).toBe("streaming");
+    expect(state.liveTools[0].argsChars).toBe(1200);
+
+    // 进度更新覆盖同一占位条目
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call_stream",
+        session_id: sessionId,
+        turn_id: "t1",
+        index: 0,
+        name: "skill_run",
+        args_chars: 4800,
+      },
+      sessionId,
+    );
+    expect(state.liveTools).toHaveLength(1);
+    expect(state.liveTools[0].argsChars).toBe(4800);
+
+    // 真实调用开始后占位条目被移除
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_1",
+        name: "skill_run",
+        args: { code: "..." },
+        status: "running",
+      },
+      sessionId,
+    );
+    expect(state.liveTools).toHaveLength(1);
+    expect(state.liveTools[0].id).toBe("call_1");
+    expect(state.liveTools[0].status).toBe("running");
+  });
 });

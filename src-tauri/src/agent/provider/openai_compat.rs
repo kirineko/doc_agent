@@ -1,4 +1,4 @@
-use crate::agent::provider::{ProviderError, sse};
+use crate::agent::provider::{sse, ProviderError};
 use crate::agent::types::{
     AgentEvent, AssistantTurn, ChatMessage, ChatRequest, ModelId, ThinkingEffort,
 };
@@ -51,7 +51,10 @@ impl OpenAiCompatClient {
 
         let response = self
             .client
-            .post(format!("{}/v1/chat/completions", self.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/v1/chat/completions",
+                self.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(api_key)
             .json(&body)
             .send()
@@ -64,7 +67,8 @@ impl OpenAiCompatClient {
             return Err(ProviderError::Http(format!("{status}: {text}")));
         }
 
-        sse::consume_openai_sse(response, |reasoning, content, _| {
+        let mut tool_tracker = sse::ToolStreamTracker::new();
+        sse::consume_openai_sse(response, |reasoning, content, tools| {
             if let Some(delta) = reasoning {
                 on_event(AgentEvent::ReasoningToken {
                     session_id: session_id.to_string(),
@@ -78,6 +82,17 @@ impl OpenAiCompatClient {
                     turn_id: turn_id.to_string(),
                     delta: delta.to_string(),
                 });
+            }
+            if let Some(items) = tools {
+                if let Some((index, name, args_chars)) = tool_tracker.update(items) {
+                    on_event(AgentEvent::ToolCallStream {
+                        session_id: session_id.to_string(),
+                        turn_id: turn_id.to_string(),
+                        index,
+                        name,
+                        args_chars,
+                    });
+                }
             }
         })
         .await

@@ -115,6 +115,14 @@ pub enum AgentEvent {
         turn_id: String,
         delta: String,
     },
+    /// 工具参数仍在流式生成中（长参数场景下避免 UI 假死）
+    ToolCallStream {
+        session_id: String,
+        turn_id: String,
+        index: usize,
+        name: String,
+        args_chars: usize,
+    },
     ToolCall {
         session_id: String,
         turn_id: String,

@@ -5,6 +5,7 @@ export interface LiveToolCall {
   name: string;
   args: unknown;
   status: string;
+  argsChars?: number;
 }
 
 interface ToolChainPanelProps {
@@ -13,6 +14,8 @@ interface ToolChainPanelProps {
 
 function statusLabel(status: string): string {
   switch (status) {
+    case "streaming":
+      return "生成参数中";
     case "running":
       return "执行中";
     case "done":
@@ -26,6 +29,8 @@ function statusLabel(status: string): string {
 
 function statusClass(status: string): string {
   switch (status) {
+    case "streaming":
+      return "animate-pulse text-sky-300";
     case "running":
       return "text-amber-300";
     case "done":
@@ -35,6 +40,11 @@ function statusClass(status: string): string {
     default:
       return "text-slate-400";
   }
+}
+
+export function formatCharCount(count: number): string {
+  if (count < 1000) return `${count} 字符`;
+  return `${(count / 1000).toFixed(1)}K 字符`;
 }
 
 export function ToolChainPanel({ items }: ToolChainPanelProps) {
@@ -57,14 +67,20 @@ export function ToolChainPanel({ items }: ToolChainPanelProps) {
                 {statusLabel(item.status)}
               </div>
             </div>
-            <details className="mt-1">
-              <summary className="cursor-pointer text-[10px] text-slate-500 hover:text-slate-300">
-                参数
-              </summary>
-              <pre className="mt-1 max-h-24 overflow-auto rounded bg-black/30 p-1.5 text-[10px] leading-4 text-slate-300">
-                {formatToolArgs(item.args)}
-              </pre>
-            </details>
+            {item.status === "streaming" ? (
+              <div className="mt-1 text-[10px] text-slate-400">
+                正在接收参数… 已收到 {formatCharCount(item.argsChars ?? 0)}
+              </div>
+            ) : (
+              <details className="mt-1">
+                <summary className="cursor-pointer text-[10px] text-slate-500 hover:text-slate-300">
+                  参数
+                </summary>
+                <pre className="mt-1 max-h-24 overflow-auto rounded bg-black/30 p-1.5 text-[10px] leading-4 text-slate-300">
+                  {formatToolArgs(item.args)}
+                </pre>
+              </details>
+            )}
           </div>
         ))}
       </div>

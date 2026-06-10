@@ -114,7 +114,10 @@ fn search_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .ok_or_else(|| ToolError::InvalidArgs("query required".into()))?;
     let query_lower = query.to_lowercase();
     let mut matches = Vec::new();
-    for entry in WalkDir::new(ctx.sandbox.root()).into_iter().filter_map(|e| e.ok()) {
+    for entry in WalkDir::new(ctx.sandbox.root())
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
         let name = entry.file_name().to_string_lossy().to_lowercase();
         if name.contains(&query_lower) {
             let path = entry

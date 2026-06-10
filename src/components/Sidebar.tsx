@@ -4,6 +4,13 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { formatSessionTime } from "../lib/formatTime";
 import { MODEL_OPTIONS, Project, Session, providerLabel } from "../types";
 
+/** 兼容存量标题：去除残留的行内 Markdown 标记 */
+function plainTitle(title: string): string {
+  return title
+    .replace(/\*\*|__|~~|`/g, "")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+}
+
 interface SidebarProps {
   projects: Project[];
   sessions: Session[];
@@ -181,7 +188,7 @@ export function Sidebar({
                 className="min-w-0 flex-1 px-2.5 py-1.5 text-left"
                 onClick={() => onSelectSession(session.id)}
               >
-                <div className="truncate font-medium">{session.title}</div>
+                <div className="truncate font-medium">{plainTitle(session.title)}</div>
                 <div className="text-[11px] text-slate-400">{formatSessionTime(session.updated_at)}</div>
               </button>
               <button

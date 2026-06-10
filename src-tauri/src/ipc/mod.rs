@@ -35,7 +35,12 @@ pub struct SendMessageRequest {
 
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
-    state.store.lock().map_err(|e| e.to_string())?.list_projects().map_err(|e| e.to_string())
+    state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .list_projects()
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -119,7 +124,9 @@ pub struct MessageBundle {
 pub fn list_messages(state: State<AppState>, session_id: String) -> Result<MessageBundle, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     Ok(MessageBundle {
-        messages: store.list_messages(&session_id).map_err(|e| e.to_string())?,
+        messages: store
+            .list_messages(&session_id)
+            .map_err(|e| e.to_string())?,
         tool_calls: store
             .list_tool_calls_for_session(&session_id)
             .map_err(|e| e.to_string())?,
@@ -141,7 +148,11 @@ pub async fn send_message(
 }
 
 #[tauri::command]
-pub fn set_api_key(state: State<AppState>, provider: String, api_key: String) -> Result<(), String> {
+pub fn set_api_key(
+    state: State<AppState>,
+    provider: String,
+    api_key: String,
+) -> Result<(), String> {
     state
         .secrets
         .set_api_key(&provider, &api_key)
@@ -166,9 +177,6 @@ pub fn clear_api_key(state: State<AppState>, provider: String) -> Result<(), Str
 
 #[tauri::command]
 pub async fn pick_project_directory(app: AppHandle) -> Result<Option<String>, String> {
-    let path = app
-        .dialog()
-        .file()
-        .blocking_pick_folder();
+    let path = app.dialog().file().blocking_pick_folder();
     Ok(path.map(|p| p.to_string()))
 }

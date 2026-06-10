@@ -23,11 +23,14 @@ impl LlmProvider for MockProvider {
             .and_then(|m| m.content.clone())
             .unwrap_or_default();
 
-        emit(&mut on_event, AgentEvent::ReasoningToken {
-            session_id: session_id.clone(),
-            turn_id: turn_id.clone(),
-            delta: "分析用户请求并决定是否调用工具…".into(),
-        });
+        emit(
+            &mut on_event,
+            AgentEvent::ReasoningToken {
+                session_id: session_id.clone(),
+                turn_id: turn_id.clone(),
+                delta: "分析用户请求并决定是否调用工具…".into(),
+            },
+        );
 
         let wants_tool = user_text.contains("列出") || user_text.to_lowercase().contains("list");
         if wants_tool && request.tools.iter().any(|t| t.name == "fs_list") {
@@ -57,7 +60,8 @@ impl LlmProvider for MockProvider {
             });
         }
 
-        let answer = format!("Mock 回复：已收到「{user_text}」。你可以试试发送「列出目录」触发工具调用。");
+        let answer =
+            format!("Mock 回复：已收到「{user_text}」。你可以试试发送「列出目录」触发工具调用。");
         for chunk in answer.split_inclusive(' ') {
             emit(
                 &mut on_event,

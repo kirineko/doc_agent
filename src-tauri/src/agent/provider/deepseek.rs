@@ -1,4 +1,4 @@
-use super::openai_compat::{OpenAiCompatClient, thinking_extra_body};
+use super::openai_compat::{thinking_extra_body, OpenAiCompatClient};
 use super::{LlmProvider, ProviderError};
 use crate::agent::types::{AgentEvent, AssistantTurn, ChatRequest};
 use async_trait::async_trait;

@@ -10,7 +10,8 @@
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "bundle:js": "node scripts/bundle-js-libs.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -25,6 +26,11 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "docx": "^9.5.0",
+    "esbuild": "^0.25.0",
+    "exceljs": "^4.4.0",
+    "pdf-lib": "^1.17.1",
+    "pptxgenjs": "^4.0.0",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",

@@ -1,14 +1,15 @@
-use super::{ToolContext, ToolError, ToolSpec};
 use super::pdf;
-use office_oxide::Document;
+use super::{ToolContext, ToolError, ToolSpec};
 use office_oxide::format::DocumentFormat;
+use office_oxide::Document;
 use serde_json::{json, Value};
 use std::path::Path;
 
 pub fn read_markdown_tool() -> ToolSpec {
     ToolSpec {
         name: "office_read_to_markdown",
-        description: "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF and return Markdown/text",
+        description:
+            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF and return Markdown/text",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -31,10 +32,7 @@ fn read_markdown_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolEr
         return read_pdf_markdown(&resolved);
     }
 
-    let ext = resolved
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
+    let ext = resolved.extension().and_then(|e| e.to_str()).unwrap_or("");
     if DocumentFormat::from_extension(ext).is_none() {
         return Err(ToolError::InvalidArgs(format!(
             "unsupported format '.{ext}'; supported: docx, xlsx, pptx, doc, xls, ppt, pdf"

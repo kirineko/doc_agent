@@ -7,6 +7,8 @@ interface ChatPanelProps {
   messages: Message[];
   streamingReasoning: string;
   streamingContent: string;
+  /** 当前后台活动提示（如工具参数生成/执行进度），用于避免长操作时界面看似卡死 */
+  activity?: string;
   input: string;
   busy: boolean;
   onInputChange: (value: string) => void;
@@ -41,6 +43,7 @@ export function ChatPanel({
   messages,
   streamingReasoning,
   streamingContent,
+  activity,
   input,
   busy,
   onInputChange,
@@ -77,7 +80,7 @@ export function ChatPanel({
     if (!stickToBottomRef.current) return;
     const instant = Boolean(streamingReasoning || streamingContent || busy);
     scrollToBottom(instant ? "auto" : "smooth");
-  }, [lastMessageId, streamingReasoning, streamingContent, busy]);
+  }, [lastMessageId, streamingReasoning, streamingContent, activity, busy]);
 
   return (
     <section className="panel flex min-w-0 flex-1 flex-col p-3">
@@ -128,7 +131,14 @@ export function ChatPanel({
           </div>
         )}
 
-        {busy && !streamingReasoning && !streamingContent && (
+        {busy && activity && (
+          <div className="mr-4 flex items-center gap-2 rounded-lg border border-sky-900/50 bg-sky-950/20 px-3 py-2 text-xs text-sky-200">
+            <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sky-400" />
+            <span className="truncate">{activity}</span>
+          </div>
+        )}
+
+        {busy && !activity && !streamingReasoning && !streamingContent && (
           <div className="mr-4 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-400">
             助手正在回复…
           </div>

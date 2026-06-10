@@ -35,12 +35,33 @@ export function applyAgentEvent(
         ...state,
         streamingContent: state.streamingContent + event.delta,
       };
+    case "tool_call_stream": {
+      const id = `streaming-${event.index}`;
+      const entry: LiveToolCall = {
+        id,
+        name: event.name,
+        args: undefined,
+        status: "streaming",
+        argsChars: event.args_chars,
+      };
+      const exists = state.liveTools.some((item) => item.id === id);
+      return {
+        ...state,
+        liveTools: exists
+          ? state.liveTools.map((item) => (item.id === id ? entry : item))
+          : [...state.liveTools, entry],
+      };
+    }
     case "tool_call": {
-      const existing = state.liveTools.find((item) => item.id === event.id);
+      // 真实调用开始后，移除参数流式占位条目
+      const liveTools = state.liveTools.filter(
+        (item) => !item.id.startsWith("streaming-"),
+      );
+      const existing = liveTools.find((item) => item.id === event.id);
       if (existing) {
         return {
           ...state,
-          liveTools: state.liveTools.map((item) =>
+          liveTools: liveTools.map((item) =>
             item.id === event.id
               ? { ...item, status: event.status, args: event.args }
               : item,
@@ -50,7 +71,7 @@ export function applyAgentEvent(
       return {
         ...state,
         liveTools: [
-          ...state.liveTools,
+          ...liveTools,
           {
             id: event.id,
             name: event.name,

@@ -24,7 +24,7 @@ fn ensure_pdfium() {
         return;
     };
 
-    let vendor_lib = vendor_dir.join(&lib_name);
+    let vendor_lib = vendor_dir.join(lib_name);
     if !vendor_lib.exists() {
         if let Err(err) = download_pdfium(url, &vendor_lib, lib_name) {
             println!("cargo:warning=failed to download PDFium: {err}");
@@ -39,7 +39,7 @@ fn ensure_pdfium() {
         .join(&target)
         .join(&profile);
     fs::create_dir_all(&target_dir).ok();
-    fs::copy(&vendor_lib, target_dir.join(&lib_name)).ok();
+    fs::copy(&vendor_lib, target_dir.join(lib_name)).ok();
 
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rustc-env=PDFIUM_LIB_NAME={lib_name}");
@@ -98,7 +98,9 @@ fn download_pdfium(url: &str, dest: &Path, lib_name: &str) -> Result<(), String>
         let mut entry = entry.map_err(|e| format!("extract failed: {e}"))?;
         let path = entry.path().map_err(|e| format!("extract failed: {e}"))?;
         if path.starts_with("lib") {
-            entry.unpack_in(&temp_dir).map_err(|e| format!("extract failed: {e}"))?;
+            entry
+                .unpack_in(&temp_dir)
+                .map_err(|e| format!("extract failed: {e}"))?;
         }
     }
 

@@ -45,7 +45,8 @@ impl Sandbox {
             // For write targets, parent must exist inside sandbox
             if let Some(parent) = candidate.parent() {
                 if parent.exists() {
-                    return self.ensure_within(parent.join(candidate.file_name().unwrap_or_default()));
+                    return self
+                        .ensure_within(parent.join(candidate.file_name().unwrap_or_default()));
                 }
             }
             return Err(SandboxError::NotFound);
@@ -81,7 +82,9 @@ impl Sandbox {
             return Ok(());
         }
         // For not-yet-existing paths, reject parent-dir components relative to root.
-        let rel = candidate.strip_prefix(&self.root).map_err(|_| SandboxError::EscapesSandbox)?;
+        let rel = candidate
+            .strip_prefix(&self.root)
+            .map_err(|_| SandboxError::EscapesSandbox)?;
         for comp in rel.components() {
             if matches!(comp, Component::ParentDir) {
                 return Err(SandboxError::EscapesSandbox);

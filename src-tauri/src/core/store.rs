@@ -139,9 +139,9 @@ impl Store {
     }
 
     pub fn list_projects(&self) -> Result<Vec<Project>, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT id, name, root_path, created_at FROM projects ORDER BY created_at DESC")?;
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, root_path, created_at FROM projects ORDER BY created_at DESC",
+        )?;
         let rows = stmt.query_map([], |row| {
             Ok(Project {
                 id: row.get(0)?,
@@ -154,9 +154,9 @@ impl Store {
     }
 
     pub fn get_project(&self, id: &str) -> Result<Option<Project>, StoreError> {
-        let mut stmt = self.conn.prepare(
-            "SELECT id, name, root_path, created_at FROM projects WHERE id = ?1",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, name, root_path, created_at FROM projects WHERE id = ?1")?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
             Ok(Some(Project {
@@ -430,7 +430,9 @@ impl Store {
     }
 
     pub fn get_setting(&self, key: &str) -> Result<Option<String>, StoreError> {
-        let mut stmt = self.conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT value FROM settings WHERE key = ?1")?;
         let mut rows = stmt.query(params![key])?;
         if let Some(row) = rows.next()? {
             Ok(Some(row.get(0)?))
@@ -475,13 +477,7 @@ mod tests {
             .add_message(&session.id, "user", Some("hello"), None, None)
             .unwrap();
         let assistant = store
-            .add_message(
-                &session.id,
-                "assistant",
-                Some("hi"),
-                Some("thinking"),
-                None,
-            )
+            .add_message(&session.id, "assistant", Some("hi"), Some("thinking"), None)
             .unwrap();
 
         let messages = store.list_messages(&session.id).unwrap();
@@ -508,7 +504,10 @@ mod tests {
         store.delete_session(&session.id).unwrap();
         assert!(store.get_session(&session.id).unwrap().is_none());
         assert!(store.list_messages(&session.id).unwrap().is_empty());
-        assert!(store.list_tool_calls_for_session(&session.id).unwrap().is_empty());
+        assert!(store
+            .list_tool_calls_for_session(&session.id)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -517,8 +516,12 @@ mod tests {
         let store = Store::open(dir.path().join("test.db")).unwrap();
         let p1 = store.create_project("a", "/tmp/a").unwrap();
         let p2 = store.create_project("b", "/tmp/b").unwrap();
-        store.create_session(&p1.id, "s1", "mock", true, "high").unwrap();
-        store.create_session(&p2.id, "s2", "mock", true, "high").unwrap();
+        store
+            .create_session(&p1.id, "s1", "mock", true, "high")
+            .unwrap();
+        store
+            .create_session(&p2.id, "s2", "mock", true, "high")
+            .unwrap();
 
         assert_eq!(store.list_sessions(&p1.id).unwrap().len(), 1);
         assert_eq!(store.list_sessions(&p2.id).unwrap().len(), 1);

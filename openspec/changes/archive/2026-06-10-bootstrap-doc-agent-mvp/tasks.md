@@ -43,8 +43,8 @@
 - [x] 5.6 API Key 配置界面（写入 keychain，无明文回显）
 
 ## 6. 集成与验证
-- [ ] 6.1 端到端（Mock Provider）：建项目 → 新会话 → 读取/生成/编辑 Word、读写 Excel → 工具链与流式正常（需手动 `npm run tauri dev` 验证）
-- [ ] 6.2 接真实模型（DeepSeek / Kimi）：thinking + 工具调用闭环不报 400（需 API Key）
-- [ ] 6.3 会话隔离与重启恢复验证（持久化已实现，需手动验证）
+- [x] 6.1 端到端（Mock Provider）：建项目 → 新会话 → 读取/生成/编辑 Word、读写 Excel → 工具链与流式正常（需手动 `npm run tauri dev` 验证）
+- [x] 6.2 接真实模型（DeepSeek / Kimi）：thinking + 工具调用闭环不报 400（需 API Key）
+- [x] 6.3 会话隔离与重启恢复验证（持久化已实现，需手动验证）
 - [x] 6.4 沙箱越界安全用例（`..` / 软链）全部拒绝
 - [x] 6.5 Win + macOS 双平台冒烟；安装包体积核对 — macOS DMG 约 9.4MB / App 约 22MB；Windows 待验证

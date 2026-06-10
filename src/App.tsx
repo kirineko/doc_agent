@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ChatPanel } from "./components/ChatPanel";
 import { Sidebar } from "./components/Sidebar";
-import { ToolChainPanel } from "./components/ToolChainPanel";
+import { formatCharCount, ToolChainPanel } from "./components/ToolChainPanel";
+import { toolLabel } from "./lib/toolLabels";
 import {
   AgentStreamState,
   applyAgentEvent,
@@ -100,6 +101,18 @@ function App() {
     [projects, activeProjectId],
   );
 
+  const activity = useMemo(() => {
+    const streaming = stream.liveTools.find((t) => t.status === "streaming");
+    if (streaming) {
+      return `正在生成「${toolLabel(streaming.name)}」调用参数…（已接收 ${formatCharCount(streaming.argsChars ?? 0)}）`;
+    }
+    const running = stream.liveTools.find((t) => t.status === "running");
+    if (running) {
+      return `正在执行「${toolLabel(running.name)}」…`;
+    }
+    return undefined;
+  }, [stream.liveTools]);
+
   async function reloadMessages(sessionId: string) {
     const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
     setMessages(bundle.messages);
@@ -169,6 +182,7 @@ function App() {
           messages={messages}
           streamingReasoning={stream.streamingReasoning}
           streamingContent={stream.streamingContent}
+          activity={activity}
           input={input}
           busy={stream.busy}
           onInputChange={setInput}

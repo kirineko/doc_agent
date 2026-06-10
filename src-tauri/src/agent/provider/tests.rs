@@ -35,20 +35,17 @@ mod provider_tests {
         let provider = MockProvider;
         let mut events = Vec::new();
         let turn = provider
-            .chat_stream(
-                base_request("请列出目录"),
-                None,
-                &mut |event| events.push(event),
-            )
+            .chat_stream(base_request("请列出目录"), None, &mut |event| {
+                events.push(event)
+            })
             .await
             .unwrap();
 
         assert_eq!(turn.tool_calls.len(), 1);
         assert_eq!(turn.tool_calls[0].function.name, "fs_list");
-        assert!(events.iter().any(|e| matches!(
-            e,
-            crate::agent::types::AgentEvent::ReasoningToken { .. }
-        )));
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, crate::agent::types::AgentEvent::ReasoningToken { .. })));
     }
 
     #[tokio::test]

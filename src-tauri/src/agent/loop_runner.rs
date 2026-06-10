@@ -1,6 +1,6 @@
+use crate::agent::provider::openai_compat::{effort_from_str, messages_from_store, model_from_str};
 use crate::agent::provider::provider_for;
 use crate::agent::session_title::{is_default_session_title, summarize_session_title};
-use crate::agent::provider::openai_compat::{effort_from_str, messages_from_store, model_from_str};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ToolCall,
 };
@@ -13,7 +13,7 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
-const MAX_TOOL_STEPS: usize = 8;
+const MAX_TOOL_STEPS: usize = 32;
 
 pub async fn run_turn(
     app: AppHandle,
@@ -32,7 +32,9 @@ pub async fn run_turn(
             .get_project(&session.project_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "project not found".to_string())?;
-        let history = store.list_messages(&session_id).map_err(|e| e.to_string())?;
+        let history = store
+            .list_messages(&session_id)
+            .map_err(|e| e.to_string())?;
         let tool_call_history = store
             .list_tool_calls_for_session(&session_id)
             .map_err(|e| e.to_string())?;
@@ -115,12 +117,7 @@ pub async fn run_turn(
                 Some(turn.reasoning_content.as_str()),
                 None,
             )?;
-            maybe_autotitle_session(
-                &state,
-                &session_id,
-                &user_text,
-                Some(turn.content.as_str()),
-            )?;
+            maybe_autotitle_session(&state, &session_id, &user_text, Some(turn.content.as_str()))?;
             emit(
                 &app,
                 AgentEvent::TurnComplete {
@@ -155,9 +152,7 @@ pub async fn run_turn(
             tool_call_id: None,
         });
 
-        let ctx = ToolContext {
-            sandbox: &sandbox,
-        };
+        let ctx = ToolContext { sandbox: &sandbox };
 
         for call in &turn.tool_calls {
             let args: Value = serde_json::from_str(&call.function.arguments)
@@ -175,13 +170,15 @@ pub async fn run_turn(
             );
 
             let started = Instant::now();
-            let result = state
-                .tools
-                .execute(&ctx, &call.function.name, args.clone());
+            let result = state.tools.execute(&ctx, &call.function.name, args.clone());
             let duration_ms = started.elapsed().as_millis() as i64;
             let (ok, summary, result_json) = match result {
                 Ok(value) => (true, value.to_string(), value.to_string()),
-                Err(err) => (false, err.to_string(), json!({ "error": err.to_string() }).to_string()),
+                Err(err) => (
+                    false,
+                    err.to_string(),
+                    json!({ "error": err.to_string() }).to_string(),
+                ),
             };
 
             {
@@ -244,6 +241,21 @@ fn build_working_messages(
     user_text: &str,
 ) -> Vec<ChatMessage> {
     let mut messages = messages_from_store(history, tool_calls);
+    if !messages.iter().any(|m| m.role == "system") {
+        messages.insert(
+            0,
+            ChatMessage {
+                role: "system".into(),
+                content: Some(format!(
+                    "You are doc-agent, an office document assistant.\n\n{}",
+                    crate::core::skills::index_markdown()
+                )),
+                reasoning_content: None,
+                tool_calls: None,
+                tool_call_id: None,
+            },
+        );
+    }
     if messages
         .last()
         .map(|m| m.role.as_str() == "user" && m.content.as_deref() == Some(user_text))
@@ -270,13 +282,7 @@ fn persist_assistant(
 ) -> Result<Message, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let msg = store
-        .add_message(
-            session_id,
-            "assistant",
-            content,
-            reasoning_content,
-            None,
-        )
+        .add_message(session_id, "assistant", content, reasoning_content, None)
         .map_err(|e| e.to_string())?;
     if let Some(calls) = tool_calls {
         for call in calls {
@@ -335,12 +341,20 @@ mod tests {
     fn reasoning_content_is_persisted_with_assistant() {
         let dir = tempdir().unwrap();
         let store = Store::open(dir.path().join("test.db")).unwrap();
-        let project = store.create_project("demo", dir.path().to_str().unwrap()).unwrap();
+        let project = store
+            .create_project("demo", dir.path().to_str().unwrap())
+            .unwrap();
         let session = store
             .create_session(&project.id, "s1", "mock", true, "high")
             .unwrap();
         store
-            .add_message(&session.id, "assistant", Some("answer"), Some("thought"), None)
+            .add_message(
+                &session.id,
+                "assistant",
+                Some("answer"),
+                Some("thought"),
+                None,
+            )
             .unwrap();
         let messages = store.list_messages(&session.id).unwrap();
         assert_eq!(messages[0].reasoning_content.as_deref(), Some("thought"));

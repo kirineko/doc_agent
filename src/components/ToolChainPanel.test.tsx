@@ -25,4 +25,22 @@ describe("ToolChainPanel", () => {
     expect(screen.getByText("完成")).toBeInTheDocument();
     expect(screen.queryByText(/entries/)).not.toBeInTheDocument();
   });
+
+  it("renders streaming progress for pending tool args", () => {
+    render(
+      <ToolChainPanel
+        items={[
+          {
+            id: "streaming-0",
+            name: "skill_run",
+            args: undefined,
+            status: "streaming",
+            argsChars: 12345,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText("生成参数中")).toBeInTheDocument();
+    expect(screen.getByText(/已收到 12\.3K 字符/)).toBeInTheDocument();
+  });
 });
