@@ -180,7 +180,7 @@ mod win {
     use std::sync::{Arc, Mutex};
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_7;
     use webview2_com::PrintToPdfCompletedHandler;
-    use windows::core::{Interface, BOOL, HRESULT};
+    use windows::core::Interface;
 
     pub async fn print_pdf<R: Runtime>(
         window: &tauri::WebviewWindow<R>,
@@ -222,12 +222,8 @@ mod win {
                     };
 
                     let handler = PrintToPdfCompletedHandler::create(Box::new(
-                        move |error_code: HRESULT, _ok: BOOL| {
-                            let result = if error_code.is_ok() {
-                                Ok(())
-                            } else {
-                                Err(format!("PDF 生成失败: {error_code}"))
-                            };
+                        move |result: windows::core::Result<()>, _ok: bool| {
+                            let result = result.map_err(|e| format!("PDF 生成失败: {e}"));
                             if let Some(sender) = tx.lock().ok().and_then(|mut g| g.take()) {
                                 let _ = sender.send(result);
                             }
