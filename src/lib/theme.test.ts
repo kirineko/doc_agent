@@ -18,11 +18,12 @@ describe("theme", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("parseTheme defaults invalid values to dark", () => {
-    expect(parseTheme(null)).toBe("dark");
-    expect(parseTheme(undefined)).toBe("dark");
-    expect(parseTheme("system")).toBe("dark");
+  it("parseTheme defaults invalid values to light", () => {
+    expect(parseTheme(null)).toBe("light");
+    expect(parseTheme(undefined)).toBe("light");
+    expect(parseTheme("system")).toBe("light");
     expect(parseTheme("light")).toBe("light");
+    expect(parseTheme("dark")).toBe("dark");
   });
 
   it("persists theme in localStorage", () => {
@@ -31,9 +32,9 @@ describe("theme", () => {
     expect(readStoredTheme()).toBe("light");
   });
 
-  it("readStoredTheme falls back to dark for invalid storage", () => {
+  it("readStoredTheme falls back to light for invalid storage", () => {
     localStorage.setItem(THEME_STORAGE_KEY, "invalid");
-    expect(readStoredTheme()).toBe("dark");
+    expect(readStoredTheme()).toBe("light");
   });
 
   it("applyTheme sets data-theme on documentElement", () => {

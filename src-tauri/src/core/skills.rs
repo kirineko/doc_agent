@@ -57,6 +57,11 @@ static XLSX_DOCS: &[SkillDoc] = &[SkillDoc {
     content: include_str!("../../assets/skills/xlsx/SKILL.md"),
 }];
 
+static HTML_REPORT_DOCS: &[SkillDoc] = &[SkillDoc {
+    name: "SKILL.md",
+    content: include_str!("../../assets/skills/html-report/SKILL.md"),
+}];
+
 pub static SKILLS: &[Skill] = &[
     Skill {
         name: "docx",
@@ -77,6 +82,11 @@ pub static SKILLS: &[Skill] = &[
         name: "xlsx",
         description: "Excel 分析、公式模型、样式化表格生成与校验",
         docs: XLSX_DOCS,
+    },
+    Skill {
+        name: "html-report",
+        description: "静态 HTML 网页报告（表格、文字、CSS）生成规范与落盘约定",
+        docs: HTML_REPORT_DOCS,
     },
 ];
 

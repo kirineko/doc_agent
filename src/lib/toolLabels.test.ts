@@ -27,6 +27,7 @@ const EXPECTED_TOOLS = [
   "pdf_split",
   "pdf_rotate",
   "pdf_delete_pages",
+  "html_to_pdf",
   "web_search",
   "web_extract",
 ] as const;

@@ -232,7 +232,7 @@ export function ChatPanel({
             }}
           />
           <button
-            className="min-w-16 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+            className="btn-primary min-w-16 rounded-lg px-4 py-2 text-sm font-medium"
             disabled={inputDisabled || !input.trim()}
             onClick={onSend}
           >

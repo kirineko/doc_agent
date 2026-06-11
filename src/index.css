@@ -42,6 +42,9 @@
   --activity-bg: rgb(12 74 110 / 0.2);
   --activity-border: rgb(12 74 110 / 0.5);
   --activity-text: #bae6fd;
+  --btn-primary-bg: #4f46e5;
+  --btn-primary-hover: #6366f1;
+  --btn-primary-fg: #ffffff;
 }
 
 [data-theme="light"] {
@@ -86,6 +89,9 @@
   --activity-bg: #e0f2fe;
   --activity-border: #7dd3fc;
   --activity-text: #0369a1;
+  --btn-primary-bg: #0b6e99;
+  --btn-primary-hover: #095a7d;
+  --btn-primary-fg: #ffffff;
 }
 
 @theme inline {
@@ -264,6 +270,20 @@ body {
 .chip-surface:hover {
   border-color: var(--border-session-active);
   color: var(--text-link);
+}
+
+.btn-primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--btn-primary-hover);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .config-surface {

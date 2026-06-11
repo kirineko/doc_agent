@@ -24,12 +24,14 @@ mod tool_tests {
         name: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, ToolError> {
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
         tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .enable_all()
             .build()
             .unwrap()
-            .block_on(registry.execute(ctx, name, args))
+            .block_on(registry.execute(ctx, &handle, name, args))
     }
 
     fn create_docx_via_skill_run(
@@ -143,6 +145,7 @@ async function main() {{
             "pdf_split",
             "pdf_rotate",
             "pdf_delete_pages",
+            "html_to_pdf",
             "web_search",
             "web_extract",
         ] {
@@ -1768,5 +1771,160 @@ async function main() {
         )
         .unwrap_err();
         assert!(err.to_string().contains("PDF"));
+    }
+
+    fn write_sample_html_report(root: &std::path::Path) {
+        let report_dir = root.join("reports/demo");
+        fs::create_dir_all(&report_dir).unwrap();
+        fs::write(
+            report_dir.join("styles.css"),
+            "body { font-family: 'PingFang SC', sans-serif; color: #222; }\n\
+             table { border-collapse: collapse; width: 100%; }\n\
+             td, th { border: 1px solid #ccc; padding: 6px; }\n",
+        )
+        .unwrap();
+        fs::write(
+            report_dir.join("index.html"),
+            r#"<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <h1>示例报告</h1>
+  <table>
+    <tr><th>区域</th><th>销售额</th></tr>
+    <tr><td>华东</td><td>120</td></tr>
+    <tr><td>华北</td><td>95</td></tr>
+  </table>
+</body>
+</html>"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn skill_read_html_report_guide() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_read",
+            json!({ "skill": "html-report" }),
+        )
+        .unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("fs_write"));
+        assert!(content.contains(".skill-run"));
+        assert!(content.contains("html_to_pdf"));
+    }
+
+    #[test]
+    fn skills_index_lists_five_skills() {
+        let md = crate::core::skills::index_markdown();
+        for name in ["docx", "pdf", "pptx", "xlsx", "html-report"] {
+            assert!(md.contains(name), "missing {name} in index");
+        }
+        assert_eq!(crate::core::skills::available_names().len(), 5);
+    }
+
+    #[test]
+    fn html_to_pdf_rejects_missing_html() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "html_to_pdf",
+            json!({
+                "path": "missing.html",
+                "out_path": "out.pdf"
+            }),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("不存在") || msg.contains("does not exist"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[test]
+    fn html_to_pdf_rejects_dir_without_index() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("empty")).unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "html_to_pdf",
+            json!({
+                "path": "empty",
+                "out_path": "out.pdf"
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("index.html"));
+    }
+
+    #[test]
+    fn html_report_fixture_has_index_and_css() {
+        let dir = tempdir().unwrap();
+        write_sample_html_report(dir.path());
+        assert!(dir.path().join("reports/demo/index.html").exists());
+        assert!(dir.path().join("reports/demo/styles.css").exists());
+        let html = fs::read_to_string(dir.path().join("reports/demo/index.html")).unwrap();
+        assert!(html.contains("./styles.css"));
+        assert!(html.contains("示例报告"));
+    }
+
+    #[test]
+    fn html_to_pdf_rejects_invalid_options() {
+        let dir = tempdir().unwrap();
+        write_sample_html_report(dir.path());
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "html_to_pdf",
+            json!({
+                "path": "reports/demo/index.html",
+                "out_path": "reports/demo/report.pdf",
+                "page_size": "A3"
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("page_size"));
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[test]
+    fn html_to_pdf_unsupported_platform() {
+        let dir = tempdir().unwrap();
+        write_sample_html_report(dir.path());
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "html_to_pdf",
+            json!({
+                "path": "reports/demo/index.html",
+                "out_path": "reports/demo/report.pdf"
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("macOS"));
     }
 }

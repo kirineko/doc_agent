@@ -9,25 +9,25 @@ describe("useTheme", () => {
     document.documentElement.removeAttribute("data-theme");
   });
 
-  it("defaults to dark theme", () => {
+  it("defaults to light theme", () => {
     const { result } = renderHook(() => useTheme(), { wrapper: ThemeTestWrapper });
-    expect(result.current.theme).toBe("dark");
+    expect(result.current.theme).toBe("light");
   });
 
-  it("toggleTheme switches dark and light", () => {
+  it("toggleTheme switches light and dark", () => {
     const { result } = renderHook(() => useTheme(), { wrapper: ThemeTestWrapper });
-
-    act(() => {
-      result.current.toggleTheme();
-    });
-    expect(result.current.theme).toBe("light");
-    expect(localStorage.getItem("doc-agent-theme")).toBe("light");
 
     act(() => {
       result.current.toggleTheme();
     });
     expect(result.current.theme).toBe("dark");
     expect(localStorage.getItem("doc-agent-theme")).toBe("dark");
+
+    act(() => {
+      result.current.toggleTheme();
+    });
+    expect(result.current.theme).toBe("light");
+    expect(localStorage.getItem("doc-agent-theme")).toBe("light");
   });
 
   it("restores stored light theme on mount", () => {

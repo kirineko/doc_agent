@@ -1,18 +1,20 @@
 export const THEME_STORAGE_KEY = "doc-agent-theme";
+export const DEFAULT_THEME: Theme = "light";
 
 const HLJS_LINK_ID = "doc-agent-hljs-theme";
 
 export type Theme = "dark" | "light";
 
 export function parseTheme(value: string | null | undefined): Theme {
-  return value === "light" ? "light" : "dark";
+  if (value === "light" || value === "dark") return value;
+  return DEFAULT_THEME;
 }
 
 export function readStoredTheme(): Theme {
   try {
     return parseTheme(localStorage.getItem(THEME_STORAGE_KEY));
   } catch {
-    return "dark";
+    return DEFAULT_THEME;
   }
 }
 

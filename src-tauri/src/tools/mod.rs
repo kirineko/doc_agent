@@ -2,6 +2,7 @@ pub mod changed_paths;
 pub mod data;
 pub mod excel;
 pub mod fs;
+pub mod html_export;
 pub mod office;
 pub mod ooxml;
 pub mod pdf;

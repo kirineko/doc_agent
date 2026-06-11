@@ -134,7 +134,7 @@ export function Sidebar({
       >
         <div className="mb-1 text-[11px] uppercase tracking-[0.16em] text-fg-secondary">项目</div>
         <button
-          className="mb-2 w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+          className="btn-primary mb-2 w-full rounded-md px-2.5 py-1.5 text-xs font-medium"
           onClick={() => void pickProject()}
         >
           选择目录创建项目

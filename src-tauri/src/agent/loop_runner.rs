@@ -219,7 +219,7 @@ pub async fn run_turn(
             } else {
                 match state
                     .tools
-                    .execute(&ctx, &call.function.name, args.clone())
+                    .execute(&ctx, &app, &call.function.name, args.clone())
                     .await
                 {
                     Ok(value) => {
@@ -323,6 +323,8 @@ fn build_working_messages(
                     "You are doc-agent, an office document assistant.\n\
                      用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。{web_hint}\n\
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
+                     生成静态 HTML 报告前，MUST 先 skill_read html-report；\
+                     html_to_pdf 可单独使用，不要求先生成报告。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),

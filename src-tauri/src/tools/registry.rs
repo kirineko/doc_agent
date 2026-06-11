@@ -1,6 +1,7 @@
 use crate::core::sandbox::Sandbox;
 use crate::core::secrets::Secrets;
 use serde_json::Value;
+use tauri::{AppHandle, Runtime};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -94,6 +95,7 @@ impl ToolRegistry {
                 crate::tools::pdf_ops::split_tool(),
                 crate::tools::pdf_ops::rotate_tool(),
                 crate::tools::pdf_ops::delete_pages_tool(),
+                crate::tools::html_export::tool(),
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
             ],
@@ -112,15 +114,17 @@ impl ToolRegistry {
             .collect()
     }
 
-    pub async fn execute(
+    pub async fn execute<R: Runtime>(
         &self,
         ctx: &ToolContext<'_>,
+        app: &AppHandle<R>,
         name: &str,
         args: Value,
     ) -> Result<Value, ToolError> {
         match name {
             "web_search" => crate::tools::web::search_handler(ctx, args).await,
             "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
+            "html_to_pdf" => crate::tools::html_export::handler(ctx, app, args).await,
             _ => {
                 let tool = self
                     .tools
