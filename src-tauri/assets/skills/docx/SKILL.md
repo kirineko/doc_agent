@@ -7,7 +7,7 @@ license: Proprietary. LICENSE.txt has complete terms
 # DOCX creation, editing, and analysis
 
 > 本系统无 shell/Python/Node 环境。所有操作通过内置工具完成：
-> `office_read_to_markdown`、`word_create`、`ooxml_unpack`、`ooxml_pack`、`docx_comment`、`docx_accept_changes`、`skill_run`（docx 库已内置）。
+> `office_read_to_markdown`、`ooxml_unpack`、`ooxml_pack`、`docx_comment`、`docx_accept_changes`、`skill_run`（docx 库已内置）。
 
 ## Overview
 
@@ -33,7 +33,7 @@ A .docx file is a ZIP archive containing XML files.
 |------|------|-------------|
 | 阅读、摘要、提取内容 | `office_read_to_markdown {"path": "memo.doc"}` | 否 |
 | 提取表格 | `docx_extract_table` 仅支持 `.docx`；旧格式须先读内容或见下方转换 | — |
-| OOXML 解包编辑、`word_create` 改既有文件 | 须先 `office_convert` → `memo-converted.docx`，再 `ooxml_unpack` | 是 |
+| OOXML 解包编辑、从零生成 docx | 须先 `office_convert` → `memo-converted.docx`，再 `ooxml_unpack` 或 `skill_run` | 是 |
 
 **仅在必要时**调用 `office_convert`（用户明确要求 `.docx`、或下游工具只认 OOXML）。转换**可能丢失版式/样式**（实测可完成但格式不保真）；输出文件名含 `-converted` 后缀，如 `memo-converted.docx`。
 
@@ -70,23 +70,159 @@ async function main() {
 // 不要在末尾调用 main()，运行时会自动调用
 ```
 
+### 长脚本失败恢复
+
+`skill_run` 会把 inline `code` 先保存到 `.skill-run/script.js`。若执行失败，目录会保留，错误会指出行列号与引号类型（ASCII `"` vs 弯引号 `“`/`”`）。
+
+**修复**：`fs_read` + `fs_patch` 局部替换（不要用 `fs_write` 整文件重写），然后：
+
+```json
+{ "path": ".skill-run/script.js", "timeout_secs": 60 }
+```
+
+**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮结束时若没有未修复的执行失败，`.skill-run/` 会自动清理，无需手动删除。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
+
 ### Validation
 
-`ooxml_pack` 在打包时自动校验。新建文档若需检查，可 `ooxml_unpack` 后查看 XML，或 `office_read_to_markdown` 自检文本内容。
+`ooxml_pack` 在打包时自动校验。`skill_run` 写出 `.docx` 后会自动返回 `style_warnings`（排版告警）；若有告警 MUST 修正后重新生成。也可 `office_read_to_markdown` 自检文本内容。
+
+---
+
+## 中文文档排版（CRITICAL）
+
+中文内容必须遵守以下规则，否则字体回退、版式坍塌。`skill_run` 的 `style_warnings` 会检测常见违规。
+
+1. **必须配置 eastAsia 字体**——`font: "Arial"` 这类纯西文设置会让中文回退到默认衬线字体：
+
+```javascript
+styles: {
+  default: { document: { run: {
+    font: { ascii: "Calibri", eastAsia: "微软雅黑", hAnsi: "Calibri" },
+    size: 24,  // 12pt（小四），half-points
+  } } },
+}
+```
+
+2. **必须用 Heading 样式分层**——禁止整篇连续大段；每 3~6 段内容应有一个标题；标题编号用中文习惯（一、/（一）/ 1. / （1））写入标题文本或 numbering 配置。
+
+3. **中文文档用 A4**（11906 × 16838 DXA），页边距常用上下 2.54cm / 左右 3.18cm（1440 / 1800 DXA）。
+
+4. **正文段落设置**——首行缩进两字符 + 适度行距：
+
+```javascript
+new Paragraph({
+  indent: { firstLine: 480 },
+  spacing: { line: 360, lineRule: "auto" },
+  children: [new TextRun("正文内容……")],
+})
+```
+
+5. **列表必须用 numbering config**——禁止手打 `•` `·` `1.`（见下方 Lists 章节）。
+
+---
+
+## 风格菜单
+
+以下四套风格是**参考下限**，按文档内容选择并调整颜色与细节——**不要每次套用同一风格**。若你的配色换到另一份文档里依然成立，说明选得不够贴合内容。
+
+### 公文（政府/机关/正式函件）
+
+- 标题：黑体；正文：仿宋_GB2312 三号(32)；居中大标题；首行缩进；无彩色
+
+```javascript
+const styles = {
+  default: { document: { run: {
+    font: { ascii: "Times New Roman", eastAsia: "仿宋_GB2312", hAnsi: "Times New Roman" },
+    size: 32,
+  } } },
+  paragraphStyles: [
+    { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 44, bold: true, font: { eastAsia: "黑体" } },
+      paragraph: { alignment: AlignmentType.CENTER, spacing: { before: 480, after: 480 }, outlineLevel: 0 } },
+    { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 32, bold: true, font: { eastAsia: "黑体" } },
+      paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 } },
+  ],
+};
+```
+
+### 商务报告（企业介绍/方案/汇报）
+
+- 标题：微软雅黑加粗 + 主题色；正文：微软雅黑小四(24)；无缩进、段后距、封面页
+
+```javascript
+const ACCENT = "1F4E79"; // 按文档主题换色
+const styles = {
+  default: { document: { run: {
+    font: { ascii: "Calibri", eastAsia: "微软雅黑", hAnsi: "Calibri" }, size: 24,
+  } } },
+  paragraphStyles: [
+    { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 32, bold: true, color: ACCENT, font: { ascii: "Calibri", eastAsia: "微软雅黑" } },
+      paragraph: { spacing: { before: 360, after: 180 }, outlineLevel: 0,
+        border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: ACCENT, space: 4 } } } },
+    { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 28, bold: true, font: { ascii: "Calibri", eastAsia: "微软雅黑" } },
+      paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 1 } },
+  ],
+};
+```
+
+### 学术（论文/研究报告）
+
+- 标题：黑体；正文：宋体 + Times New Roman 五号(21)；两端对齐
+
+```javascript
+const styles = {
+  default: { document: { run: {
+    font: { ascii: "Times New Roman", eastAsia: "宋体", hAnsi: "Times New Roman" },
+    size: 21,
+  } } },
+  paragraphStyles: [
+    { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 32, bold: true, font: { eastAsia: "黑体" } },
+      paragraph: { spacing: { before: 240, after: 120 }, outlineLevel: 0 } },
+    { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 28, bold: true, font: { eastAsia: "黑体" } },
+      paragraph: { spacing: { before: 180, after: 90 }, outlineLevel: 1 } },
+  ],
+};
+```
+
+### 现代简洁（宣传/介绍/轻量文档）
+
+- 标题：微软雅黑 Light 大字号；正文：微软雅黑小四；大留白、浅灰分隔线
+
+```javascript
+const ACCENT = "2D6A4F"; // 按内容换色
+const styles = {
+  default: { document: { run: {
+    font: { ascii: "Calibri Light", eastAsia: "微软雅黑 Light", hAnsi: "Calibri Light" },
+    size: 24, color: "333333",
+  } } },
+  paragraphStyles: [
+    { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 40, color: ACCENT, font: { eastAsia: "微软雅黑 Light" } },
+      paragraph: { spacing: { before: 480, after: 240 }, outlineLevel: 0 } },
+    { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
+      run: { size: 28, bold: true, color: ACCENT, font: { eastAsia: "微软雅黑" } },
+      paragraph: { spacing: { before: 360, after: 120 }, outlineLevel: 1,
+        border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: "CCCCCC", space: 2 } } } },
+  ],
+};
+```
+
+---
 
 ### Page Size
 
 ```javascript
-// CRITICAL: docx-js defaults to A4, not US Letter
-// Always set page size explicitly for consistent results
+// 中文文档默认 A4；西文文档（US Letter）见下方表格
 sections: [{
   properties: {
     page: {
-      size: {
-        width: 12240,   // 8.5 inches in DXA
-        height: 15840   // 11 inches in DXA
-      },
-      margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 } // 1 inch margins
+      size: { width: 11906, height: 16838 },  // A4
+      margin: { top: 1440, right: 1800, bottom: 1440, left: 1800 }
     }
   },
   children: [/* content */]
@@ -95,42 +231,43 @@ sections: [{
 
 **Common page sizes (DXA units, 1440 DXA = 1 inch):**
 
-| Paper | Width | Height | Content Width (1" margins) |
-|-------|-------|--------|---------------------------|
-| US Letter | 12,240 | 15,840 | 9,360 |
-| A4 (default) | 11,906 | 16,838 | 9,026 |
+| Paper | Width | Height | Content Width (1" margins) | 适用 |
+|-------|-------|--------|---------------------------|------|
+| A4（中文默认） | 11,906 | 16,838 | 9,026 | 中文公文/报告 |
+| US Letter（西文文档适用） | 12,240 | 15,840 | 9,360 | 英文信函/报告 |
 
 **Landscape orientation:** docx-js swaps width/height internally, so pass portrait dimensions and let it handle the swap:
 ```javascript
 size: {
-  width: 12240,   // Pass SHORT edge as width
-  height: 15840,  // Pass LONG edge as height
-  orientation: PageOrientation.LANDSCAPE  // docx-js swaps them in the XML
+  width: 12240,
+  height: 15840,
+  orientation: PageOrientation.LANDSCAPE
 },
-// Content width = 15840 - left margin - right margin (uses the long edge)
 ```
 
 ### Styles (Override Built-in Headings)
 
-Use Arial as the default font (universally supported). Keep titles black for readability.
+中文文档 MUST 使用 eastAsia 字体（见上方「中文文档排版」）。西文文档可用 Calibri/Arial。
 
 ```javascript
 const doc = new Document({
   styles: {
-    default: { document: { run: { font: "Arial", size: 24 } } }, // 12pt default
+    default: { document: { run: {
+      font: { ascii: "Calibri", eastAsia: "微软雅黑", hAnsi: "Calibri" },
+      size: 24,
+    } } },
     paragraphStyles: [
-      // IMPORTANT: Use exact IDs to override built-in styles
       { id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { size: 32, bold: true, font: "Arial" },
-        paragraph: { spacing: { before: 240, after: 240 }, outlineLevel: 0 } }, // outlineLevel required for TOC
+        run: { size: 32, bold: true, font: { ascii: "Calibri", eastAsia: "微软雅黑" } },
+        paragraph: { spacing: { before: 240, after: 240 }, outlineLevel: 0 } },
       { id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
-        run: { size: 28, bold: true, font: "Arial" },
+        run: { size: 28, bold: true, font: { ascii: "Calibri", eastAsia: "微软雅黑" } },
         paragraph: { spacing: { before: 180, after: 180 }, outlineLevel: 1 } },
     ]
   },
   sections: [{
     children: [
-      new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("Title")] }),
+      new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun("标题")] }),
     ]
   }]
 });
@@ -375,7 +512,7 @@ sections: [{
 
 ### Critical Rules for docx-js
 
-- **Set page size explicitly** - docx-js defaults to A4; use US Letter (12240 x 15840 DXA) for US documents
+- **Set page size explicitly** - 中文文档用 A4 (11906 x 16838 DXA)；西文文档可用 US Letter (12240 x 15840 DXA)
 - **Landscape: pass portrait dimensions** - docx-js swaps width/height internally; pass short edge as `width`, long edge as `height`, and set `orientation: PageOrientation.LANDSCAPE`
 - **Never use `\n`** - use separate Paragraph elements
 - **Never use unicode bullets** - use `LevelFormat.BULLET` with numbering config

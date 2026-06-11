@@ -1,3 +1,4 @@
+mod diagnostics;
 mod normalize;
 mod ops;
 
@@ -218,9 +219,12 @@ pub fn execute_script(
     sandbox: &Sandbox,
     code: &str,
     timeout: Duration,
+    script_path: Option<&str>,
 ) -> Result<(Value, Vec<String>), ToolError> {
     let root = sandbox.root().to_path_buf();
     let code = code.to_string();
+    let code_for_error = code.clone();
+    let script_path = script_path.map(str::to_string);
     let (tx, rx) = mpsc::channel();
 
     // boa 解析/执行大型 bundle（如 exceljs ~1MB）递归较深，需要加大栈。
@@ -238,8 +242,16 @@ pub fn execute_script(
 
     match rx.recv_timeout(timeout + Duration::from_secs(2)) {
         Ok(Ok(v)) => Ok(v),
-        Ok(Err(e)) => Err(ToolError::Execution(e)),
-        Err(_) => Err(ToolError::Execution("script timeout".into())),
+        Ok(Err(e)) => Err(ToolError::Structured(diagnostics::build_script_error(
+            &code_for_error,
+            &e,
+            script_path.as_deref(),
+        ))),
+        Err(_) => Err(ToolError::Structured(diagnostics::build_script_error(
+            &code_for_error,
+            "script timeout",
+            script_path.as_deref(),
+        ))),
     }
 }
 

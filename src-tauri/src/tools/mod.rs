@@ -9,8 +9,8 @@ pub mod pdf_ops;
 pub mod registry;
 pub mod runtime;
 pub mod skill;
+pub mod skill_run_tmp;
 pub mod web;
-pub mod word;
 
 #[cfg(test)]
 mod tests;

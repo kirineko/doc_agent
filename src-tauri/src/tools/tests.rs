@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tool_tests {
     use crate::core::sandbox::Sandbox;
+    use crate::tools::ooxml::style_lint::lint_docx;
+    use crate::tools::ooxml::validate;
     use crate::tools::{ToolContext, ToolError, ToolRegistry};
     use serde_json::json;
     use std::fs;
@@ -8,16 +10,8 @@ mod tool_tests {
     use zip::ZipArchive;
 
     fn assert_valid_ooxml(path: &std::path::Path) {
-        let file = fs::File::open(path).unwrap();
-        let mut archive = ZipArchive::new(file).unwrap();
-        let mut found = false;
-        for i in 0..archive.len() {
-            let name = archive.by_index(i).unwrap().name().to_string();
-            if name.eq_ignore_ascii_case("[Content_Types].xml") {
-                found = true;
-            }
-        }
-        assert!(found, "missing [Content_Types].xml in {}", path.display());
+        validate::roundtrip_check(path)
+            .unwrap_or_else(|e| panic!("invalid OOXML {}: {e}", path.display()));
     }
 
     fn setup(dir: &tempfile::TempDir) -> Sandbox {
@@ -36,6 +30,46 @@ mod tool_tests {
             .build()
             .unwrap()
             .block_on(registry.execute(ctx, name, args))
+    }
+
+    fn create_docx_via_skill_run(
+        ctx: &ToolContext,
+        registry: &ToolRegistry,
+        path: &str,
+        title: &str,
+        body: &str,
+    ) {
+        let code = format!(
+            r#"
+async function main() {{
+  const {{ Document, Packer, Paragraph, TextRun, HeadingLevel }} = docx;
+  const doc = new Document({{
+    styles: {{
+      default: {{ document: {{ run: {{
+        font: {{ ascii: "Calibri", eastAsia: "微软雅黑", hAnsi: "Calibri" }},
+        size: 24,
+      }} }} }},
+    }},
+    sections: [{{
+      children: [
+        new Paragraph({{ heading: HeadingLevel.HEADING_1, children: [new TextRun("{title}")] }}),
+        new Paragraph({{ children: [new TextRun("{body}")] }}),
+      ],
+    }}],
+  }});
+  const b64 = await Packer.toBase64String(doc);
+  doc_write("{path}", b64);
+  return {{ ok: true }};
+}}
+"#
+        );
+        exec_tool(
+            &registry,
+            ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
     }
 
     fn make_multi_page_pdf(ctx: &ToolContext, registry: &ToolRegistry, path: &str, pages: u32) {
@@ -88,10 +122,10 @@ async function main() {{
             "fs_list",
             "fs_read",
             "fs_write",
+            "fs_patch",
             "fs_search",
             "office_read_to_markdown",
             "office_convert",
-            "word_create",
             "excel_read",
             "excel_write",
             "skill_read",
@@ -117,6 +151,24 @@ async function main() {{
                 "missing tool {expected}"
             );
         }
+    }
+
+    #[test]
+    fn skill_run_schema_declares_code_or_path_one_of() {
+        let registry = ToolRegistry::default_tools();
+        let skill_run = registry
+            .definitions(true)
+            .into_iter()
+            .find(|tool| tool.name == "skill_run")
+            .expect("skill_run tool definition");
+        let one_of = skill_run.parameters["oneOf"].as_array().unwrap();
+        assert_eq!(one_of.len(), 2);
+        assert!(one_of
+            .iter()
+            .any(|schema| schema["required"] == json!(["code"])));
+        assert!(one_of
+            .iter()
+            .any(|schema| schema["required"] == json!(["path"])));
     }
 
     #[test]
@@ -175,19 +227,129 @@ async function main() {{
     }
 
     #[test]
-    fn word_and_excel_tools_emit_valid_ooxml() {
+    fn fs_patch_applies_unique_replacements() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("script.js"),
+            "const x = 'old';\nconst y = 'old';",
+        )
+        .unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "fs_patch",
+            json!({
+                "path": "script.js",
+                "edits": [{ "old": "const x = 'old';", "new": "const x = 'new';" }]
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["applied"], 1);
+        let content = fs::read_to_string(dir.path().join("script.js")).unwrap();
+        assert!(content.contains("const x = 'new';"));
+        assert!(content.contains("const y = 'old';"));
+    }
+
+    #[test]
+    fn fs_patch_replace_all_counts_every_match() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("script.js"), "foo foo foo").unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "fs_patch",
+            json!({
+                "path": "script.js",
+                "edits": [{ "old": "foo", "new": "bar", "replace_all": true }]
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["applied"], 3);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("script.js")).unwrap(),
+            "bar bar bar"
+        );
+    }
+
+    #[test]
+    fn fs_patch_is_atomic_when_any_edit_misses() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("script.js"), "alpha beta beta").unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+
+        // 第 1 条命中、第 2 条 not found、第 3 条 ambiguous → 全部不应用
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "fs_patch",
+            json!({
+                "path": "script.js",
+                "edits": [
+                    { "old": "alpha", "new": "ALPHA" },
+                    { "old": "gamma", "new": "GAMMA" },
+                    { "old": "beta", "new": "BETA" }
+                ]
+            }),
+        )
+        .unwrap_err();
+        let value = err.to_json_value();
+        assert_eq!(value["error"], "fs_patch not applied");
+        let missed = value["missed"].as_array().unwrap();
+        assert_eq!(missed.len(), 2);
+        assert_eq!(missed[0]["reason"], "not found");
+        assert_eq!(missed[1]["reason"], "multiple matches");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("script.js")).unwrap(),
+            "alpha beta beta",
+            "file must be untouched when any edit misses"
+        );
+    }
+
+    #[test]
+    fn fs_patch_rejects_empty_or_identical_edits() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("script.js"), "abc").unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+
+        let empty = exec_tool(
+            &registry,
+            &ctx,
+            "fs_patch",
+            json!({ "path": "script.js", "edits": [{ "old": "", "new": "x" }] }),
+        )
+        .unwrap_err();
+        assert!(empty.to_string().contains("must not be empty"));
+
+        let identical = exec_tool(
+            &registry,
+            &ctx,
+            "fs_patch",
+            json!({ "path": "script.js", "edits": [{ "old": "abc", "new": "abc" }] }),
+        )
+        .unwrap_err();
+        assert!(identical.to_string().contains("identical"));
+    }
+
+    #[test]
+    fn skill_run_docx_and_excel_emit_valid_ooxml() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
 
-        exec_tool(
-            &registry,
-            &ctx,
-            "word_create",
-            json!({ "path": "report.docx", "title": "报告", "body": "正文" }),
-        )
-        .unwrap();
+        create_docx_via_skill_run(&ctx, &registry, "report.docx", "报告", "正文");
         assert_valid_ooxml(&dir.path().join("report.docx"));
 
         exec_tool(
@@ -227,6 +389,153 @@ async function main() {{
     }
 
     #[test]
+    fn skill_run_styled_chinese_docx_has_no_style_warnings() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(
+            &ctx,
+            &registry,
+            "intro.docx",
+            "广州软件学院 人工智能专业介绍",
+            "本专业培养具备人工智能理论基础与应用能力的人才。",
+        );
+        let path = dir.path().join("intro.docx");
+        assert_valid_ooxml(&path);
+        let warnings = lint_docx(&path).unwrap();
+        assert!(
+            warnings.is_empty(),
+            "styled doc should not warn: {warnings:?}"
+        );
+    }
+
+    #[test]
+    fn skill_run_unstyled_docx_returns_style_warnings() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+async function main() {
+  const { Document, Packer, Paragraph, TextRun } = docx;
+  const body = "这是一段很长的正文内容用于触发排版检查。".repeat(20);
+  const doc = new Document({ sections: [{ children: [
+    new Paragraph({ children: [new TextRun(body)] }),
+  ] }] });
+  const b64 = await Packer.toBase64String(doc);
+  doc_write("bad.docx", b64);
+  return { ok: true };
+}
+"#;
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
+        assert!(
+            out.get("style_warnings").is_some(),
+            "expected style_warnings in {:?}",
+            out
+        );
+        let warnings = out["style_warnings"]["bad.docx"].as_array().unwrap();
+        assert!(!warnings.is_empty());
+        assert!(out.get("style_hint").is_some());
+        assert_eq!(out["script_path"], ".skill-run/script.js");
+        assert_eq!(out["script_retain_reason"], "style_warnings");
+        assert!(dir.path().join(".skill-run/script.js").exists());
+    }
+
+    #[test]
+    fn skill_run_docx_retains_script_for_post_check() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
+        assert!(dir.path().join(".skill-run/script.js").exists());
+    }
+
+    #[test]
+    fn skill_run_path_rerun_after_docx_fix_keeps_script_within_turn() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
+        assert!(dir.path().join(".skill-run/script.js").exists());
+
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "path": ".skill-run/script.js", "timeout_secs": 60 }),
+        )
+        .unwrap();
+        assert_eq!(out["result"]["ok"], true);
+        assert!(
+            dir.path().join(".skill-run/script.js").exists(),
+            "path rerun should keep script for further in-turn fixes"
+        );
+
+        // Turn 结束兜底：无失败现场 → 清理
+        crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
+        assert!(!dir.path().join(".skill-run").exists());
+    }
+
+    #[test]
+    fn skill_run_success_clears_stale_error_json() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let bad = r#"async function main() {
+  p("简称"广软"），");
+}"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": bad, "timeout_secs": 30 }),
+        )
+        .unwrap_err();
+        assert!(dir.path().join(".skill-run/error.json").exists());
+
+        // 修复后重跑成功（写出 docx → 保留脚本），error.json 必须被清除
+        create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
+        assert!(dir.path().join(".skill-run/script.js").exists());
+        assert!(
+            !dir.path().join(".skill-run/error.json").exists(),
+            "successful run must clear stale error.json"
+        );
+    }
+
+    #[test]
+    fn cleanup_on_turn_end_keeps_dir_when_failure_pending() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let bad = r#"async function main() {
+  p("简称"广软"），");
+}"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": bad, "timeout_secs": 30 }),
+        )
+        .unwrap_err();
+
+        // 失败现场（error.json 存在）→ turn 结束不清理，留给下一 turn 修复
+        crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
+        assert!(dir.path().join(".skill-run/script.js").exists());
+        assert!(dir.path().join(".skill-run/error.json").exists());
+    }
+
+    #[test]
     fn skill_run_fs_read_binary_returns_bytes() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
@@ -256,13 +565,7 @@ return { isBytes: bytes instanceof Uint8Array, len: bytes.length, first: bytes[0
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        exec_tool(
-            &registry,
-            &ctx,
-            "word_create",
-            json!({ "path": "tpl.docx", "title": "第N讲", "body": "占位" }),
-        )
-        .unwrap();
+        create_docx_via_skill_run(&ctx, &registry, "tpl.docx", "第N讲", "占位");
         exec_tool(
             &registry,
             &ctx,
@@ -479,6 +782,109 @@ return { ok: true };
         .unwrap();
         assert_eq!(out["result"]["ok"], true);
         assert_eq!(out["result"]["n"], 3);
+        assert!(
+            !dir.path().join(".skill-run").exists(),
+            "successful skill_run should clean .skill-run"
+        );
+    }
+
+    #[test]
+    fn skill_run_rejects_code_and_path_together() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": "function main() { return 1; }", "path": "a.js" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("either code or path"));
+    }
+
+    #[test]
+    fn skill_run_rejects_missing_source() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(&registry, &ctx, "skill_run", json!({})).unwrap_err();
+        assert!(err.to_string().contains("code or path required"));
+    }
+
+    #[test]
+    fn skill_run_failure_preserves_temp_script_and_error_json() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"async function main() {
+  p("简称"广软"），");
+}"#;
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 30 }),
+        )
+        .unwrap_err();
+        let value = err.to_json_value();
+        assert_eq!(value["error"], "JavaScript parse error");
+        assert_eq!(value["script_path"], ".skill-run/script.js");
+        assert!(value.get("quote_diagnostics").is_some());
+        assert!(dir.path().join(".skill-run/script.js").exists());
+        assert!(dir.path().join(".skill-run/error.json").exists());
+        let saved = fs::read_to_string(dir.path().join(".skill-run/script.js")).unwrap();
+        assert!(saved.contains("广软"));
+    }
+
+    #[test]
+    fn skill_run_path_rerun_after_repair_cleans_temp_dir() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let bad = r#"async function main() {
+  p("简称"广软"），");
+}"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": bad, "timeout_secs": 30 }),
+        )
+        .unwrap_err();
+        let fixed = r#"async function main() {
+  return { ok: true, text: '简称"广软"）' };
+}"#;
+        fs::write(dir.path().join(".skill-run/script.js"), fixed).unwrap();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "path": ".skill-run/script.js", "timeout_secs": 30 }),
+        )
+        .unwrap();
+        assert_eq!(out["result"]["ok"], true);
+        assert!(!dir.path().join(".skill-run").exists());
+    }
+
+    #[test]
+    fn skill_run_path_rejects_escape_outside_project() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "path": "../outside.js" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("sandbox") || err.to_string().contains("escapes"));
     }
 
     #[test]
@@ -651,7 +1057,10 @@ async function main() {
             }),
         )
         .unwrap_err();
-        let msg = err.to_string();
+        let msg = err.to_json_value()["detail"]
+            .as_str()
+            .unwrap_or(&err.to_string())
+            .to_string();
         assert!(msg.contains("Cannot find module"), "msg: {msg}");
     }
 
@@ -661,13 +1070,7 @@ async function main() {
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        exec_tool(
-            &registry,
-            &ctx,
-            "word_create",
-            json!({ "path": "src.docx", "title": "标题", "body": "正文内容" }),
-        )
-        .unwrap();
+        create_docx_via_skill_run(&ctx, &registry, "src.docx", "标题", "正文内容");
         let unpacked = exec_tool(
             &registry,
             &ctx,
@@ -753,13 +1156,13 @@ async function main() {
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        exec_tool(
-            &registry,
+        create_docx_via_skill_run(
             &ctx,
-            "word_create",
-            json!({ "path": "contract.docx", "title": "合同", "body": "甲方应于30日内付款。" }),
-        )
-        .unwrap();
+            &registry,
+            "contract.docx",
+            "合同",
+            "甲方应于30日内付款。",
+        );
         exec_tool(
             &registry,
             &ctx,

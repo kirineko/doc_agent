@@ -1,8 +1,9 @@
 mod comment;
 mod pack;
 mod redline;
+pub mod style_lint;
 mod unpack;
-mod validate;
+pub(crate) mod validate;
 
 use super::{ensure_parent_dir, required_str_arg, ToolContext, ToolError, ToolSpec};
 use serde_json::{json, Value};

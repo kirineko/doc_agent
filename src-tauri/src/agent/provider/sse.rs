@@ -24,6 +24,7 @@ where
     let mut content = String::new();
     let mut reasoning = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut finish_reason: Option<String> = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| SseError::Http(e.to_string()))?;
@@ -45,6 +46,9 @@ where
                     serde_json::from_str(data).map_err(|e| SseError::Json(e.to_string()))?;
                 let choice = &value["choices"][0];
                 let delta = &choice["delta"];
+                if let Some(reason) = choice["finish_reason"].as_str() {
+                    finish_reason = Some(reason.to_string());
+                }
                 let reasoning_delta = delta["reasoning_content"].as_str();
                 let content_delta = delta["content"].as_str();
                 let delta_tools = delta["tool_calls"].as_array();
@@ -72,6 +76,7 @@ where
         content,
         reasoning_content: reasoning,
         tool_calls,
+        finish_reason,
     })
 }
 
@@ -228,5 +233,14 @@ mod tests {
             "function": { "arguments": "def" }
         });
         assert!(tracker.update(std::slice::from_ref(&follow_up)).is_none());
+    }
+
+    #[test]
+    fn finish_reason_length_is_read_from_choice() {
+        let choice = json!({
+            "delta": { "tool_calls": [{ "index": 0, "function": { "name": "skill_run", "arguments": "{\"code\":\"" } }] },
+            "finish_reason": "length"
+        });
+        assert_eq!(choice["finish_reason"].as_str(), Some("length"));
     }
 }

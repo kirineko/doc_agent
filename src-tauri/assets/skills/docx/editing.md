@@ -112,4 +112,4 @@ async function main() {
 |------|------|
 | 编辑已有 docx / 填模板 | **本文** — `ooxml_unpack` → XML → `ooxml_pack` |
 | 从零生成新文档 | `skill_read` 主文档 `SKILL.md` — `skill_run` + `docx` 库 |
-| 简单空白文档 | `word_create` |
+| 简单空白文档 | 同上 — `skill_run` + `docx` 库最小模板 |

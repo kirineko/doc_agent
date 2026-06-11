@@ -30,7 +30,7 @@ alwaysApply: false
 ```rust
 // ✅ tools/word.rs 旁或 tools/tests.rs
 #[test]
-fn word_create_emits_valid_docx() { /* zip 含 [Content_Types].xml */ }
+fn skill_run_docx_emits_valid_docx() { /* skill_run + docx-js；zip 含 [Content_Types].xml */ }
 
 // ❌ 仅手动点 UI 验证、无自动化测试的新工具
 ```

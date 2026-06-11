@@ -34,6 +34,8 @@ license: Proprietary. LICENSE.txt has complete terms
 
 **Read [pptxgenjs.md](pptxgenjs.md) for full details.** Use when no template is available.
 
+长脚本 `skill_run` 失败时，查看 `.skill-run/script.js` 与错误行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".skill-run/script.js"}` 重跑；生成 pptx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
+
 最小模板（`skill_run`，可直接复制）：
 
 ```javascript
@@ -69,6 +71,18 @@ async function main() {
 - **Dominance over equality**: One color should dominate (60-70% visual weight), with 1-2 supporting tones and one sharp accent. Never give all colors equal weight.
 - **Dark/light contrast**: Dark backgrounds for title + conclusion slides, light for content ("sandwich" structure). Or commit to dark throughout for a premium feel.
 - **Commit to a visual motif**: Pick ONE distinctive element and repeat it — rounded image frames, icons in colored circles, thick single-side borders. Carry it across every slide.
+
+### 中文字体（CRITICAL）
+
+中文演示文稿 MUST 指定中文字体，否则西文字体会回退渲染中文：
+
+```javascript
+slide.addText("季度汇报", {
+  x: 1, y: 1, fontSize: 28, bold: true,
+  fontFace: "微软雅黑",  // 标题可用「微软雅黑」或「思源黑体」
+});
+// 正文同样设置 fontFace: "微软雅黑"
+```
 
 ### Color Palettes
 

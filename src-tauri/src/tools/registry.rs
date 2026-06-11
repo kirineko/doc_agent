@@ -13,8 +13,19 @@ pub enum ToolError {
     Sandbox(#[from] crate::core::sandbox::SandboxError),
     #[error("execution error: {0}")]
     Execution(String),
+    #[error("structured tool error")]
+    Structured(Value),
     #[error("not implemented")]
     NotImplemented,
+}
+
+impl ToolError {
+    pub fn to_json_value(&self) -> Value {
+        match self {
+            Self::Structured(v) => v.clone(),
+            other => serde_json::json!({ "error": other.to_string() }),
+        }
+    }
 }
 
 pub struct ToolContext<'a> {
@@ -62,10 +73,10 @@ impl ToolRegistry {
                 crate::tools::fs::list_tool(),
                 crate::tools::fs::read_tool(),
                 crate::tools::fs::write_tool(),
+                crate::tools::fs::patch_tool(),
                 crate::tools::fs::search_tool(),
                 crate::tools::office::read_markdown_tool(),
                 crate::tools::office::convert_tool(),
-                crate::tools::word::create_tool(),
                 crate::tools::excel::read_tool(),
                 crate::tools::excel::write_tool(),
                 crate::tools::skill::read_tool(),

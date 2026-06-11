@@ -4,7 +4,7 @@ use serde_json::Value;
 pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> Vec<String> {
     let mut paths = Vec::new();
     match tool_name {
-        "fs_write" | "word_create" | "excel_write" => {
+        "fs_write" | "fs_patch" | "excel_write" => {
             push_arg_path(&mut paths, args, "path");
         }
         "ooxml_unpack" => {
@@ -122,6 +122,16 @@ mod tests {
             &json!({ "path": "/tmp/project/draft.docx" }),
         );
         assert_eq!(paths, vec!["draft.docx"]);
+    }
+
+    #[test]
+    fn fs_patch_uses_path_arg() {
+        let paths = extract_changed_paths(
+            "fs_patch",
+            &json!({ "path": "notes/todo.md", "edits": [{ "old": "a", "new": "b" }] }),
+            &json!({ "applied": 1, "missed": [] }),
+        );
+        assert_eq!(paths, vec!["notes/todo.md"]);
     }
 
     #[test]

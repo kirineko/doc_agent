@@ -3,6 +3,7 @@ use crate::agent::provider::provider_for;
 use crate::agent::session_title::{
     is_autotitle_eligible_user_count, is_default_session_title, summarize_session_title,
 };
+use crate::agent::tool_args::{parse_tool_arguments, truncation_error};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ToolCall,
 };
@@ -10,7 +11,7 @@ use crate::core::sandbox::Sandbox;
 use crate::core::store::Message;
 use crate::state::AppState;
 use crate::tools::ToolContext;
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
@@ -129,6 +130,7 @@ pub async fn run_turn(
             .map_err(|e| e.to_string())?;
 
         if turn.tool_calls.is_empty() {
+            cleanup_skill_run_tmp(&sandbox);
             let msg = persist_assistant(
                 &state,
                 &session_id,
@@ -182,8 +184,22 @@ pub async fn run_turn(
 
         for call in &turn.tool_calls {
             let ctx = ToolContext::with_secrets(&sandbox, &state.secrets);
-            let args: Value = serde_json::from_str(&call.function.arguments)
-                .unwrap_or_else(|_| Value::Object(Default::default()));
+            let truncated = turn.finish_reason.as_deref() == Some("length");
+            let args_result =
+                match parse_tool_arguments(&call.function.name, &call.function.arguments) {
+                    Ok(args) => Ok(args),
+                    Err(_) if truncated => Err(truncation_error(
+                        &call.function.name,
+                        &call.function.arguments,
+                    )),
+                    Err(err) => Err(err),
+                };
+
+            let (args, prebuilt_error) = match args_result {
+                Ok(args) => (args, None),
+                Err(err) => (Value::Object(Default::default()), Some(err)),
+            };
+
             emit(
                 &app,
                 AgentEvent::ToolCall {
@@ -197,27 +213,31 @@ pub async fn run_turn(
             );
 
             let started = Instant::now();
-            let result = state
-                .tools
-                .execute(&ctx, &call.function.name, args.clone())
-                .await;
-            let duration_ms = started.elapsed().as_millis() as i64;
-            let (ok, summary, result_json, changed_paths) = match result {
-                Ok(value) => {
-                    let paths = crate::tools::changed_paths::extract_changed_paths(
-                        &call.function.name,
-                        &args,
-                        &value,
-                    );
-                    (true, value.to_string(), value.to_string(), paths)
+            let (ok, summary, result_json, changed_paths) = if let Some(err) = prebuilt_error {
+                let result_json = err.to_string();
+                (false, result_json.clone(), result_json, Vec::new())
+            } else {
+                match state
+                    .tools
+                    .execute(&ctx, &call.function.name, args.clone())
+                    .await
+                {
+                    Ok(value) => {
+                        let paths = crate::tools::changed_paths::extract_changed_paths(
+                            &call.function.name,
+                            &args,
+                            &value,
+                        );
+                        (true, value.to_string(), value.to_string(), paths)
+                    }
+                    Err(err) => {
+                        let value = err.to_json_value();
+                        let text = value.to_string();
+                        (false, text.clone(), text, Vec::new())
+                    }
                 }
-                Err(err) => (
-                    false,
-                    err.to_string(),
-                    json!({ "error": err.to_string() }).to_string(),
-                    Vec::new(),
-                ),
             };
+            let duration_ms = started.elapsed().as_millis() as i64;
 
             {
                 let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -263,6 +283,7 @@ pub async fn run_turn(
         }
     }
 
+    cleanup_skill_run_tmp(&sandbox);
     emit(
         &app,
         AgentEvent::Error {
@@ -272,6 +293,13 @@ pub async fn run_turn(
         },
     );
     Ok(())
+}
+
+/// Turn 结束兜底：无论 style_warnings 是否被处理，只要没有未修复的脚本失败
+/// （`.skill-run/error.json` 不存在），就清理 `.skill-run/` 临时目录。
+fn cleanup_skill_run_tmp(sandbox: &Sandbox) {
+    let ctx = ToolContext::new(sandbox);
+    crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
 }
 
 fn build_working_messages(
@@ -293,7 +321,9 @@ fn build_working_messages(
                 role: "system".into(),
                 content: Some(format!(
                     "You are doc-agent, an office document assistant.\n\
-                     用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。{web_hint}\n{}",
+                     用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。{web_hint}\n\
+                     生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
+                     不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),
                 reasoning_content: None,

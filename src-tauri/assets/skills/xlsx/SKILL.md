@@ -24,20 +24,22 @@ license: Proprietary. LICENSE.txt has complete terms
 
 复杂表格、多 sheet、样式、冻结窗格 → 用 `skill_run`，**不要**用 `excel_write` 逐格写。
 
+长脚本若 `skill_run` 失败，检查 `.skill-run/script.js` 与错误中的行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".skill-run/script.js"}` 重跑；生成 xlsx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
+
 ```javascript
 // ✅ 正确模板（可直接复制）
 async function main() {
   const wb = new ExcelJS.Workbook();  // 全局 ExcelJS，require('exceljs') 也可
   const ws = wb.addWorksheet("Sheet1", { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = [
-    { header: "项目", key: "name", width: 24 },
+    { header: "项目", key: "name", width: 24 },  // 中文列宽 ≈ 西文 2 倍字符宽
     { header: "金额", key: "amount", width: 14 },
   ];
   ws.addRow({ name: "营收", amount: 1000 });
   ws.addRow({ name: "合计", amount: { formula: "SUM(B2:B2)" } });  // 公式而非硬编码
 
-  // 样式示例
-  ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+  // 样式示例（中文表格指定 font.name）
+  ws.getRow(1).font = { name: "微软雅黑", bold: true, color: { argb: "FFFFFFFF" } };
   ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4472C4" } };
   ws.getCell("B2").numFmt = "$#,##0";
 

@@ -25,13 +25,6 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 - **WHEN** Agent 对项目内一个 `.pptx` 调用读取工具
 - **THEN** 返回每页文本内容的 Markdown（MVP 仅读取，不要求生成）
 
-### Requirement: Word 文档生成
-系统 SHALL 提供工具，在项目目录内生成新的 Word 文档，支持从结构化内容或 Markdown 创建。
-
-#### Scenario: 由 Markdown 生成 Word
-- **WHEN** Agent 提供一段 Markdown 与目标文件名
-- **THEN** 系统在项目内生成对应 `.docx`，且文件为可被 Office 打开的合法 OOXML
-
 ### Requirement: Word 文档保格式编辑
 系统 SHALL 提供工具，对项目内既有 Word 文档进行文本替换式编辑，并保留未改动的部件（图片、样式、关系等）。
 

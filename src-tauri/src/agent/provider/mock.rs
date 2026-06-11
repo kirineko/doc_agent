@@ -57,6 +57,7 @@ impl LlmProvider for MockProvider {
                         arguments: json!({ "path": "." }).to_string(),
                     },
                 }],
+                finish_reason: None,
             });
         }
 
@@ -77,6 +78,7 @@ impl LlmProvider for MockProvider {
             content: answer,
             reasoning_content: "直接回答。".into(),
             tool_calls: vec![],
+            finish_reason: None,
         })
     }
 }

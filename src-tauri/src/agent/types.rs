@@ -174,4 +174,5 @@ pub struct AssistantTurn {
     pub content: String,
     pub reasoning_content: String,
     pub tool_calls: Vec<ToolCall>,
+    pub finish_reason: Option<String>,
 }
