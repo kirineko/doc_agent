@@ -70,6 +70,11 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .and_then(|v| v.as_u64())
         .unwrap_or(30)
         .clamp(1, 120);
-    let result = runtime::execute_script(ctx.sandbox, &code, Duration::from_secs(timeout_secs))?;
-    Ok(json!({ "result": result }))
+    let (result, written_paths) =
+        runtime::execute_script(ctx.sandbox, &code, Duration::from_secs(timeout_secs))?;
+    let mut response = json!({ "result": result });
+    if !written_paths.is_empty() {
+        response["written_paths"] = json!(written_paths);
+    }
+    Ok(response)
 }

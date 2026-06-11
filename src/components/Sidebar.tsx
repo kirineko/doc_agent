@@ -7,6 +7,7 @@ import { buildCreateSessionRequest, type SessionConfig } from "../lib/sessionCon
 import { Project, Session } from "../types";
 import { ApiKeySection } from "./ApiKeySection";
 import { ModelConfigSection } from "./ModelConfigSection";
+import { WebSearchSection } from "./WebSearchSection";
 
 interface SidebarProps {
   projects: Project[];
@@ -18,6 +19,7 @@ interface SidebarProps {
   modelLocked: boolean;
   highlightProject?: boolean;
   highlightApiKeyProvider?: string;
+  tavilyEnabled: boolean;
   onProjectsChange: (projects: Project[]) => void;
   onSessionsChange: (sessions: Session[]) => void;
   onSelectProject: (projectId: string | undefined) => void | Promise<void>;
@@ -25,6 +27,7 @@ interface SidebarProps {
   onPendingSessionConfigChange: (patch: Partial<SessionConfig>) => void;
   onSessionUpdated: (session: Session) => void;
   onApiKeyStatusChange: (provider: string, has: boolean) => void;
+  onTavilyStatusChange: (has: boolean) => void;
 }
 
 export function Sidebar({
@@ -37,6 +40,7 @@ export function Sidebar({
   modelLocked,
   highlightProject,
   highlightApiKeyProvider,
+  tavilyEnabled,
   onProjectsChange,
   onSessionsChange,
   onSelectProject,
@@ -44,6 +48,7 @@ export function Sidebar({
   onPendingSessionConfigChange,
   onSessionUpdated,
   onApiKeyStatusChange,
+  onTavilyStatusChange,
 }: SidebarProps) {
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const effectiveConfig: SessionConfig = activeSession
@@ -213,7 +218,8 @@ export function Sidebar({
         />
       )}
 
-      <div className="mt-auto shrink-0">
+      <div className="mt-auto shrink-0 space-y-1.5">
+        <WebSearchSection enabled={tavilyEnabled} onStatusChange={onTavilyStatusChange} />
         <ApiKeySection
           apiKeyStatus={apiKeyStatus}
           highlightProvider={highlightApiKeyProvider}

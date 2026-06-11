@@ -27,6 +27,8 @@ const EXPECTED_TOOLS = [
   "pdf_split",
   "pdf_rotate",
   "pdf_delete_pages",
+  "web_search",
+  "web_extract",
 ] as const;
 
 describe("toolLabels", () => {

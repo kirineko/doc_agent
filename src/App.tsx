@@ -33,6 +33,8 @@ function App() {
           onPendingSessionConfigChange={ws.handlePendingSessionConfigChange}
           onSessionUpdated={ws.handleSessionUpdated}
           onApiKeyStatusChange={ws.handleApiKeyStatusChange}
+          tavilyEnabled={ws.tavilyEnabled}
+          onTavilyStatusChange={ws.handleTavilyStatusChange}
         />
         <ChatPanel
           sessionId={ws.activeSessionId}
@@ -53,7 +55,11 @@ function App() {
           onInitStarter={() => void ws.handleInitStarter()}
           onDismissSendHint={ws.dismissSendHint}
         />
-        <RightPanel liveTools={ws.stream.liveTools} projectId={ws.activeProjectId} />
+        <RightPanel
+          liveTools={ws.stream.liveTools}
+          projectId={ws.activeProjectId}
+          fileRevision={ws.fileRevision}
+        />
       </main>
     </div>
   );

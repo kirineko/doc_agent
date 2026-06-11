@@ -213,11 +213,12 @@ const DOCX_SHIM: &str = r#"
 })();
 "#;
 
+/// 执行脚本，返回脚本结果与执行期间经 `__doc_write` 写入的相对路径。
 pub fn execute_script(
     sandbox: &Sandbox,
     code: &str,
     timeout: Duration,
-) -> Result<Value, ToolError> {
+) -> Result<(Value, Vec<String>), ToolError> {
     let root = sandbox.root().to_path_buf();
     let code = code.to_string();
     let (tx, rx) = mpsc::channel();
@@ -242,7 +243,11 @@ pub fn execute_script(
     }
 }
 
-fn run_in_thread(root: &PathBuf, code: &str, timeout: Duration) -> Result<Value, String> {
+fn run_in_thread(
+    root: &PathBuf,
+    code: &str,
+    timeout: Duration,
+) -> Result<(Value, Vec<String>), String> {
     let started = std::time::Instant::now();
     let sandbox = Sandbox::new(root).map_err(|e| e.to_string())?;
     let mut context = Context::default();
@@ -280,7 +285,8 @@ fn run_in_thread(root: &PathBuf, code: &str, timeout: Duration) -> Result<Value,
         .eval(Source::from_bytes(&script))
         .map_err(|e| with_runtime_hint(e.to_string()))?;
     let result = settle_promise(&mut context, result)?;
-    js_to_json(&mut context, &result)
+    let value = js_to_json(&mut context, &result)?;
+    Ok((value, ops::take_written_paths()))
 }
 
 /// 常见 Node/浏览器 API 误用时，附加运行时环境提示，避免模型盲目试探。

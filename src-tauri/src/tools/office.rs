@@ -183,7 +183,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("broken.pdf"), b"not-a-pdf").unwrap();
         let sandbox = Sandbox::new(dir.path()).unwrap();
-        let ctx = ToolContext { sandbox: &sandbox };
+        let ctx = ToolContext::new(&sandbox);
         let err = read_markdown_handler(&ctx, json!({ "path": "broken.pdf" })).unwrap_err();
         assert!(err.to_string().contains("PDF"));
     }
@@ -219,7 +219,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("new.docx"), b"x").unwrap();
         let sandbox = Sandbox::new(dir.path()).unwrap();
-        let ctx = ToolContext { sandbox: &sandbox };
+        let ctx = ToolContext::new(&sandbox);
         let err = convert_handler(&ctx, json!({ "path": "new.docx" })).unwrap_err();
         assert!(err.to_string().contains("legacy"));
     }
@@ -229,7 +229,7 @@ mod tests {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("legacy.doc"), b"x").unwrap();
         let sandbox = Sandbox::new(dir.path()).unwrap();
-        let ctx = ToolContext { sandbox: &sandbox };
+        let ctx = ToolContext::new(&sandbox);
         let err = convert_handler(
             &ctx,
             json!({ "path": "legacy.doc", "out_path": "out.docx" }),

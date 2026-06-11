@@ -34,11 +34,15 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** 系统在后续请求中携带该 `reasoning_content`，使模型不返回 400 错误
 
 ### Requirement: 工具在目录沙箱内执行
-系统 SHALL 通过统一的工具分发器执行所有工具调用，且工具对文件系统的访问被限定在当前项目根目录内。
+系统 SHALL 通过统一的工具分发器执行所有工具调用；**文件系统类工具**对文件系统的访问被限定在当前项目根目录内。已启用的 Web 搜索类工具（`web_search` / `web_extract`）作为例外 MAY 访问外部 HTTP 服务：其 URL 与查询参数 MUST NOT 被校验为项目相对路径，且成功执行时 `tool_result.changed_paths` MUST 为空。
 
 #### Scenario: 越界路径被拒绝
 - **WHEN** 模型请求的工具参数包含指向项目根目录之外的路径
 - **THEN** 系统拒绝执行并返回错误结果，循环继续而不中断
+
+#### Scenario: web_search 无 changed_paths
+- **WHEN** `web_search` 成功返回
+- **THEN** 对应 `tool_result` 的 `changed_paths` 为空或省略
 
 ### Requirement: 无密钥可运行的 Mock Provider
 系统 SHALL 提供一个 Mock Provider，在未配置真实 API Key 时仍可驱动循环、工具调用与前端事件，用于开发与测试。
@@ -68,4 +72,48 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 #### Scenario: 第二步 LLM 不合并第一步流式内容
 - **WHEN** 第一轮 LLM 已持久化并 emit `assistant_step_done`，随后开始第二轮 LLM 流式输出
 - **THEN** 前端 streaming 缓冲为空，第二轮 token 仅构成新的流式预览
+
+### Requirement: 工具结果携带变更路径
+系统 SHALL 在 Agent 循环执行文件变更类工具成功后，于 `tool_result` 事件中携带 `changed_paths` 字段（相对项目根的路径字符串数组，POSIX 分隔符）；前端据此增量更新文件索引。失败或只读工具 MUST NOT 携带有效变更路径。
+
+#### Scenario: 写文件工具返回路径
+- **WHEN** `fs_write` 成功写入 `notes/todo.md`
+- **THEN** 对应 `tool_result` 的 `changed_paths` 包含 `notes/todo.md`
+
+#### Scenario: 解压工具返回目录而非内部 XML
+- **WHEN** `ooxml_unpack` 成功解压到 `unpacked/`
+- **THEN** `changed_paths` 包含 `unpacked/`（或等效目录路径），MUST NOT 枚举 `unpacked/word/*.xml` 等内部部件
+
+#### Scenario: skill_run 追踪 doc_write
+- **WHEN** `skill_run` 内脚本通过 `doc_write` / `__doc_write` 写入 `out.xlsx`
+- **THEN** `tool_result.changed_paths` 包含 `out.xlsx`
+
+#### Scenario: 工具失败无变更路径
+- **WHEN** 某写文件工具执行失败
+- **THEN** `tool_result` 的 `changed_paths` 为空或省略，且 `ok` 为 false
+
+### Requirement: 网络工具条件注册
+系统 SHALL 支持按运行时条件过滤注册到 LLM 的工具子集；当 Tavily Key 未配置时，`web_search` 与 `web_extract` MUST 从 tool definitions 中排除。
+
+#### Scenario: 过滤在每回合生效
+- **WHEN** Agent loop 开始处理用户消息并构造 LLM 请求
+- **THEN** 系统根据当前 `has_api_key("tavily")` 决定是否包含 web 工具，而非启动时静态固定
+
+### Requirement: 异步工具执行
+系统 SHALL 支持异步工具 handler；`loop_runner` 在沙箱/Secrets 上下文内 await 工具执行结果，网络 I/O MUST NOT 阻塞 tokio worker 以外的同步阻塞调用（禁止在 async 上下文中对 Tavily 使用 `block_on`）。
+
+#### Scenario: web 工具异步完成
+- **WHEN** 模型调用 `web_search` 且 Tavily API 需要网络等待
+- **THEN** loop 异步等待 handler 完成后再 persist tool 结果并继续下一轮 LLM
+
+### Requirement: Web 能力 system prompt 注入
+系统 SHALL 在 Tavily Key 已配置时，于 system prompt 追加简短说明：可用 `web_search` 获取外部信息、可用 `web_extract` 读取已知 URL 正文。
+
+#### Scenario: 有 Key 时 prompt 含 Web 说明
+- **WHEN** 用户已配置 Tavily Key 且 Agent 构造 system 消息
+- **THEN** system 内容包含 Web 搜索工具的使用提示
+
+#### Scenario: 无 Key 时不注入
+- **WHEN** 用户未配置 Tavily Key
+- **THEN** system 消息不包含 Web 搜索相关说明
 

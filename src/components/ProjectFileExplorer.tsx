@@ -5,6 +5,7 @@ import { ProjectDirListing } from "../types";
 
 interface ProjectFileExplorerProps {
   projectId?: string;
+  fileRevision?: number;
 }
 
 interface BreadcrumbProps {
@@ -95,13 +96,17 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
   );
 }
 
-export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
+export function ProjectFileExplorer({
+  projectId,
+  fileRevision = 0,
+}: ProjectFileExplorerProps) {
   const [listing, setListing] = useState<ProjectDirListing | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const currentPath = listing?.path ?? ".";
-
   const loadSeqRef = useRef(0);
+  const currentPathRef = useRef(currentPath);
+  currentPathRef.current = currentPath;
 
   const loadDir = useCallback(async (project: string, path: string) => {
     const seq = ++loadSeqRef.current;
@@ -131,6 +136,11 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
     void loadDir(projectId, ".");
   }, [projectId, loadDir]);
 
+  useEffect(() => {
+    if (!projectId || fileRevision === 0) return;
+    void loadDir(projectId, currentPathRef.current);
+  }, [fileRevision, projectId, loadDir]);
+
   async function openFile(name: string) {
     if (!projectId) return;
     try {
@@ -145,7 +155,21 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
 
   return (
     <div className="flex min-h-0 flex-[0.38] flex-col border-t border-slate-800 pt-2">
-      <div className="mb-1 text-xs font-medium text-slate-200">项目文件</div>
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-slate-200">项目文件</div>
+        {projectId && (
+          <button
+            type="button"
+            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-slate-400 hover:bg-slate-800/80 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label="刷新当前目录"
+            title="刷新当前目录"
+            disabled={loading}
+            onClick={() => void loadDir(projectId, currentPath)}
+          >
+            ↻
+          </button>
+        )}
+      </div>
       {projectId ? (
         <Breadcrumb
           currentPath={currentPath}

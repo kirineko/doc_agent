@@ -63,7 +63,7 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** 卡片显示移除按钮，点击后该项目立即从列表消失
 
 ### Requirement: @ 文件引用选择器
-输入框 SHALL 支持 `@` 触发的文件引用：检测到光标前的 `@` 及其后查询串时，弹出项目内文件/目录候选列表，支持 fzf 式模糊匹配（子序列匹配 + 评分排序 + 命中高亮）、键盘上下选择与确认；确认后在输入框插入 `@相对路径`。文件清单 MUST 限制遍历深度与数量并忽略隐藏目录/依赖目录/Office 临时文件。
+输入框 SHALL 支持 `@` 触发的文件引用：检测到光标前的 `@` 及其后查询串时，弹出项目内文件/目录候选列表，支持 fzf 式模糊匹配（子序列匹配 + 评分排序 + 命中高亮）、键盘上下选择与确认；确认后在输入框插入 `@相对路径`。文件清单 MUST 限制遍历深度与数量并忽略隐藏目录/依赖目录/Office 临时文件；**此外 MUST 忽略 OOXML 解压工作目录（路径段名为 `unpacked` 或以 `_unpacked` 结尾的目录）及其全部子树**。清单 MUST 在项目文件变更后更新：优先通过 `tool_result.changed_paths` 增量合并，并在每个 turn 完成时 debounce 全量刷新一次。
 
 #### Scenario: 模糊匹配选择文件
 - **WHEN** 用户在输入框键入 `@课程` 且项目内存在「课程体系.xlsx」
@@ -76,6 +76,15 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 #### Scenario: Agent 理解 @ 引用
 - **WHEN** 用户发送包含 `@相对路径` 的消息
 - **THEN** system prompt 已声明该语义，Agent 可直接以该路径调用文件/文档工具读取
+
+#### Scenario: 解压目录内部不出现在 @ 候选
+- **WHEN** 项目内存在 `unpacked/word/document.xml`（由 `ooxml_unpack` 产生）
+- **THEN** `@` 候选列表 MUST NOT 包含该路径或 `unpacked/` 下任意子路径
+- **AND** 用户仍可通过 `@` 引用同级的 `.docx` 成品文件
+
+#### Scenario: Agent 新建文件后可 @ 引用
+- **WHEN** Agent 在本会话 turn 中新建了 `summary.md`
+- **THEN** turn 结束后用户在 `@` 中可匹配并选中 `summary.md`
 
 ### Requirement: 会话初始化交互
 当用户**点击初始化胶囊**且首次会话推荐问生成进行中时，界面 SHALL 进入「会话初始化中」状态：禁用消息输入框并展示带动效的进度提示（如「正在阅读项目文档…」）；生成结束（无论成功失败）后 MUST 解锁输入框。打开空会话或新建会话 alone MUST NOT 自动进入该状态。
@@ -175,4 +184,41 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 #### Scenario: 空状态展示
 - **WHEN** 用户已选项目且当前上下文无 user/assistant 消息
 - **THEN** 中间区非完全空白，用户可感知两种开始方式（初始化或直输）
+
+### Requirement: 项目文件索引变更同步
+系统 SHALL 在 Agent 成功执行文件变更类工具后，使 `@` 文件引用清单与资源管理器当前目录与磁盘保持一致；同步 MUST 采用事件驱动策略，禁止定时轮询项目目录。
+
+#### Scenario: turn 结束后 @ 清单包含新文件
+- **WHEN** Agent 在本 turn 内通过 `fs_write` 创建了 `docs/report.docx` 且 turn 正常结束
+- **THEN** 用户在输入框键入 `@report` 时候选列表包含 `docs/report.docx`
+
+#### Scenario: 增量路径即时可见
+- **WHEN** Agent 某工具成功执行且 `tool_result` 携带 `changed_paths` 含 `notes.md`
+- **THEN** 该路径在 turn 结束前即可出现在 `@` 候选数据源中（经前端 merge）
+
+#### Scenario: 不使用定时轮询
+- **WHEN** 用户保持项目打开且 Agent 处于空闲
+- **THEN** 系统 MUST NOT 以固定间隔调用 `list_project_files_cmd`
+
+### Requirement: 侧栏 Web 搜索配置区块
+系统 SHALL 在侧栏提供独立于模型 API Key 区域的「Web 搜索 (Tavily)」配置入口，与会话无关；已保存 Key 时摘要显示「已启用」，未配置时显示「未启用」。交互 MUST 支持保存、更换、清空，且 MUST NOT 依赖 activeSession。
+
+#### Scenario: 无会话时可配置 Tavily
+- **WHEN** 用户已选项目但无 activeSession
+- **THEN** 仍可在侧栏 Web 搜索区块配置 Tavily Key
+
+#### Scenario: 与模型 Key 分区展示
+- **WHEN** 用户打开侧栏
+- **THEN** Web 搜索配置与 DeepSeek/Kimi API Key 区域分离展示，不混入模型 provider 列表
+
+#### Scenario: 已保存 Key 低干扰展示
+- **WHEN** Tavily Key 已保存
+- **THEN** 区块以折叠摘要「已启用」展示，不默认展开密码输入框
+
+### Requirement: Web 工具中文标签
+系统 SHALL 为 `web_search` 与 `web_extract` 提供中文工具链标签，并在工具名注册列表测试中保持同步。
+
+#### Scenario: 工具卡片显示中文名
+- **WHEN** Agent 调用 `web_search` 或 `web_extract`
+- **THEN** 右侧工具链卡片显示对应中文标签（非原始英文名）
 

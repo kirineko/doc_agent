@@ -3,16 +3,28 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use boa_engine::js_string;
 use boa_engine::native_function::NativeFunction;
 use boa_engine::{Context, JsResult, JsValue};
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 const MAX_LOG_CHARS: usize = 2_000;
 
+thread_local! {
+    // execute_script 每次 spawn 独立线程，写入记录天然按脚本隔离。
+    static WRITTEN_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
 pub fn register(context: &mut Context, sandbox: &Sandbox) -> JsResult<()> {
+    WRITTEN_PATHS.with(|cell| cell.borrow_mut().clear());
     let root = sandbox.root().to_path_buf();
     register_read(context, root.clone())?;
     register_write(context, root)?;
     register_log(context)?;
     Ok(())
+}
+
+/// 取出当前线程脚本执行期间经 `__doc_write` 写入的相对路径。
+pub fn take_written_paths() -> Vec<String> {
+    WRITTEN_PATHS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
 
 fn register_read(context: &mut Context, root: PathBuf) -> JsResult<()> {
@@ -81,6 +93,9 @@ fn register_write(context: &mut Context, root: PathBuf) -> JsResult<()> {
                 std::fs::write(resolved, bytes).map_err(|e| {
                     boa_engine::error::JsNativeError::typ().with_message(e.to_string())
                 })?;
+                WRITTEN_PATHS.with(|cell| {
+                    cell.borrow_mut().push(path.replace('\\', "/"));
+                });
                 Ok(JsValue::undefined())
             },
             root,

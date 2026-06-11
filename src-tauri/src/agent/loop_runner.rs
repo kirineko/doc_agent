@@ -24,33 +24,40 @@ pub async fn run_turn(
     user_text: String,
 ) -> Result<(), String> {
     let turn_id = Uuid::new_v4().to_string();
-    let (session_title, project, history, tool_call_history, model, thinking_enabled, thinking_effort) =
-        {
-            let store = state.store.lock().map_err(|e| e.to_string())?;
-            let session = store
-                .get_session(&session_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "session not found".to_string())?;
-            let project = store
-                .get_project(&session.project_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| "project not found".to_string())?;
-            let history = store
-                .list_messages(&session_id)
-                .map_err(|e| e.to_string())?;
-            let tool_call_history = store
-                .list_tool_calls_for_session(&session_id)
-                .map_err(|e| e.to_string())?;
-            (
-                session.title,
-                project,
-                history,
-                tool_call_history,
-                session.model.clone(),
-                session.thinking_enabled,
-                session.thinking_effort.clone(),
-            )
-        };
+    let (
+        session_title,
+        project,
+        history,
+        tool_call_history,
+        model,
+        thinking_enabled,
+        thinking_effort,
+    ) = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let session = store
+            .get_session(&session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
+        let project = store
+            .get_project(&session.project_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "project not found".to_string())?;
+        let history = store
+            .list_messages(&session_id)
+            .map_err(|e| e.to_string())?;
+        let tool_call_history = store
+            .list_tool_calls_for_session(&session_id)
+            .map_err(|e| e.to_string())?;
+        (
+            session.title,
+            project,
+            history,
+            tool_call_history,
+            session.model.clone(),
+            session.thinking_enabled,
+            session.thinking_effort.clone(),
+        )
+    };
 
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -73,8 +80,13 @@ pub async fn run_turn(
     };
 
     let provider = provider_for(model_id);
-    let tool_defs = state.tools.definitions();
-    let mut working_messages = build_working_messages(&history, &tool_call_history, &user_text);
+    let web_enabled = state
+        .secrets
+        .has_api_key("tavily")
+        .map_err(|e| e.to_string())?;
+    let tool_defs = state.tools.definitions(web_enabled);
+    let mut working_messages =
+        build_working_messages(&history, &tool_call_history, &user_text, web_enabled);
 
     for _step in 0..MAX_TOOL_STEPS {
         let request = ChatRequest {
@@ -168,9 +180,8 @@ pub async fn run_turn(
             tool_call_id: None,
         });
 
-        let ctx = ToolContext { sandbox: &sandbox };
-
         for call in &turn.tool_calls {
+            let ctx = ToolContext::with_secrets(&sandbox, &state.secrets);
             let args: Value = serde_json::from_str(&call.function.arguments)
                 .unwrap_or_else(|_| Value::Object(Default::default()));
             emit(
@@ -186,14 +197,25 @@ pub async fn run_turn(
             );
 
             let started = Instant::now();
-            let result = state.tools.execute(&ctx, &call.function.name, args.clone());
+            let result = state
+                .tools
+                .execute(&ctx, &call.function.name, args.clone())
+                .await;
             let duration_ms = started.elapsed().as_millis() as i64;
-            let (ok, summary, result_json) = match result {
-                Ok(value) => (true, value.to_string(), value.to_string()),
+            let (ok, summary, result_json, changed_paths) = match result {
+                Ok(value) => {
+                    let paths = crate::tools::changed_paths::extract_changed_paths(
+                        &call.function.name,
+                        &args,
+                        &value,
+                    );
+                    (true, value.to_string(), value.to_string(), paths)
+                }
                 Err(err) => (
                     false,
                     err.to_string(),
                     json!({ "error": err.to_string() }).to_string(),
+                    Vec::new(),
                 ),
             };
 
@@ -227,6 +249,7 @@ pub async fn run_turn(
                     ok,
                     summary,
                     duration_ms,
+                    changed_paths,
                 },
             );
 
@@ -255,16 +278,22 @@ fn build_working_messages(
     history: &[Message],
     tool_calls: &[crate::core::store::ToolCallRecord],
     user_text: &str,
+    web_enabled: bool,
 ) -> Vec<ChatMessage> {
     let mut messages = messages_from_store(history, tool_calls);
     if !messages.iter().any(|m| m.role == "system") {
+        let web_hint = if web_enabled {
+            "\nWeb 搜索已启用：需要项目外实时信息时用 web_search(query)；已知 URL 需读正文时用 web_extract(urls)。\n"
+        } else {
+            ""
+        };
         messages.insert(
             0,
             ChatMessage {
                 role: "system".into(),
                 content: Some(format!(
                     "You are doc-agent, an office document assistant.\n\
-                     用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。\n\n{}",
+                     用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。{web_hint}\n{}",
                     crate::core::skills::index_markdown()
                 )),
                 reasoning_content: None,

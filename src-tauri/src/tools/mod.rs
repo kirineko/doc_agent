@@ -1,3 +1,4 @@
+pub mod changed_paths;
 pub mod data;
 pub mod excel;
 pub mod fs;
@@ -8,6 +9,7 @@ pub mod pdf_ops;
 pub mod registry;
 pub mod runtime;
 pub mod skill;
+pub mod web;
 pub mod word;
 
 #[cfg(test)]

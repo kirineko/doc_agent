@@ -138,6 +138,8 @@ pub enum AgentEvent {
         ok: bool,
         summary: String,
         duration_ms: i64,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        changed_paths: Vec<String>,
     },
     TurnComplete {
         session_id: String,

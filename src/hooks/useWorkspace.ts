@@ -23,7 +23,8 @@ import {
 import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
 import { initialAgentStreamState, streamReducer } from "../lib/workspaceStream";
-import { API_PROVIDERS, type AgentEvent, type Message, type MessageBundle, type Project, type ProjectFileList, type Session } from "../types";
+import { useProjectFiles } from "./useProjectFiles";
+import { API_PROVIDERS, type AgentEvent, type Message, type MessageBundle, type Project, type Session } from "../types";
 
 function clearSendHighlights(
   setHighlightProject: (value: boolean) => void,
@@ -45,10 +46,11 @@ export function useWorkspace() {
   const [input, setInput] = useState("");
   const [stream, dispatchStream] = useReducer(streamReducer, initialAgentStreamState);
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
+  const [tavilyEnabled, setTavilyEnabled] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>([]);
   const [followupSuggestions, setFollowupSuggestions] = useState<string[]>([]);
-  const [filePaths, setFilePaths] = useState<string[]>([]);
+  const projectFiles = useProjectFiles(activeProjectId);
   const [sendHint, setSendHint] = useState<SendBlocker | null>(null);
   const [highlightProject, setHighlightProject] = useState(false);
   const [highlightApiKeyProvider, setHighlightApiKeyProvider] = useState<string>();
@@ -63,6 +65,8 @@ export function useWorkspace() {
   const pendingSessionConfigRef = useRef(pendingSessionConfig);
   const starterStartedRef = useRef<string | undefined>(undefined);
   const skipNextLoadRef = useRef(false);
+  const onProjectFilesAgentEventRef = useRef(projectFiles.onAgentEvent);
+  onProjectFilesAgentEventRef.current = projectFiles.onAgentEvent;
 
   activeSessionRef.current = activeSessionId;
   activeProjectRef.current = activeProjectId;
@@ -76,6 +80,9 @@ export function useWorkspace() {
       const has = await invoke<boolean>("has_api_key", { provider });
       setApiKeyStatus((prev) => ({ ...prev, [provider]: has }));
     });
+    invoke<boolean>("has_api_key", { provider: "tavily" })
+      .then(setTavilyEnabled)
+      .catch(console.error);
   }, []);
 
   const selectProject = useCallback(async (projectId: string | undefined) => {
@@ -88,23 +95,20 @@ export function useWorkspace() {
     if (!projectId) {
       setSessions([]);
       setActiveSessionId(undefined);
-      setFilePaths([]);
+      projectFiles.reset();
       return;
     }
 
     try {
-      const [list, files] = await Promise.all([
-        invoke<Session[]>("list_sessions", { projectId }),
-        invoke<ProjectFileList>("list_project_files_cmd", { projectId }),
-      ]);
+      const list = await invoke<Session[]>("list_sessions", { projectId });
       if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return;
       setSessions(list);
-      setFilePaths(files.entries.map((e) => e.path));
+      void projectFiles.loadInitial(projectId);
       setActiveSessionId(mostRecentSessionId(list));
     } catch (error) {
       console.error(error);
     }
-  }, []);
+  }, [projectFiles.loadInitial, projectFiles.reset]);
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -199,6 +203,7 @@ export function useWorkspace() {
     const unlisten = listen<AgentEvent>("agent-event", (event) => {
       const payload = event.payload;
       dispatchStream({ type: "event", event: payload, sessionId: activeSessionRef.current });
+      onProjectFilesAgentEventRef.current(payload);
       if (payload.kind === "assistant_step_done") {
         setMessages((prev) =>
           appendAssistantStepDone(prev, payload, activeSessionRef.current),
@@ -408,6 +413,10 @@ export function useWorkspace() {
     }
   }, [sendHint]);
 
+  const handleTavilyStatusChange = useCallback((has: boolean) => {
+    setTavilyEnabled(has);
+  }, []);
+
   const handlePendingSessionConfigChange = useCallback((patch: Partial<SessionConfig>) => {
     setPendingSessionConfig((prev) => ({ ...prev, ...patch }));
   }, []);
@@ -435,10 +444,12 @@ export function useWorkspace() {
     setInput,
     stream,
     apiKeyStatus,
+    tavilyEnabled,
     initializing,
     starterSuggestions,
     followupSuggestions,
-    filePaths,
+    filePaths: projectFiles.filePaths,
+    fileRevision: projectFiles.fileRevision,
     sendHint,
     highlightProject,
     highlightApiKeyProvider,
@@ -451,6 +462,7 @@ export function useWorkspace() {
     sendMessage,
     handleInitStarter,
     handleApiKeyStatusChange,
+    handleTavilyStatusChange,
     handlePendingSessionConfigChange,
     dismissSendHint,
     handleSessionUpdated,

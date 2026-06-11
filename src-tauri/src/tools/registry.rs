@@ -1,4 +1,5 @@
 use crate::core::sandbox::Sandbox;
+use crate::core::secrets::Secrets;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -18,6 +19,23 @@ pub enum ToolError {
 
 pub struct ToolContext<'a> {
     pub sandbox: &'a Sandbox,
+    pub secrets: Option<&'a Secrets>,
+}
+
+impl<'a> ToolContext<'a> {
+    pub fn new(sandbox: &'a Sandbox) -> Self {
+        Self {
+            sandbox,
+            secrets: None,
+        }
+    }
+
+    pub fn with_secrets(sandbox: &'a Sandbox, secrets: &'a Secrets) -> Self {
+        Self {
+            sandbox,
+            secrets: Some(secrets),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -31,6 +49,10 @@ pub struct ToolSpec {
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: Vec<ToolSpec>,
+}
+
+fn is_web_tool(name: &str) -> bool {
+    name.starts_with("web_")
 }
 
 impl ToolRegistry {
@@ -61,13 +83,16 @@ impl ToolRegistry {
                 crate::tools::pdf_ops::split_tool(),
                 crate::tools::pdf_ops::rotate_tool(),
                 crate::tools::pdf_ops::delete_pages_tool(),
+                crate::tools::web::search_tool(),
+                crate::tools::web::extract_tool(),
             ],
         }
     }
 
-    pub fn definitions(&self) -> Vec<crate::agent::types::ToolDefinition> {
+    pub fn definitions(&self, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
         self.tools
             .iter()
+            .filter(|t| include_web || !is_web_tool(t.name))
             .map(|t| crate::agent::types::ToolDefinition {
                 name: t.name.to_string(),
                 description: t.description.to_string(),
@@ -76,16 +101,29 @@ impl ToolRegistry {
             .collect()
     }
 
-    pub fn execute(&self, ctx: &ToolContext, name: &str, args: Value) -> Result<Value, ToolError> {
-        let tool = self
-            .tools
-            .iter()
-            .find(|t| t.name == name)
-            .ok_or_else(|| ToolError::Unknown(name.to_string()))?;
+    pub async fn execute(
+        &self,
+        ctx: &ToolContext<'_>,
+        name: &str,
+        args: Value,
+    ) -> Result<Value, ToolError> {
+        match name {
+            "web_search" => crate::tools::web::search_handler(ctx, args).await,
+            "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
+            _ => {
+                let tool = self
+                    .tools
+                    .iter()
+                    .find(|t| t.name == name)
+                    .ok_or_else(|| ToolError::Unknown(name.to_string()))?;
 
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (tool.handler)(ctx, args))) {
-            Ok(result) => result,
-            Err(_) => Err(ToolError::Execution(format!("tool {name} panicked"))),
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    (tool.handler)(ctx, args)
+                })) {
+                    Ok(result) => result,
+                    Err(_) => Err(ToolError::Execution(format!("tool {name} panicked"))),
+                }
+            }
         }
     }
 }

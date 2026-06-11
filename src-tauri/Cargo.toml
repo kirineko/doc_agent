@@ -43,6 +43,7 @@ lopdf = "0.38"
 quick-xml = { version = "0.37", features = ["serialize"] }
 zip = "7.2.0"
 base64 = "0.22"
+tavily = "2.1"
 
 tempfile = "3"
 

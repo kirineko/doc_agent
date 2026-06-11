@@ -106,6 +106,12 @@ fn should_skip_name(name: &str) -> bool {
     name.starts_with('.') || name == "node_modules" || name == "target" || name.starts_with("~$")
 }
 
+/// OOXML 解压工作目录：段名 `unpacked` 或以 `_unpacked` 结尾（大小写不敏感）。
+pub fn is_ooxml_work_dir_segment(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    lower == "unpacked" || lower.ends_with("_unpacked")
+}
+
 pub fn list_project_files(root: &Path) -> ProjectFileList {
     let mut entries = Vec::new();
     let mut truncated = false;
@@ -144,8 +150,15 @@ fn should_skip_entry(path: &Path, root: &Path) -> bool {
     if path == root {
         return false;
     }
-    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    should_skip_name(name)
+    let Some(rel) = path.strip_prefix(root).ok() else {
+        return true;
+    };
+    rel.components().any(|component| {
+        component
+            .as_os_str()
+            .to_str()
+            .is_some_and(|name| should_skip_name(name) || is_ooxml_work_dir_segment(name))
+    })
 }
 
 #[cfg(test)]
@@ -206,5 +219,22 @@ mod tests {
         assert!(paths.contains(&"docs/report.docx"));
         assert!(!paths.iter().any(|p| p.contains("node_modules")));
         assert!(!paths.iter().any(|p| p.contains("~$")));
+    }
+
+    #[test]
+    fn skips_ooxml_unpack_work_dirs_in_flat_list() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("report.docx"), b"x").unwrap();
+        fs::create_dir_all(root.join("unpacked/word")).unwrap();
+        fs::write(root.join("unpacked/word/document.xml"), b"<xml/>").unwrap();
+        fs::create_dir_all(root.join("contract_unpacked/word")).unwrap();
+        fs::write(root.join("contract_unpacked/word/document.xml"), b"<xml/>").unwrap();
+
+        let list = list_project_files(root);
+        let paths: Vec<_> = list.entries.iter().map(|e| e.path.as_str()).collect();
+        assert!(paths.contains(&"report.docx"));
+        assert!(!paths.iter().any(|p| p.contains("unpacked")));
+        assert!(!paths.iter().any(|p| p.contains("contract_unpacked")));
     }
 }

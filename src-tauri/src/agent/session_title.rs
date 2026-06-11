@@ -4,17 +4,56 @@ use crate::core::project_files::{text_contains_document_extension, DOCUMENT_EXTE
 const MAX_TITLE_CHARS: usize = 18;
 
 const FILLER_PHRASES: &[&str] = &[
-    "里面", "其中", "所有", "一下", "这个", "那个", "的内容", "的数据", "的信息", "专业的",
-    "目录里", "文件夹",
+    "里面",
+    "其中",
+    "所有",
+    "一下",
+    "这个",
+    "那个",
+    "的内容",
+    "的数据",
+    "的信息",
+    "专业的",
+    "目录里",
+    "文件夹",
 ];
 
 const GENERIC_OPENERS: &[&str] = &[
-    "你好", "您好", "嗨", "在吗", "你是谁", "介绍一下", "hi", "hello", "hey",
+    "你好",
+    "您好",
+    "嗨",
+    "在吗",
+    "你是谁",
+    "介绍一下",
+    "hi",
+    "hello",
+    "hey",
 ];
 
 const TASK_VERBS: &[&str] = &[
-    "分析", "总结", "转换", "导出", "合并", "列出", "查看", "读取", "修改", "生成", "整理", "处理",
-    "打开", "编写", "撰写", "提取", "对比", "比较", "检查", "审核", "翻译", "格式化", "查询",
+    "分析",
+    "总结",
+    "转换",
+    "导出",
+    "合并",
+    "列出",
+    "查看",
+    "读取",
+    "修改",
+    "生成",
+    "整理",
+    "处理",
+    "打开",
+    "编写",
+    "撰写",
+    "提取",
+    "对比",
+    "比较",
+    "检查",
+    "审核",
+    "翻译",
+    "格式化",
+    "查询",
 ];
 
 pub fn is_default_session_title(title: &str) -> bool {
@@ -69,7 +108,17 @@ fn normalize_for_opener_check(text: &str) -> String {
             !c.is_ascii_punctuation()
                 && !matches!(
                     c,
-                    '，' | '。' | '！' | '？' | '、' | '；' | '：' | '…' | '（' | '）' | '【' | '】'
+                    '，' | '。'
+                        | '！'
+                        | '？'
+                        | '、'
+                        | '；'
+                        | '：'
+                        | '…'
+                        | '（'
+                        | '）'
+                        | '【'
+                        | '】'
                 )
         })
         .flat_map(char::to_lowercase)
@@ -134,7 +183,7 @@ pub(crate) fn clean_intent(text: &str) -> String {
     compact_intent(&clean_question(text), true)
 }
 
-fn path_start_before_ext<'a>(before: &'a str) -> usize {
+fn path_start_before_ext(before: &str) -> usize {
     before
         .rfind('/')
         .map(|i| i + 1)
@@ -186,7 +235,10 @@ fn find_filename(text: &str) -> Option<String> {
             let ext_end = idx + dotted.len();
             let start = path_start_before_ext(&text[..idx]);
             let candidate = text[start..ext_end].to_string();
-            if best.as_ref().is_none_or(|(len, _)| candidate.chars().count() > *len) {
+            if best
+                .as_ref()
+                .is_none_or(|(len, _)| candidate.chars().count() > *len)
+            {
                 best = Some((candidate.chars().count(), candidate));
             }
         }
@@ -375,10 +427,8 @@ mod tests {
 
     #[test]
     fn compacts_path_and_filename_for_sidebar() {
-        let title = summarize_session_title(
-            "列出normalized/课程负责人.csv中软件工程专业的负责人",
-            None,
-        );
+        let title =
+            summarize_session_title("列出normalized/课程负责人.csv中软件工程专业的负责人", None);
         let t = title.expect("expected title");
         assert!(t.chars().count() <= MAX_TITLE_CHARS);
         assert!(t.contains("课程负责人.csv"));
@@ -398,10 +448,7 @@ mod tests {
 
     #[test]
     fn assistant_fallback_when_user_generic_but_assistant_has_substance() {
-        let title = summarize_session_title(
-            "你好",
-            Some("目录中包含课程大纲与考核方案。"),
-        );
+        let title = summarize_session_title("你好", Some("目录中包含课程大纲与考核方案。"));
         assert_eq!(title.as_deref(), Some("目录中包含课程大纲与考核方案。"));
     }
 

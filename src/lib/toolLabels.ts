@@ -23,6 +23,8 @@ export const TOOL_LABELS: Record<string, string> = {
   pdf_split: "拆分 PDF",
   pdf_rotate: "旋转 PDF",
   pdf_delete_pages: "删除 PDF 页面",
+  web_search: "Web 搜索",
+  web_extract: "抽取网页正文",
 };
 
 export const REGISTERED_TOOL_NAMES = Object.keys(TOOL_LABELS);
