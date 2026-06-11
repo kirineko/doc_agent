@@ -180,7 +180,7 @@ mod win {
     use std::sync::{Arc, Mutex};
     use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2_7;
     use webview2_com::PrintToPdfCompletedHandler;
-    use windows::core::{BOOL, HRESULT, Interface};
+    use windows::core::{Interface, BOOL, HRESULT};
 
     pub async fn print_pdf<R: Runtime>(
         window: &tauri::WebviewWindow<R>,
