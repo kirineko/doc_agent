@@ -100,7 +100,7 @@ async fn platform_print_pdf<R: Runtime>(
     }
     #[cfg(windows)]
     {
-        return windows::print_pdf(window, out_path).await;
+        return win::print_pdf(window, out_path).await;
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -173,7 +173,7 @@ mod macos {
 }
 
 #[cfg(windows)]
-mod windows {
+mod win {
     use super::*;
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
