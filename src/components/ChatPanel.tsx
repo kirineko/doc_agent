@@ -4,8 +4,11 @@ import { applyMention, deleteMentionBeforeCursor, detectMention } from "../lib/m
 import { isVisibleMessage } from "../lib/messages";
 import { Message } from "../types";
 import { FileMentionPopup } from "./FileMentionPopup";
+import { InitCapsule, InitLoadingCapsule } from "./InitCapsule";
 import { MessageList } from "./MessageList";
+import { SendHintBanner } from "./SendHintBanner";
 import { SuggestionCards } from "./SuggestionCards";
+import type { SendBlocker } from "../lib/sendReadiness";
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -14,13 +17,17 @@ interface ChatPanelProps {
   streamingContent: string;
   activity?: string;
   initializing?: boolean;
+  showInitCapsule?: boolean;
   starterSuggestions?: string[];
   followupSuggestions?: string[];
   filePaths?: string[];
   input: string;
   busy: boolean;
+  sendHint?: SendBlocker | null;
   onInputChange: (value: string) => void;
   onSend: () => void;
+  onInitStarter?: () => void;
+  onDismissSendHint?: () => void;
 }
 
 export function ChatPanel({
@@ -30,13 +37,17 @@ export function ChatPanel({
   streamingContent,
   activity,
   initializing,
+  showInitCapsule = false,
   starterSuggestions = [],
   followupSuggestions = [],
   filePaths = [],
   input,
   busy,
+  sendHint,
   onInputChange,
   onSend,
+  onInitStarter,
+  onDismissSendHint,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -59,6 +70,8 @@ export function ChatPanel({
     if (busy) return [];
     return followupSuggestions;
   }, [initializing, busy, visibleMessages.length, starterSuggestions, followupSuggestions]);
+
+  const showStarterCapsule = showInitCapsule && Boolean(onInitStarter);
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     bottomRef.current?.scrollIntoView({ behavior, block: "end" });
@@ -128,13 +141,6 @@ export function ChatPanel({
         onScroll={handleScroll}
         className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2"
       >
-        {initializing && (
-          <div className="flex flex-col items-center gap-2 py-12 text-sm text-slate-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
-            会话初始化中…正在阅读项目文档
-          </div>
-        )}
-
         <MessageList
           messages={visibleMessages}
           streamingReasoning={streamingReasoning}
@@ -151,6 +157,20 @@ export function ChatPanel({
           <SuggestionCards items={suggestionItems} onPick={pickSuggestion} />
         )}
 
+        {sendHint && onDismissSendHint && (
+          <SendHintBanner blocker={sendHint} onDismiss={onDismissSendHint} />
+        )}
+
+        {(showStarterCapsule || initializing) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {initializing ? (
+              <InitLoadingCapsule />
+            ) : (
+              onInitStarter && <InitCapsule onInit={onInitStarter} />
+            )}
+          </div>
+        )}
+
         <div className="relative flex gap-2">
           {mention && filePaths.length > 0 && (
             <FileMentionPopup
@@ -164,7 +184,7 @@ export function ChatPanel({
             className="min-h-20 flex-1 resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             placeholder={
               initializing
-                ? "会话初始化中…"
+                ? "正在分析文档…"
                 : busy
                   ? "等待回复中…"
                   : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件"
@@ -205,7 +225,7 @@ export function ChatPanel({
                   return;
                 }
               }
-              if (e.key === "Enter" && !e.shiftKey && !inputDisabled) {
+              if (e.key === "Enter" && !e.shiftKey && !inputDisabled && input.trim()) {
                 e.preventDefault();
                 onSend();
               }

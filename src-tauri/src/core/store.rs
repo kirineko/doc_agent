@@ -293,6 +293,14 @@ impl Store {
         }
     }
 
+    pub fn session_has_chat_messages(&self, session_id: &str) -> Result<bool, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT 1 FROM messages WHERE session_id = ?1 AND role IN ('user', 'assistant') LIMIT 1",
+        )?;
+        let mut rows = stmt.query(params![session_id])?;
+        Ok(rows.next()?.is_some())
+    }
+
     pub fn update_session(
         &self,
         id: &str,
@@ -304,6 +312,16 @@ impl Store {
         let current = self
             .get_session(id)?
             .ok_or_else(|| StoreError::Message("session not found".into()))?;
+        let has_chat = self.session_has_chat_messages(id)?;
+        if has_chat {
+            let model_locked = model.is_some_and(|m| m != current.model);
+            let thinking_locked = thinking_enabled.is_some_and(|v| v != current.thinking_enabled);
+            let effort_locked =
+                thinking_effort.is_some_and(|e| e != current.thinking_effort.as_str());
+            if model_locked || thinking_locked || effort_locked {
+                return Err(StoreError::Message("session model is locked".into()));
+            }
+        }
         let title = title.unwrap_or(&current.title);
         let model = model.unwrap_or(&current.model);
         let thinking_enabled = thinking_enabled.unwrap_or(current.thinking_enabled);
@@ -529,11 +547,18 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1].reasoning_content.as_deref(), Some("thinking"));
 
-        let updated = store
-            .update_session(&session.id, Some("renamed"), Some("kimi-k2.6"), None, None)
+        let renamed = store
+            .update_session(&session.id, Some("renamed"), None, None, None)
             .unwrap();
-        assert_eq!(updated.title, "renamed");
-        assert_eq!(updated.model, "kimi-k2.6");
+        assert_eq!(renamed.title, "renamed");
+        assert_eq!(renamed.model, "mock");
+
+        let locked = store.update_session(&session.id, None, Some("kimi-k2.6"), None, None);
+        assert!(locked.is_err());
+        assert!(locked
+            .unwrap_err()
+            .to_string()
+            .contains("session model is locked"));
 
         let tc = store
             .add_tool_call(&assistant.id, "call_1", "fs_list", r#"{"path":"."}"#)

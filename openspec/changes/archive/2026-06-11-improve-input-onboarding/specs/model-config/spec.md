@@ -1,8 +1,36 @@
-# model-config Specification
+## ADDED Requirements
 
-## Purpose
-TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after archive.
-## Requirements
+### Requirement: API Key 全局配置入口
+系统 SHALL 在侧栏提供与会话无关的 API Key 配置入口，至少覆盖 DeepSeek 与 Kimi；已保存的 Key MUST 默认以折叠/摘要形式展示以降低视觉干扰，未配置时展开输入。Key 配置 MUST NOT 依赖 activeSession 存在才可访问。
+
+#### Scenario: 无会话时可配置 Key
+- **WHEN** 用户已选项目但处于草稿态（无 activeSession）
+- **THEN** 仍可在侧栏配置并保存 API Key
+
+#### Scenario: 已保存 Key 低干扰展示
+- **WHEN** 某 provider 的 API Key 已保存
+- **THEN** 侧栏以折叠摘要（如「已保存」）展示，不默认展开密码输入框
+
+### Requirement: 默认会话模型配置
+系统 SHALL 在创建新会话（含懒创建与侧栏新建）时，若用户未显式选择其他模型，默认使用 DeepSeek V4 Flash、thinking enabled、thinking effort high。
+
+#### Scenario: 懒创建默认模型
+- **WHEN** 用户在草稿态直接发送且未修改 pending 模型配置
+- **THEN** 创建的会话 model 为 deepseek-v4-flash，thinking_enabled 为 true，thinking_effort 为 high
+
+### Requirement: 会话模型锁定
+系统 SHALL 在会话已存在至少一条 user 或 assistant 消息之后，禁止变更该会话的 model、thinking_enabled 与 thinking_effort；UI MUST 以只读展示，后端 MUST 拒绝非法 update 请求。
+
+#### Scenario: 首条消息后锁定
+- **WHEN** 会话已有 user 或 assistant 消息且用户尝试在侧栏切换模型
+- **THEN** UI 不提供可编辑控件，若通过 IPC 强制更新则返回错误
+
+#### Scenario: 空会话仍可改模型
+- **WHEN** 会话尚无任何 user 或 assistant 消息
+- **THEN** 用户可在侧栏修改模型与思考配置并持久化
+
+## MODIFIED Requirements
+
 ### Requirement: 多模型选择
 系统 SHALL 允许用户为**尚无 chat 消息的会话**（含草稿态 pending 配置）选择模型，至少支持 DeepSeek V4 Flash、DeepSeek V4 Pro、Kimi K2.6，并通过统一的 OpenAI 兼容 Provider 抽象接入。已有 chat 消息的会话 MUST NOT 允许切换模型。
 
@@ -42,33 +70,3 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 #### Scenario: 配置并使用密钥
 - **WHEN** 用户在侧栏全局区域输入某 provider 的 API Key 并保存
 - **THEN** 密钥存入 OS keychain，该 provider 下所有会话发起请求时从 keychain 读取，界面与日志不回显明文
-
-### Requirement: API Key 全局配置入口
-系统 SHALL 在侧栏提供与会话无关的 API Key 配置入口，至少覆盖 DeepSeek 与 Kimi；已保存的 Key MUST 默认以折叠/摘要形式展示以降低视觉干扰，未配置时展开输入。Key 配置 MUST NOT 依赖 activeSession 存在才可访问。
-
-#### Scenario: 无会话时可配置 Key
-- **WHEN** 用户已选项目但处于草稿态（无 activeSession）
-- **THEN** 仍可在侧栏配置并保存 API Key
-
-#### Scenario: 已保存 Key 低干扰展示
-- **WHEN** 某 provider 的 API Key 已保存
-- **THEN** 侧栏以折叠摘要（如「已保存」）展示，不默认展开密码输入框
-
-### Requirement: 默认会话模型配置
-系统 SHALL 在创建新会话（含懒创建与侧栏新建）时，若用户未显式选择其他模型，默认使用 DeepSeek V4 Flash、thinking enabled、thinking effort high。
-
-#### Scenario: 懒创建默认模型
-- **WHEN** 用户在草稿态直接发送且未修改 pending 模型配置
-- **THEN** 创建的会话 model 为 deepseek-v4-flash，thinking_enabled 为 true，thinking_effort 为 high
-
-### Requirement: 会话模型锁定
-系统 SHALL 在会话已存在至少一条 user 或 assistant 消息之后，禁止变更该会话的 model、thinking_enabled 与 thinking_effort；UI MUST 以只读展示，后端 MUST 拒绝非法 update 请求。
-
-#### Scenario: 首条消息后锁定
-- **WHEN** 会话已有 user 或 assistant 消息且用户尝试在侧栏切换模型
-- **THEN** UI 不提供可编辑控件，若通过 IPC 强制更新则返回错误
-
-#### Scenario: 空会话仍可改模型
-- **WHEN** 会话尚无任何 user 或 assistant 消息
-- **THEN** 用户可在侧栏修改模型与思考配置并持久化
-

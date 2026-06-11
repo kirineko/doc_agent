@@ -22,6 +22,8 @@ pub struct CreateSessionRequest {
     pub project_id: String,
     pub title: String,
     pub model: Option<String>,
+    pub thinking_enabled: Option<bool>,
+    pub thinking_effort: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -161,8 +163,8 @@ pub fn create_session(
             &req.project_id,
             &req.title,
             req.model.as_deref().unwrap_or("deepseek-v4-flash"),
-            true,
-            "high",
+            req.thinking_enabled.unwrap_or(true),
+            req.thinking_effort.as_deref().unwrap_or("high"),
         )
         .map_err(|e| e.to_string())
 }

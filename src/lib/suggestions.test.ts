@@ -3,21 +3,21 @@ import {
   countChatMessages,
   isStaleSessionResult,
   shouldDiscardFollowup,
-  shouldRunStarter,
+  canRequestStarter,
 } from "./suggestions";
 import type { Message } from "../types";
 
 describe("suggestions helpers", () => {
   it("skips starter without deepseek key", () => {
-    expect(shouldRunStarter(false, 0, false)).toBe(false);
+    expect(canRequestStarter(false, 0, false)).toBe(false);
   });
 
-  it("runs starter for empty session with key", () => {
-    expect(shouldRunStarter(true, 0, false)).toBe(true);
+  it("allows starter when explicitly requested with key", () => {
+    expect(canRequestStarter(true, 0, false)).toBe(true);
   });
 
   it("does not run starter when already initializing", () => {
-    expect(shouldRunStarter(true, 0, true)).toBe(false);
+    expect(canRequestStarter(true, 0, true)).toBe(false);
   });
 
   it("counts only user and assistant messages", () => {

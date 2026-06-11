@@ -4,7 +4,8 @@ export function countChatMessages(messages: Message[]): number {
   return messages.filter((m) => m.role === "user" || m.role === "assistant").length;
 }
 
-export function shouldRunStarter(
+/** Gate for explicit init-capsule starter requests (never auto-run). */
+export function canRequestStarter(
   hasDeepseekKey: boolean,
   messageCount: number,
   alreadyInitializing: boolean,

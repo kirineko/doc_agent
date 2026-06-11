@@ -30,9 +30,16 @@ pub struct ProjectDirListing {
     pub entries: Vec<ProjectDirEntry>,
 }
 
-const DOCUMENT_EXTENSIONS: &[&str] = &[
-    "docx", "xlsx", "pptx", "pdf", "md", "csv", "doc", "xls", "ppt",
+pub const DOCUMENT_EXTENSIONS: &[&str] = &[
+    "csv", "xlsx", "xls", "md", "docx", "doc", "pdf", "pptx", "ppt",
 ];
+
+pub fn text_contains_document_extension(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    DOCUMENT_EXTENSIONS
+        .iter()
+        .any(|ext| lower.contains(&format!(".{ext}")))
+}
 
 pub fn is_document_path(rel_path: &str) -> bool {
     Path::new(rel_path)
@@ -173,6 +180,14 @@ mod tests {
         assert_eq!(docs_list.path, "docs");
         assert_eq!(docs_list.entries.len(), 1);
         assert_eq!(docs_list.entries[0].name, "report.docx");
+    }
+
+    #[test]
+    fn text_contains_document_extension_matches_embedded_paths() {
+        assert!(text_contains_document_extension(
+            "列出normalized/课程负责人.csv中软件工程"
+        ));
+        assert!(!text_contains_document_extension("列出目录文件"));
     }
 
     #[test]

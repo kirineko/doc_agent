@@ -1,3 +1,5 @@
+import { splitPath } from "./pathUtils";
+
 export interface FuzzyMatch {
   item: string;
   score: number;
@@ -22,7 +24,7 @@ export function fuzzyMatch(query: string, items: string[]): FuzzyMatch[] {
         score += 5;
       }
     }
-    for (const segment of item.split(/[/\\]/)) {
+    for (const segment of splitPath(item)) {
       if (segment.toLowerCase().startsWith(q[0] ?? "")) {
         score += 3;
       }

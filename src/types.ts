@@ -84,6 +84,8 @@ export const MODEL_OPTIONS = [
   { id: "kimi-k2.6", label: "Kimi K2.6", provider: "kimi", supportsEffort: false },
 ] as const;
 
+export const API_PROVIDERS: string[] = [...new Set(MODEL_OPTIONS.map((m) => m.provider))];
+
 export function providerLabel(provider: string): string {
   switch (provider) {
     case "deepseek":

@@ -1,8 +1,5 @@
-# project-file-browser Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change workspace-product-polish. Update Purpose after archive.
-## Requirements
 ### Requirement: 项目目录单层浏览
 系统 SHALL 在右侧栏下半区提供项目文件浏览，仅展示当前项目根下的**单层**目录项；用户进入子目录后只显示该目录直接子项，不提供递归展开整棵树。非根目录时系统 MUST 提供 Finder 风格的列表首行「返回上级」入口，并在路径行展示可点击面包屑；项目根在面包屑中以 `⌂` 符号表示（须配备「项目根目录」无障碍标签），不再依赖标题栏角落的 `..` 作为唯一返回入口。
 
@@ -29,19 +26,3 @@ TBD - created by archiving change workspace-product-polish. Update Purpose after
 #### Scenario: 无项目时不展示
 - **WHEN** 用户尚未选择项目
 - **THEN** 文件浏览区显示占位提示，不发起目录列表请求
-
-### Requirement: 用系统默认应用打开文件
-系统 SHALL 允许用户从文件浏览区打开项目内文件，调用操作系统默认关联应用。
-
-#### Scenario: 双击打开文件
-- **WHEN** 用户双击浏览列表中的 `报告.docx`
-- **THEN** 系统用默认应用打开该项目目录下对应文件
-
-#### Scenario: 目录不可打开
-- **WHEN** 用户双击某目录项
-- **THEN** 系统进入该目录（与单击行为一致），不调用外部打开
-
-#### Scenario: 打开越界路径被拒绝
-- **WHEN** 前端传入的相对路径经 sandbox 解析后越界
-- **THEN** IPC 返回错误，不调用系统打开
-

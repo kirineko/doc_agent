@@ -1,6 +1,8 @@
 use crate::agent::provider::openai_compat::{effort_from_str, messages_from_store, model_from_str};
 use crate::agent::provider::provider_for;
-use crate::agent::session_title::{is_default_session_title, summarize_session_title};
+use crate::agent::session_title::{
+    is_autotitle_eligible_user_count, is_default_session_title, summarize_session_title,
+};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ToolCall,
 };
@@ -22,32 +24,33 @@ pub async fn run_turn(
     user_text: String,
 ) -> Result<(), String> {
     let turn_id = Uuid::new_v4().to_string();
-    let (_session, project, history, tool_call_history, model, thinking_enabled, thinking_effort) = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
-        let session = store
-            .get_session(&session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "session not found".to_string())?;
-        let project = store
-            .get_project(&session.project_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "project not found".to_string())?;
-        let history = store
-            .list_messages(&session_id)
-            .map_err(|e| e.to_string())?;
-        let tool_call_history = store
-            .list_tool_calls_for_session(&session_id)
-            .map_err(|e| e.to_string())?;
-        (
-            session.clone(),
-            project,
-            history,
-            tool_call_history,
-            session.model.clone(),
-            session.thinking_enabled,
-            session.thinking_effort.clone(),
-        )
-    };
+    let (session_title, project, history, tool_call_history, model, thinking_enabled, thinking_effort) =
+        {
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            let session = store
+                .get_session(&session_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "session not found".to_string())?;
+            let project = store
+                .get_project(&session.project_id)
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "project not found".to_string())?;
+            let history = store
+                .list_messages(&session_id)
+                .map_err(|e| e.to_string())?;
+            let tool_call_history = store
+                .list_tool_calls_for_session(&session_id)
+                .map_err(|e| e.to_string())?;
+            (
+                session.title,
+                project,
+                history,
+                tool_call_history,
+                session.model.clone(),
+                session.thinking_enabled,
+                session.thinking_effort.clone(),
+            )
+        };
 
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -55,6 +58,8 @@ pub async fn run_turn(
             .add_message(&session_id, "user", Some(&user_text), None, None)
             .map_err(|e| e.to_string())?;
     }
+
+    let user_count = history.iter().filter(|m| m.role == "user").count() + 1;
 
     let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
     let model_id = model_from_str(&model);
@@ -119,7 +124,14 @@ pub async fn run_turn(
                 Some(turn.reasoning_content.as_str()),
                 None,
             )?;
-            maybe_autotitle_session(&state, &session_id, &user_text, Some(turn.content.as_str()))?;
+            maybe_autotitle_session(
+                &state,
+                &session_id,
+                &session_title,
+                user_count,
+                &user_text,
+                Some(turn.content.as_str()),
+            )?;
             emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
             emit(
                 &app,
@@ -307,27 +319,28 @@ fn persist_assistant(
 fn maybe_autotitle_session(
     state: &AppState,
     session_id: &str,
+    session_title: &str,
+    user_count: usize,
     user_text: &str,
     assistant_text: Option<&str>,
 ) -> Result<(), String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    let session = store
-        .get_session(session_id)
+    if !is_default_session_title(session_title) || !is_autotitle_eligible_user_count(user_count) {
+        return Ok(());
+    }
+
+    let title = if user_count == 2 {
+        summarize_session_title(user_text, None)
+    } else {
+        summarize_session_title(user_text, assistant_text)
+    };
+    let Some(title) = title else {
+        return Ok(());
+    };
+
+    state
+        .store
+        .lock()
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| "session not found".to_string())?;
-
-    if !is_default_session_title(&session.title) {
-        return Ok(());
-    }
-
-    let messages = store.list_messages(session_id).map_err(|e| e.to_string())?;
-    let user_count = messages.iter().filter(|m| m.role == "user").count();
-    if user_count != 1 {
-        return Ok(());
-    }
-
-    let title = summarize_session_title(user_text, assistant_text);
-    store
         .update_session(session_id, Some(&title), None, None, None)
         .map_err(|e| e.to_string())?;
     Ok(())

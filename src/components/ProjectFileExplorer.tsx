@@ -1,18 +1,98 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { joinPath, parentPath, pathSegments, segmentTarget } from "../lib/pathUtils";
 import { ProjectDirListing } from "../types";
 
 interface ProjectFileExplorerProps {
   projectId?: string;
 }
 
-function joinPath(base: string, name: string): string {
-  return base === "." ? name : `${base}/${name}`;
+interface BreadcrumbProps {
+  currentPath: string;
+  onNavigate: (path: string) => void;
 }
 
-function parentPath(current: string): string {
-  const idx = current.lastIndexOf("/");
-  return idx < 0 ? "." : current.slice(0, idx);
+interface BreadcrumbSegment {
+  label: string;
+  path: string | null;
+  key: string;
+}
+
+const ROOT_BTN_CLASS =
+  "inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded text-base leading-none text-slate-400 hover:bg-slate-800/60 hover:text-cyan-300";
+
+function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
+  const segments = pathSegments(currentPath);
+  const isRoot = currentPath === ".";
+
+  if (isRoot) {
+    return (
+      <div className="mb-1 flex items-center" aria-current="page">
+        <span
+          className={`${ROOT_BTN_CLASS} cursor-default text-slate-200 hover:bg-transparent hover:text-slate-200`}
+          aria-label="项目根目录"
+          title="项目根目录"
+        >
+          ⌂
+        </span>
+      </div>
+    );
+  }
+
+  const useEllipsis = segments.length > 2;
+  const visibleSegments: BreadcrumbSegment[] = useEllipsis
+    ? [
+        { label: "…", path: null, key: "0-ellipsis" },
+        {
+          label: segments[segments.length - 2],
+          path: segmentTarget(segments, segments.length - 2),
+          key: `${segments.length - 2}-${segments[segments.length - 2]}`,
+        },
+        {
+          label: segments[segments.length - 1],
+          path: null,
+          key: `${segments.length - 1}-${segments[segments.length - 1]}`,
+        },
+      ]
+    : segments.map((seg, index) => ({
+        label: seg,
+        path: index < segments.length - 1 ? segmentTarget(segments, index) : null,
+        key: `${index}-${seg}`,
+      }));
+
+  return (
+    <div className="mb-1 flex min-w-0 items-center gap-0.5 truncate text-xs">
+      <button
+        type="button"
+        className={ROOT_BTN_CLASS}
+        aria-label="项目根目录"
+        title="返回项目根目录"
+        onClick={() => onNavigate(".")}
+      >
+        ⌂
+      </button>
+      {visibleSegments.map((item) => (
+        <span key={item.key} className="flex min-w-0 items-center gap-0.5">
+          <span className="shrink-0 text-slate-600">/</span>
+          {item.path ? (
+            <button
+              type="button"
+              className="truncate text-slate-400 hover:text-cyan-300"
+              onClick={() => {
+                if (item.path) onNavigate(item.path);
+              }}
+            >
+              {item.label}
+            </button>
+          ) : (
+            <span className="truncate text-slate-200" aria-current="page">
+              {item.label}
+            </span>
+          )}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
@@ -21,7 +101,10 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
   const [error, setError] = useState<string | null>(null);
   const currentPath = listing?.path ?? ".";
 
+  const loadSeqRef = useRef(0);
+
   const loadDir = useCallback(async (project: string, path: string) => {
+    const seq = ++loadSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -29,11 +112,15 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
         projectId: project,
         relativePath: path,
       });
+      if (seq !== loadSeqRef.current) return;
       setListing(result);
     } catch (e) {
+      if (seq !== loadSeqRef.current) return;
       setError(String(e));
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -58,21 +145,15 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
 
   return (
     <div className="flex min-h-0 flex-[0.38] flex-col border-t border-slate-800 pt-2">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-slate-200">项目文件</div>
-        {currentPath !== "." && projectId && (
-          <button
-            type="button"
-            className="text-[10px] text-slate-500 hover:text-cyan-300"
-            onClick={() => void loadDir(projectId, parentPath(currentPath))}
-          >
-            ..
-          </button>
-        )}
-      </div>
-      <div className="mb-1 truncate text-[10px] text-slate-500">
-        {projectId ? (currentPath === "." ? "/" : `/${currentPath}`) : "未选择项目"}
-      </div>
+      <div className="mb-1 text-xs font-medium text-slate-200">项目文件</div>
+      {projectId ? (
+        <Breadcrumb
+          currentPath={currentPath}
+          onNavigate={(path) => void loadDir(projectId, path)}
+        />
+      ) : (
+        <div className="mb-1 truncate text-[10px] text-slate-500">未选择项目</div>
+      )}
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
         {!projectId && (
           <div className="rounded-md border border-dashed border-slate-700 p-2 text-[11px] text-slate-500">
@@ -81,6 +162,17 @@ export function ProjectFileExplorer({ projectId }: ProjectFileExplorerProps) {
         )}
         {loading && <div className="text-[11px] text-slate-500">加载中…</div>}
         {error && <div className="text-[11px] text-rose-400">{error}</div>}
+        {projectId && currentPath !== "." && (
+          <button
+            type="button"
+            disabled={loading}
+            className="flex w-full items-center gap-1.5 rounded border border-dashed border-slate-700/80 bg-slate-900/40 px-1 py-0.5 text-left text-[11px] text-slate-400 hover:border-slate-600 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            onClick={() => void loadDir(projectId, parentPath(currentPath))}
+          >
+            <span className="shrink-0">📂</span>
+            <span>返回上级</span>
+          </button>
+        )}
         {listing?.entries.map((entry) => (
           <button
             key={entry.name}
