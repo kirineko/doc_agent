@@ -221,15 +221,16 @@ mod win {
                         }
                     };
 
-                    let handler = PrintToPdfCompletedHandler::create(Box::new(
+                    let handler = PrintToPdfCompletedHandler::create(Box::new({
+                        let tx = Arc::clone(&tx);
                         move |result: windows::core::Result<()>, _ok: bool| {
                             let result = result.map_err(|e| format!("PDF 生成失败: {e}"));
                             if let Some(sender) = tx.lock().ok().and_then(|mut g| g.take()) {
                                 let _ = sender.send(result);
                             }
                             Ok(())
-                        },
-                    ));
+                        }
+                    }));
 
                     if let Err(e) = webview.PrintToPdf(
                         windows::core::PCWSTR::from_raw(wide.as_ptr()),
