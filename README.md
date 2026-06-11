@@ -18,12 +18,14 @@
 
 ### 对话与界面
 
-- **三栏布局**：左侧配置 · 中间对话 · 右侧工具调用链
+- **三栏布局**：左侧配置 · 中间对话 · 右侧文件浏览与工具调用链
+- **明暗主题**：顶栏切换深色 / 浅色，偏好本地持久化
 - 流式 Markdown 渲染（代码高亮、表格、公式）
 - 模型**思考过程**默认折叠，点击可展开
 - 多轮工具调用时，每一步 assistant 回复独立展示，不会混在同一流式框中
-- 输入框支持 `@` **引用项目内文件**（模糊搜索文件名）
+- 输入框支持 `@` **引用项目内文件**（模糊搜索文件名）；Agent 改文件后浏览区与 `@` 列表自动同步
 - **智能推荐问**（需配置 DeepSeek Key）：空会话生成 3–4 条起步问题；每轮对话结束后生成 2–3 条 follow-up，点击填入输入框
+- **需求澄清**：模糊需求时 Agent 可通过 `clarify_ask` 暂停并收集结构化回答，确认后再继续
 
 ### 支持的模型
 
@@ -33,7 +35,7 @@
 | DeepSeek V4 Pro | DeepSeek | 可开关 | high / max |
 | Kimi K2.6 | Kimi | 可开关 | — |
 
-在侧栏为 DeepSeek / Kimi 分别配置 API Key 后即可使用对应模型。
+在侧栏为 DeepSeek / Kimi 分别配置 API Key 后即可使用对应模型。可选配置 **Tavily** Key 以启用联网搜索。
 
 ### 文档与工具能力
 
@@ -41,14 +43,17 @@ Agent 通过工具链操作项目内文件，主要包括：
 
 | 类别 | 能力 |
 |------|------|
-| 文件 | 列出 / 读取 / 写入 / 搜索 |
+| 文件 | 列出 / 读取 / 写入 / 补丁 / 搜索；右侧栏浏览项目内文件 |
 | Office 读取 | 将 Word / Excel / PPT / PDF 等转为 Markdown 供模型理解 |
-| Word | 创建与编辑 `.docx` |
-| Excel | 读取 / 写入 `.xlsx` |
+| 旧版 Office | `office_convert` 转换 `.doc` / `.xls` / `.ppt`；`.xls` 可直接 SQL 分析 |
+| Word | `skill_run` + docx-js 创建与编辑 `.docx`（OOXML 解包 / 回包） |
+| Excel | 读取 / 写入；`excel_describe` / `excel_normalize` 清洗不规则表 |
 | PDF | 合并、拆分、旋转、删除页面 |
+| HTML 报告 | 项目内静态 HTML 报告；可选 `html_to_pdf` 导出 PDF |
 | OOXML | 解包 / 打包、批注、接受修订 |
-| 数据分析 | 从 Word 表格提取数据、`polars-sql` 查询、IronCalc 重算公式 |
-| Document Skills | 内置 docx / pdf / pptx / xlsx 四类 skill 知识库；`skill_read` 按需加载指南，`skill_run` 执行 JavaScript（内置 exceljs、docx、pptxgenjs、pdf-lib） |
+| 数据分析 | Word 表格提取、`polars-sql` 查询、IronCalc 重算公式 |
+| 联网（可选） | Tavily `web_search` / `web_extract` |
+| Document Skills | 内置 docx / pdf / pptx / xlsx / html-report / clarify；`skill_read` + `skill_run`（exceljs、docx、pptxgenjs、pdf-lib） |
 
 所有文件操作受**沙箱**约束，路径不能逃出项目根目录。
 
@@ -67,6 +72,8 @@ Agent 通过工具链操作项目内文件，主要包括：
 ---
 
 ## 安装
+
+版本变更见 [CHANGELOG.md](./CHANGELOG.md)。
 
 从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载对应平台安装包：
 
