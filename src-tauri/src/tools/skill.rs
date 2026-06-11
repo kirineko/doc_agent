@@ -10,7 +10,7 @@ pub fn read_tool() -> ToolSpec {
     ToolSpec {
         name: "skill_read",
         description: "Read a built-in Document Skill guide. \
-            skill MUST be one of: docx, pdf, pptx, xlsx, html-report. \
+            skill MUST be one of: docx, pdf, pptx, xlsx, html-report, clarify. \
             doc is optional (default SKILL.md). \
             docx template editing: doc=editing.md. pptx API: doc=pptxgenjs.md; pptx template: skill=pptx, doc=editing.md. \
             Filenames like pptxgenjs.md alone work only when unique; editing.md requires skill=docx or skill=pptx.",
@@ -19,7 +19,7 @@ pub fn read_tool() -> ToolSpec {
             "properties": {
                 "skill": {
                     "type": "string",
-                    "description": "Skill id: docx, pdf, pptx, xlsx, html-report. Filenames like pptxgenjs.md are auto-resolved to skill=pptx."
+                    "description": "Skill id: docx, pdf, pptx, xlsx, html-report, clarify. Filenames like pptxgenjs.md are auto-resolved to skill=pptx."
                 },
                 "doc": {
                     "type": "string",

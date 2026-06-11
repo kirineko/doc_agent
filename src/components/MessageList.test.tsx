@@ -43,6 +43,43 @@ describe("MessageList smoke scenarios", () => {
     expect(screen.getByText("final answer")).toBeInTheDocument();
   });
 
+  it("renders answered clarify cards from tool call records", () => {
+    const assistant = assistantMessage("a1", "", "ask clarify");
+    render(
+      <MessageList
+        messages={[userMessage, assistant]}
+        toolCalls={[
+          {
+            id: "call1",
+            message_id: "a1",
+            name: "clarify_ask",
+            args_json: JSON.stringify({
+              id: "style",
+              kind: "single",
+              prompt: "选择视觉风格",
+              options: [{ id: "business", label: "商务深色" }],
+            }),
+            result_json: JSON.stringify({
+              question_id: "style",
+              selected: ["business"],
+              custom: null,
+              display_text: "商务深色",
+            }),
+            status: "done",
+            duration_ms: 0,
+            created_at: "now",
+          },
+        ]}
+        streamingReasoning=""
+        streamingContent=""
+        busy={false}
+      />,
+    );
+
+    expect(screen.getByText("选择视觉风格")).toBeInTheDocument();
+    expect(screen.getByText("已回答：商务深色")).toBeInTheDocument();
+  });
+
   it("single tool one step: two assistant bubbles, streaming resets between steps", () => {
     const step1 = assistantMessage("a1", "", "plan tool");
     const { rerender } = render(

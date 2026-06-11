@@ -8,6 +8,7 @@ const EXPECTED_TOOLS = [
   "fs_write",
   "fs_patch",
   "fs_search",
+  "clarify_ask",
   "office_read_to_markdown",
   "office_convert",
   "excel_read",

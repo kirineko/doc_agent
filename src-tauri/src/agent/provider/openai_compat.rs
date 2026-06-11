@@ -30,14 +30,22 @@ impl OpenAiCompatClient {
         let mut body = json!({
             "model": request.model.api_model(),
             "messages": request.messages,
-            "tools": request.tools.iter().map(|t| json!({
-                "type": "function",
-                "function": {
+            "tools": request.tools.iter().map(|t| {
+                let mut function = json!({
                     "name": t.name,
                     "description": t.description,
                     "parameters": t.parameters,
+                });
+                if t.strict == Some(true) {
+                    if let Some(obj) = function.as_object_mut() {
+                        obj.insert("strict".into(), json!(true));
+                    }
                 }
-            })).collect::<Vec<_>>(),
+                json!({
+                    "type": "function",
+                    "function": function,
+                })
+            }).collect::<Vec<_>>(),
             "stream": true,
         });
 

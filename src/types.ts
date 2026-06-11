@@ -36,6 +36,44 @@ export interface Session {
   updated_at: string;
 }
 
+
+export interface ClarifyOption {
+  id: string;
+  label: string;
+  hint?: string | null;
+}
+
+export type ClarifyKind = "single" | "multi" | "text" | "confirm_brief";
+
+export interface ClarifyQuestion {
+  id: string;
+  kind: ClarifyKind;
+  prompt: string;
+  description?: string | null;
+  options?: ClarifyOption[];
+  allow_custom?: boolean;
+  custom_label?: string | null;
+  custom_placeholder?: string | null;
+  min_selections?: number | null;
+  max_selections?: number | null;
+  brief?: Record<string, string> | null;
+}
+
+export interface ClarifyAnswer {
+  question_id: string;
+  selected: string[];
+  custom?: string | null;
+  display_text: string;
+  brief?: Record<string, string> | null;
+}
+
+export interface SubmitClarifyAnswerRequest {
+  session_id: string;
+  question_id: string;
+  selected?: string[];
+  custom?: string | null;
+}
+
 export interface Message {
   id: string;
   session_id: string;
@@ -61,6 +99,15 @@ export interface ToolCallRecord {
 export interface MessageBundle {
   messages: Message[];
   tool_calls: ToolCallRecord[];
+  clarify_pending?: ClarifyPending | null;
+}
+
+export interface ClarifyPending {
+  session_id: string;
+  turn_id: string;
+  tool_call_id: string;
+  question_json: string;
+  created_at: string;
 }
 
 export type AgentEvent =
@@ -79,6 +126,8 @@ export type AgentEvent =
       changed_paths?: string[];
     }
   | { kind: "turn_complete"; session_id: string; turn_id: string }
+  | { kind: "turn_awaiting_user"; session_id: string; turn_id: string }
+  | { kind: "clarify_question"; session_id: string; turn_id: string; tool_call_id: string; question: ClarifyQuestion }
   | {
       kind: "assistant_step_done";
       session_id: string;

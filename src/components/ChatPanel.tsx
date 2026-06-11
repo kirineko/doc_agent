@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { applyMention, deleteMentionBeforeCursor, detectMention } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
-import { Message } from "../types";
+import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
+import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { InitCapsule, InitLoadingCapsule } from "./InitCapsule";
 import { MessageList } from "./MessageList";
@@ -13,6 +14,8 @@ import type { SendBlocker } from "../lib/sendReadiness";
 interface ChatPanelProps {
   sessionId?: string;
   messages: Message[];
+  toolCalls?: ToolCallRecord[];
+  activeClarify?: { question: ClarifyQuestion };
   streamingReasoning: string;
   streamingContent: string;
   activity?: string;
@@ -26,6 +29,7 @@ interface ChatPanelProps {
   sendHint?: SendBlocker | null;
   onInputChange: (value: string) => void;
   onSend: () => void;
+  onSubmitClarify?: (payload: { selected: string[]; custom?: string | null }) => void;
   onInitStarter?: () => void;
   onDismissSendHint?: () => void;
 }
@@ -33,6 +37,8 @@ interface ChatPanelProps {
 export function ChatPanel({
   sessionId,
   messages,
+  toolCalls = [],
+  activeClarify,
   streamingReasoning,
   streamingContent,
   activity,
@@ -46,6 +52,7 @@ export function ChatPanel({
   sendHint,
   onInputChange,
   onSend,
+  onSubmitClarify,
   onInitStarter,
   onDismissSendHint,
 }: ChatPanelProps) {
@@ -58,7 +65,8 @@ export function ChatPanel({
 
   const visibleMessages = useMemo(() => messages.filter(isVisibleMessage), [messages]);
   const lastMessageId = visibleMessages.at(-1)?.id;
-  const inputDisabled = busy || initializing;
+  const hasActiveClarify = Boolean(activeClarify);
+  const inputDisabled = busy || initializing || hasActiveClarify;
   const mention = detectMention(input, cursor);
   const mentionMatches = useMemo(() => {
     if (!mention || filePaths.length === 0) return [];
@@ -66,10 +74,11 @@ export function ChatPanel({
   }, [mention, filePaths]);
   const suggestionItems = useMemo(() => {
     if (initializing) return [];
+    if (hasActiveClarify) return [];
     if (visibleMessages.length === 0) return starterSuggestions;
     if (busy) return [];
     return followupSuggestions;
-  }, [initializing, busy, visibleMessages.length, starterSuggestions, followupSuggestions]);
+  }, [initializing, hasActiveClarify, busy, visibleMessages.length, starterSuggestions, followupSuggestions]);
 
   const showStarterCapsule = showInitCapsule && Boolean(onInitStarter);
 
@@ -143,6 +152,7 @@ export function ChatPanel({
       >
         <MessageList
           messages={visibleMessages}
+          toolCalls={toolCalls}
           streamingReasoning={streamingReasoning}
           streamingContent={streamingContent}
           activity={activity}
@@ -155,6 +165,13 @@ export function ChatPanel({
       <div className="mt-2 shrink-0 space-y-2">
         {suggestionItems.length > 0 && (
           <SuggestionCards items={suggestionItems} onPick={pickSuggestion} />
+        )}
+
+        {activeClarify && (
+          <ClarifyQuestionCard
+            question={activeClarify.question}
+            onSubmit={onSubmitClarify}
+          />
         )}
 
         {sendHint && onDismissSendHint && (
@@ -185,7 +202,9 @@ export function ChatPanel({
             placeholder={
               initializing
                 ? "正在分析文档…"
-                : busy
+                : hasActiveClarify
+                  ? "请先回答上方澄清问题"
+                  : busy
                   ? "等待回复中…"
                   : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件"
             }

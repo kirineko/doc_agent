@@ -42,6 +42,8 @@ function App() {
         <ChatPanel
           sessionId={ws.activeSessionId}
           messages={ws.messages}
+          toolCalls={ws.toolCalls}
+          activeClarify={ws.activeClarify}
           streamingReasoning={ws.stream.streamingReasoning}
           streamingContent={ws.stream.streamingContent}
           activity={ws.activity}
@@ -55,6 +57,7 @@ function App() {
           sendHint={ws.sendHint}
           onInputChange={ws.setInput}
           onSend={ws.sendMessage}
+          onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
           onInitStarter={() => void ws.handleInitStarter()}
           onDismissSendHint={ws.dismissSendHint}
         />

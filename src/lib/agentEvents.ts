@@ -107,6 +107,8 @@ export function applyAgentEvent(
       };
     case "turn_complete":
       return clearStreamingBuffers(state, false);
+    case "turn_awaiting_user":
+      return clearStreamingBuffers(state, false);
     case "assistant_step_done":
       return clearStreamingBuffers(state);
     case "error":
@@ -120,6 +122,7 @@ export function applyAgentEvent(
   }
 }
 
+/** 新用户消息开始新 turn：清空工具链与流式缓冲 */
 export function markAgentBusy(state: AgentStreamState): AgentStreamState {
   return {
     ...state,
@@ -128,4 +131,18 @@ export function markAgentBusy(state: AgentStreamState): AgentStreamState {
     streamingReasoning: "",
     streamingContent: "",
   };
+}
+
+/** 澄清提交后 resume 同一 turn：保留已有工具链，仅清流式缓冲 */
+export function markAgentResuming(state: AgentStreamState): AgentStreamState {
+  return {
+    ...state,
+    busy: true,
+    streamingReasoning: "",
+    streamingContent: "",
+  };
+}
+
+export function resetAgentStream(): AgentStreamState {
+  return initialAgentStreamState;
 }

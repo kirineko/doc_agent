@@ -57,6 +57,15 @@ pub struct ToolCallRecord {
     pub created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClarifyPending {
+    pub session_id: String,
+    pub turn_id: String,
+    pub tool_call_id: String,
+    pub question_json: String,
+    pub created_at: String,
+}
+
 pub struct Store {
     conn: Connection,
 }
@@ -114,6 +123,15 @@ impl Store {
                 duration_ms INTEGER NOT NULL,
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(message_id) REFERENCES messages(id)
+            );
+            CREATE TABLE IF NOT EXISTS clarify_pending (
+                session_id TEXT PRIMARY KEY,
+                turn_id TEXT NOT NULL,
+                tool_call_id TEXT NOT NULL,
+                question_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES sessions(id),
+                FOREIGN KEY(tool_call_id) REFERENCES tool_calls(id)
             );
             CREATE TABLE IF NOT EXISTS settings (
                 key TEXT PRIMARY KEY,
@@ -466,6 +484,79 @@ impl Store {
         Ok(())
     }
 
+    pub fn update_tool_call_status(&self, id: &str, status: &str) -> Result<(), StoreError> {
+        let updated = self.conn.execute(
+            "UPDATE tool_calls SET status = ?1 WHERE id = ?2",
+            params![status, id],
+        )?;
+        if updated == 0 {
+            return Err(StoreError::Message("tool call not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn update_tool_call_args(&self, id: &str, args_json: &str) -> Result<(), StoreError> {
+        let updated = self.conn.execute(
+            "UPDATE tool_calls SET args_json = ?1 WHERE id = ?2",
+            params![args_json, id],
+        )?;
+        if updated == 0 {
+            return Err(StoreError::Message("tool call not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn save_clarify_pending(
+        &self,
+        session_id: &str,
+        turn_id: &str,
+        tool_call_id: &str,
+        question_json: &str,
+    ) -> Result<ClarifyPending, StoreError> {
+        let created_at = now();
+        self.conn.execute(
+            "INSERT INTO clarify_pending (session_id, turn_id, tool_call_id, question_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![session_id, turn_id, tool_call_id, question_json, created_at],
+        )?;
+        Ok(ClarifyPending {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            tool_call_id: tool_call_id.to_string(),
+            question_json: question_json.to_string(),
+            created_at,
+        })
+    }
+
+    pub fn get_clarify_pending(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ClarifyPending>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT session_id, turn_id, tool_call_id, question_json, created_at
+             FROM clarify_pending WHERE session_id = ?1",
+        )?;
+        let mut rows = stmt.query(params![session_id])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(ClarifyPending {
+                session_id: row.get(0)?,
+                turn_id: row.get(1)?,
+                tool_call_id: row.get(2)?,
+                question_json: row.get(3)?,
+                created_at: row.get(4)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn delete_clarify_pending(&self, session_id: &str) -> Result<usize, StoreError> {
+        Ok(self.conn.execute(
+            "DELETE FROM clarify_pending WHERE session_id = ?1",
+            params![session_id],
+        )?)
+    }
+
     pub fn list_tool_calls_for_session(
         &self,
         session_id: &str,
@@ -599,6 +690,48 @@ mod tests {
             store.list_sessions(&p1.id).unwrap()[0].id,
             store.list_sessions(&p2.id).unwrap()[0].id
         );
+    }
+
+    #[test]
+    fn clarify_pending_crud_and_status() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        let assistant = store
+            .add_message(&session.id, "assistant", None, Some("thinking"), None)
+            .unwrap();
+        store
+            .add_tool_call(
+                &assistant.id,
+                "call_clarify",
+                "clarify_ask",
+                r#"{"id":"q1","kind":"text","prompt":"主题？"}"#,
+            )
+            .unwrap();
+
+        store
+            .update_tool_call_status("call_clarify", "awaiting_user")
+            .unwrap();
+        store
+            .save_clarify_pending(
+                &session.id,
+                "turn-1",
+                "call_clarify",
+                r#"{"id":"q1","kind":"text","prompt":"主题？"}"#,
+            )
+            .unwrap();
+
+        let pending = store.get_clarify_pending(&session.id).unwrap().unwrap();
+        assert_eq!(pending.turn_id, "turn-1");
+        assert_eq!(pending.tool_call_id, "call_clarify");
+        let calls = store.list_tool_calls_for_session(&session.id).unwrap();
+        assert_eq!(calls[0].status, "awaiting_user");
+
+        assert_eq!(store.delete_clarify_pending(&session.id).unwrap(), 1);
+        assert_eq!(store.delete_clarify_pending(&session.id).unwrap(), 0);
     }
 
     #[test]

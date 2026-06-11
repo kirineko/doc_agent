@@ -100,6 +100,52 @@ pub struct ToolDefinition {
     pub name: String,
     pub description: String,
     pub parameters: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub strict: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClarifyOption {
+    pub id: String,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClarifyQuestion {
+    pub id: String,
+    pub kind: String,
+    pub prompt: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<ClarifyOption>,
+    #[serde(default)]
+    pub allow_custom: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom_placeholder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_selections: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_selections: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brief: Option<Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClarifyAnswer {
+    pub question_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub selected: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub custom: Option<String>,
+    pub display_text: String,
+    /// confirm_brief 确认时回传创作简报，保证 tool result 自含结构化 brief
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brief: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +190,16 @@ pub enum AgentEvent {
     TurnComplete {
         session_id: String,
         turn_id: String,
+    },
+    TurnAwaitingUser {
+        session_id: String,
+        turn_id: String,
+    },
+    ClarifyQuestion {
+        session_id: String,
+        turn_id: String,
+        tool_call_id: String,
+        question: ClarifyQuestion,
     },
     AssistantStepDone {
         session_id: String,

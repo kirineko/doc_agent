@@ -76,6 +76,7 @@ impl ToolRegistry {
                 crate::tools::fs::write_tool(),
                 crate::tools::fs::patch_tool(),
                 crate::tools::fs::search_tool(),
+                crate::tools::clarify::ask_tool(),
                 crate::tools::office::read_markdown_tool(),
                 crate::tools::office::convert_tool(),
                 crate::tools::excel::read_tool(),
@@ -110,6 +111,11 @@ impl ToolRegistry {
                 name: t.name.to_string(),
                 description: t.description.to_string(),
                 parameters: t.parameters.clone(),
+                strict: if t.name == "clarify_ask" {
+                    Some(true)
+                } else {
+                    None
+                },
             })
             .collect()
     }

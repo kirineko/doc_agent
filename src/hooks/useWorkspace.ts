@@ -24,7 +24,20 @@ import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
 import { initialAgentStreamState, streamReducer } from "../lib/workspaceStream";
 import { useProjectFiles } from "./useProjectFiles";
-import { API_PROVIDERS, type AgentEvent, type Message, type MessageBundle, type Project, type Session } from "../types";
+import {
+  type ActiveClarify,
+  messageBundleState,
+  parseClarifyQuestion,
+} from "../lib/clarifyBrief";
+import {
+  API_PROVIDERS,
+  type AgentEvent,
+  type Message,
+  type MessageBundle,
+  type Project,
+  type Session,
+  type ToolCallRecord,
+} from "../types";
 
 function clearSendHighlights(
   setHighlightProject: (value: boolean) => void,
@@ -38,6 +51,8 @@ export function useWorkspace() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [toolCalls, setToolCalls] = useState<ToolCallRecord[]>([]);
+  const [activeClarify, setActiveClarify] = useState<ActiveClarify>();
   const [messagesLoaded, setMessagesLoaded] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState<string>();
   const [activeSessionId, setActiveSessionId] = useState<string>();
@@ -73,6 +88,18 @@ export function useWorkspace() {
   messagesRef.current = messages;
   sessionsRef.current = sessions;
   pendingSessionConfigRef.current = pendingSessionConfig;
+
+  function applyBundle(bundle: MessageBundle) {
+    const next = messageBundleState(bundle);
+    setMessages(next.messages);
+    setToolCalls(next.toolCalls);
+    setActiveClarify(next.activeClarify);
+  }
+
+  function clearSuggestions() {
+    setStarterSuggestions([]);
+    setFollowupSuggestions([]);
+  }
 
   useEffect(() => {
     invoke<Project[]>("list_projects").then(setProjects).catch(console.error);
@@ -111,8 +138,12 @@ export function useWorkspace() {
   }, [projectFiles.loadInitial, projectFiles.reset]);
 
   useEffect(() => {
+    dispatchStream({ type: "reset" });
+
     if (!activeSessionId) {
       setMessages([]);
+      setToolCalls([]);
+      setActiveClarify(undefined);
       setMessagesLoaded(true);
       setStarterSuggestions([]);
       setFollowupSuggestions([]);
@@ -128,6 +159,8 @@ export function useWorkspace() {
 
     let cancelled = false;
     setMessages([]);
+    setToolCalls([]);
+    setActiveClarify(undefined);
     setMessagesLoaded(false);
     setStarterSuggestions([]);
     setFollowupSuggestions([]);
@@ -137,7 +170,7 @@ export function useWorkspace() {
     invoke<MessageBundle>("list_messages", { sessionId: activeSessionId })
       .then((bundle) => {
         if (cancelled) return;
-        setMessages(bundle.messages);
+        applyBundle(bundle);
         setMessagesLoaded(true);
       })
       .catch((error) => {
@@ -209,13 +242,31 @@ export function useWorkspace() {
           appendAssistantStepDone(prev, payload, activeSessionRef.current),
         );
       }
+      if (payload.kind === "clarify_question") {
+        if (isStaleSessionResult(payload.session_id, activeSessionRef.current)) return;
+        setActiveClarify({
+          toolCallId: payload.tool_call_id,
+          question: parseClarifyQuestion(payload.question) ?? payload.question,
+        });
+        clearSuggestions();
+      }
+      if (payload.kind === "tool_result") {
+        if (isStaleSessionResult(payload.session_id, activeSessionRef.current)) return;
+        setActiveClarify((prev) =>
+          prev?.toolCallId === payload.id ? undefined : prev,
+        );
+      }
+      if (payload.kind === "turn_awaiting_user") {
+        if (isStaleSessionResult(payload.session_id, activeSessionRef.current)) return;
+        clearSuggestions();
+      }
       if (payload.kind === "turn_complete" && activeSessionRef.current) {
         const sessionId = activeSessionRef.current;
         if (isStaleSessionResult(payload.session_id, sessionId)) return;
         invoke<MessageBundle>("list_messages", { sessionId })
           .then((bundle) => {
-            setMessages(bundle.messages);
-            setFollowupSuggestions([]);
+            applyBundle(bundle);
+            clearSuggestions();
             if (activeProjectRef.current) {
               invoke<Session[]>("list_sessions", { projectId: activeProjectRef.current })
                 .then(setSessions)
@@ -267,7 +318,7 @@ export function useWorkspace() {
 
   async function reloadMessages(sessionId: string) {
     const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
-    setMessages(bundle.messages);
+    applyBundle(bundle);
     setMessagesLoaded(true);
   }
 
@@ -327,6 +378,7 @@ export function useWorkspace() {
   async function sendMessageContent(content: string) {
     const trimmed = content.trim();
     if (!trimmed || stream.busy || sendingRef.current) return;
+    if (activeClarify) return;
 
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
     const blocker = getSendBlocker({
@@ -380,6 +432,39 @@ export function useWorkspace() {
 
   async function sendMessage() {
     await sendMessageContent(input);
+  }
+
+  async function submitClarifyAnswer(payload: { selected: string[]; custom?: string | null }) {
+    if (!activeSessionRef.current || !activeClarify) return;
+    const sessionId = activeSessionRef.current;
+    const questionId = activeClarify.question.id;
+    const previousActive = activeClarify;
+    // 提交后立即收起底部卡片；若 resume 又触发新 clarify，由 clarify_question 事件恢复
+    setActiveClarify(undefined);
+    dispatchStream({ type: "busy_resume" });
+    try {
+      await invoke("submit_clarify_answer", {
+        req: {
+          session_id: sessionId,
+          question_id: questionId,
+          selected: payload.selected,
+          custom: payload.custom ?? null,
+        },
+      });
+    } catch (error) {
+      console.error(error);
+      setActiveClarify(previousActive);
+      dispatchStream({
+        type: "event",
+        event: {
+          kind: "error",
+          session_id: sessionId,
+          turn_id: "local",
+          message: String(error),
+        },
+        sessionId,
+      });
+    }
   }
 
   async function handleInitStarter() {
@@ -436,6 +521,8 @@ export function useWorkspace() {
     sessions,
     setSessions,
     messages,
+    toolCalls,
+    activeClarify,
     activeProjectId,
     activeSessionId,
     setActiveSessionId,
@@ -460,6 +547,7 @@ export function useWorkspace() {
     showInitCapsule,
     selectProject,
     sendMessage,
+    submitClarifyAnswer,
     handleInitStarter,
     handleApiKeyStatusChange,
     handleTavilyStatusChange,

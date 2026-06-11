@@ -126,6 +126,7 @@ async function main() {{
             "fs_write",
             "fs_patch",
             "fs_search",
+            "clarify_ask",
             "office_read_to_markdown",
             "office_convert",
             "excel_read",
@@ -644,6 +645,132 @@ return { ok: true };
         assert!(content.contains("doc-agent 系统约束"));
         assert!(content.contains("office_read_to_markdown"));
         assert!(!content.contains("python "));
+    }
+
+    #[test]
+    fn clarify_ask_accepts_single_question() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "doc_type",
+                "kind": "single",
+                "prompt": "文档类型？",
+                "options": [
+                    { "id": "docx", "label": "Word" },
+                    { "id": "pptx", "label": "PPT" }
+                ]
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["id"], "doc_type");
+        assert_eq!(out["allow_custom"], true);
+    }
+
+    #[test]
+    fn clarify_ask_rejects_invalid_options() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "doc_type",
+                "kind": "single",
+                "prompt": "文档类型？",
+                "options": [{ "id": "docx", "label": "Word" }]
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("requires 2-6 options"));
+    }
+
+    #[test]
+    fn clarify_ask_requires_brief_for_confirm_brief() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "brief",
+                "kind": "confirm_brief",
+                "prompt": "确认简报"
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("requires brief"));
+    }
+
+    #[test]
+    fn clarify_ask_unwraps_nested_brief_wrapper() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "brief",
+                "kind": "confirm_brief",
+                "prompt": "请确认创作简报",
+                "brief": {
+                    "创作简报": {
+                        "文档类型": "PPT",
+                        "主题/目标": "年度总结",
+                        "排版风格": "**简约留白**"
+                    }
+                }
+            }),
+        )
+        .unwrap();
+        let brief = out["brief"].as_object().unwrap();
+        assert_eq!(brief.get("文档类型").and_then(|v| v.as_str()), Some("PPT"));
+        assert_eq!(
+            brief.get("排版风格").and_then(|v| v.as_str()),
+            Some("**简约留白**")
+        );
+        assert!(brief.get("创作简报").is_none());
+    }
+
+    #[test]
+    fn clarify_ask_flattens_nested_brief_field() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "brief",
+                "kind": "confirm_brief",
+                "prompt": "确认",
+                "brief": {
+                    "文档类型": { "value": "PPT" }
+                }
+            }),
+        )
+        .unwrap();
+        let brief = out["brief"].as_object().unwrap();
+        assert_eq!(
+            brief.get("文档类型").and_then(|v| v.as_str()),
+            Some("value：PPT")
+        );
     }
 
     #[test]
@@ -1824,12 +1951,43 @@ async function main() {
     }
 
     #[test]
-    fn skills_index_lists_five_skills() {
+    fn skills_index_lists_six_skills() {
         let md = crate::core::skills::index_markdown();
-        for name in ["docx", "pdf", "pptx", "xlsx", "html-report"] {
+        for name in ["docx", "pdf", "pptx", "xlsx", "html-report", "clarify"] {
             assert!(md.contains(name), "missing {name} in index");
         }
-        assert_eq!(crate::core::skills::available_names().len(), 5);
+        assert_eq!(crate::core::skills::available_names().len(), 6);
+    }
+
+    #[test]
+    fn skill_read_clarify_returns_clarify_guide() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "skill_read", json!({ "skill": "clarify" })).unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("创作简报"));
+        assert!(content.contains("排版 / 样式"));
+        assert!(content.contains("深度控制"));
+        assert!(content.contains("Word 文档"));
+        assert!(content.contains("PPT 演示"));
+        assert!(content.contains("Excel 表格"));
+        assert!(content.contains("编辑已有文件"));
+    }
+
+    #[test]
+    fn unknown_skill_error_lists_clarify() {
+        let err = crate::core::skills::read("unknown", None).unwrap_err();
+        assert!(err.contains("clarify"));
+    }
+
+    #[test]
+    fn clarify_skill_defines_standard_and_minimal_paths() {
+        let content = crate::core::skills::read("clarify", None).unwrap();
+        assert!(content.contains("4–6"));
+        assert!(content.contains("1–2"));
+        assert!(content.contains("逐问澄清"));
     }
 
     #[test]

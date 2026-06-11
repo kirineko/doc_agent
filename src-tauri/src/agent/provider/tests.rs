@@ -22,6 +22,7 @@ mod provider_tests {
                 name: "fs_list".into(),
                 description: "list".into(),
                 parameters: serde_json::json!({}),
+                strict: None,
             }],
             thinking: ThinkingConfig {
                 enabled: true,

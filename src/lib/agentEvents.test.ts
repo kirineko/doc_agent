@@ -3,6 +3,8 @@ import {
   applyAgentEvent,
   initialAgentStreamState,
   markAgentBusy,
+  markAgentResuming,
+  resetAgentStream,
 } from "./agentEvents";
 
 describe("applyAgentEvent", () => {
@@ -204,5 +206,59 @@ describe("applyAgentEvent", () => {
       sessionId,
     );
     expect(state.streamingContent).toBe("partial");
+  });
+
+  it("markAgentResuming keeps liveTools while clearing streaming buffers", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_1",
+        name: "skill_read",
+        args: { skill: "clarify" },
+        status: "done",
+      },
+      sessionId,
+    );
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_2",
+        name: "clarify_ask",
+        args: { id: "q1" },
+        status: "awaiting_user",
+      },
+      sessionId,
+    );
+    state = {
+      ...state,
+      streamingReasoning: "thinking",
+      streamingContent: "partial",
+    };
+
+    const resumed = markAgentResuming(state);
+
+    expect(resumed.busy).toBe(true);
+    expect(resumed.liveTools).toHaveLength(2);
+    expect(resumed.liveTools[1]?.status).toBe("awaiting_user");
+    expect(resumed.streamingReasoning).toBe("");
+    expect(resumed.streamingContent).toBe("");
+  });
+
+  it("resetAgentStream clears all stream state", () => {
+    const dirty = {
+      ...markAgentBusy(initialAgentStreamState),
+      liveTools: [
+        { id: "call_1", name: "fs_list", args: {}, status: "done" },
+      ],
+    };
+    expect(resetAgentStream()).toEqual(initialAgentStreamState);
+    expect(resetAgentStream()).not.toEqual(dirty);
   });
 });

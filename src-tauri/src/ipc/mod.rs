@@ -1,10 +1,10 @@
-use crate::agent::loop_runner;
 use crate::agent::suggest;
+use crate::agent::{clarify_interaction, loop_runner};
 use crate::core::project_files::{
     list_project_dir, list_project_files, ProjectDirListing, ProjectFileList,
 };
 use crate::core::sandbox::Sandbox;
-use crate::core::store::{Message, Project, Session, ToolCallRecord};
+use crate::core::store::{ClarifyPending, Message, Project, Session, ToolCallRecord};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -39,6 +39,20 @@ pub struct UpdateSessionRequest {
 pub struct SendMessageRequest {
     pub session_id: String,
     pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubmitClarifyAnswerRequest {
+    pub session_id: String,
+    pub question_id: String,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    pub custom: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CancelClarifyRequest {
+    pub session_id: String,
 }
 
 #[tauri::command]
@@ -202,6 +216,7 @@ pub fn delete_session(state: State<AppState>, session_id: String) -> Result<(), 
 pub struct MessageBundle {
     pub messages: Vec<Message>,
     pub tool_calls: Vec<ToolCallRecord>,
+    pub clarify_pending: Option<ClarifyPending>,
 }
 
 #[tauri::command]
@@ -213,6 +228,9 @@ pub fn list_messages(state: State<AppState>, session_id: String) -> Result<Messa
             .map_err(|e| e.to_string())?,
         tool_calls: store
             .list_tool_calls_for_session(&session_id)
+            .map_err(|e| e.to_string())?,
+        clarify_pending: store
+            .get_clarify_pending(&session_id)
             .map_err(|e| e.to_string())?,
     })
 }
@@ -229,6 +247,44 @@ pub async fn send_message(
         tools: state.tools.clone(),
     };
     loop_runner::run_turn(app, shared, req.session_id, req.content).await
+}
+
+#[tauri::command]
+pub async fn submit_clarify_answer(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: SubmitClarifyAnswerRequest,
+) -> Result<(), String> {
+    let shared = AppState {
+        store: state.store.clone(),
+        secrets: state.secrets.clone(),
+        tools: state.tools.clone(),
+    };
+    clarify_interaction::submit_clarify_answer(
+        app,
+        shared,
+        clarify_interaction::SubmitClarifyAnswer {
+            session_id: req.session_id,
+            question_id: req.question_id,
+            selected: req.selected,
+            custom: req.custom,
+        },
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn cancel_clarify(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    req: CancelClarifyRequest,
+) -> Result<(), String> {
+    let shared = AppState {
+        store: state.store.clone(),
+        secrets: state.secrets.clone(),
+        tools: state.tools.clone(),
+    };
+    clarify_interaction::cancel_clarify(app, shared, req.session_id).await
 }
 
 #[tauri::command]

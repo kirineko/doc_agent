@@ -1,4 +1,6 @@
+pub mod clarify_interaction;
 pub mod loop_runner;
+pub mod loop_support;
 pub mod provider;
 pub mod session_title;
 pub mod suggest;

@@ -62,6 +62,11 @@ static HTML_REPORT_DOCS: &[SkillDoc] = &[SkillDoc {
     content: include_str!("../../assets/skills/html-report/SKILL.md"),
 }];
 
+static CLARIFY_DOCS: &[SkillDoc] = &[SkillDoc {
+    name: "SKILL.md",
+    content: include_str!("../../assets/skills/clarify/SKILL.md"),
+}];
+
 pub static SKILLS: &[Skill] = &[
     Skill {
         name: "docx",
@@ -87,6 +92,11 @@ pub static SKILLS: &[Skill] = &[
         name: "html-report",
         description: "静态 HTML 网页报告（表格、文字、CSS）生成规范与落盘约定",
         docs: HTML_REPORT_DOCS,
+    },
+    Skill {
+        name: "clarify",
+        description: "文档创作前的需求澄清流程，帮助明确内容、结构与排版风格",
+        docs: CLARIFY_DOCS,
     },
 ];
 

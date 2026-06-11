@@ -18,6 +18,8 @@ function statusLabel(status: string): string {
       return "生成参数中";
     case "running":
       return "执行中";
+    case "awaiting_user":
+      return "等待回答";
     case "done":
       return "完成";
     case "error":
@@ -33,6 +35,8 @@ function statusClass(status: string): string {
       return "animate-pulse text-sky-500";
     case "running":
       return "text-amber-600";
+    case "awaiting_user":
+      return "text-sky-500";
     case "done":
       return "text-emerald-600";
     case "error":

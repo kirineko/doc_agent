@@ -38,6 +38,8 @@ pub fn run() {
             ipc::delete_session,
             ipc::list_messages,
             ipc::send_message,
+            ipc::submit_clarify_answer,
+            ipc::cancel_clarify,
             ipc::set_api_key,
             ipc::has_api_key,
             ipc::clear_api_key,

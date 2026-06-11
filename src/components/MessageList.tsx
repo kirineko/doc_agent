@@ -1,8 +1,12 @@
-import { Message } from "../types";
+import { useMemo } from "react";
+import { parseAnsweredClarifyCall } from "../lib/clarifyBrief";
+import { Message, ToolCallRecord } from "../types";
+import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { MessageBubble } from "./MessageBubble";
 
 interface MessageListProps {
   messages: Message[];
+  toolCalls?: ToolCallRecord[];
   streamingReasoning: string;
   streamingContent: string;
   activity?: string;
@@ -11,6 +15,7 @@ interface MessageListProps {
 
 export function MessageList({
   messages,
+  toolCalls = [],
   streamingReasoning,
   streamingContent,
   activity,
@@ -18,18 +23,38 @@ export function MessageList({
 }: MessageListProps) {
   const showStreaming = Boolean(streamingReasoning || streamingContent);
 
+  const answeredClarifyByMessage = useMemo(() => {
+    type AnsweredClarify = NonNullable<ReturnType<typeof parseAnsweredClarifyCall>>;
+    const map = new Map<string, AnsweredClarify[]>();
+    for (const call of toolCalls) {
+      const parsed = parseAnsweredClarifyCall(call);
+      if (!parsed) continue;
+      map.set(call.message_id, [...(map.get(call.message_id) ?? []), parsed]);
+    }
+    return map;
+  }, [toolCalls]);
+
   return (
     <>
-      {messages.map((message) => (
-        <MessageBubble
-          key={message.id}
-          role={message.role === "user" ? "user" : "assistant"}
-          content={message.content}
-          reasoning={message.role === "assistant" ? message.reasoning_content : undefined}
-          variant="persisted"
-          pending={message.role === "user" && message.id.startsWith("pending-")}
-        />
-      ))}
+      {messages.map((message) => {
+        const clarifyCalls = answeredClarifyByMessage.get(message.id) ?? [];
+        return (
+          <div key={message.id} className="space-y-2">
+            <MessageBubble
+              role={message.role === "user" ? "user" : "assistant"}
+              content={message.content}
+              reasoning={message.role === "assistant" ? message.reasoning_content : undefined}
+              variant="persisted"
+              pending={message.role === "user" && message.id.startsWith("pending-")}
+            />
+            {clarifyCalls.map(({ callId, question, answer }) => (
+              <div key={callId} className="ml-4">
+                <ClarifyQuestionCard question={question} answer={answer} />
+              </div>
+            ))}
+          </div>
+        );
+      })}
 
       {showStreaming && (
         <MessageBubble
