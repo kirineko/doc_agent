@@ -42,6 +42,7 @@ impl ToolRegistry {
                 crate::tools::fs::write_tool(),
                 crate::tools::fs::search_tool(),
                 crate::tools::office::read_markdown_tool(),
+                crate::tools::office::convert_tool(),
                 crate::tools::word::create_tool(),
                 crate::tools::excel::read_tool(),
                 crate::tools::excel::write_tool(),

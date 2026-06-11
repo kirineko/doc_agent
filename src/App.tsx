@@ -3,7 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ChatPanel } from "./components/ChatPanel";
 import { Sidebar } from "./components/Sidebar";
-import { formatCharCount, ToolChainPanel } from "./components/ToolChainPanel";
+import { formatCharCount } from "./components/ToolChainPanel";
+import { RightPanel } from "./components/RightPanel";
 import { toolLabel } from "./lib/toolLabels";
 import {
   countChatMessages,
@@ -301,6 +302,7 @@ function App() {
   return (
     <div className="flex h-full flex-col bg-[#0b1020]">
       <header className="flex items-center gap-3 border-b border-slate-800 px-3 py-1.5">
+        <img src="/logo.svg" alt="" className="h-5 w-5 shrink-0" aria-hidden />
         <div className="text-sm font-semibold text-white">Doc Agent</div>
         <div className="truncate text-xs text-slate-400">
           {activeProjectName ? activeProjectName : "请选择项目目录"}
@@ -337,7 +339,7 @@ function App() {
           onInputChange={setInput}
           onSend={sendMessage}
         />
-        <ToolChainPanel items={stream.liveTools} />
+        <RightPanel liveTools={stream.liveTools} projectId={activeProjectId} />
       </main>
     </div>
   );

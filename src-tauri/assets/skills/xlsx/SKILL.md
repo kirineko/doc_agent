@@ -12,8 +12,10 @@ license: Proprietary. LICENSE.txt has complete terms
 
 | Task | Tool |
 |------|------|
-| 读取单元格 | `excel_read {"path": "f.xlsx", "sheet": "Sheet1"}` |
-| SQL 分析/聚合（CSV/xlsx） | `data_query {"sources": [{"name": "t", "path": "f.xlsx"}], "sql": "SELECT ..."}` |
+| 读取单元格 | `excel_read {"path": "f.xlsx", "sheet": "Sheet1"}`（仅 `.xlsx`） |
+| SQL 分析/聚合（CSV/xlsx/**xls**） | `data_query {"sources": [{"name": "t", "path": "f.xls"}], "sql": "SELECT ..."}` — **直接读 `.xls`，不新建文件** |
+| 旧格式 `.xls` 阅读为文本 | `office_read_to_markdown {"path": "f.xls"}` — 不新建文件 |
+| **仅必要时**转为 `.xlsx` | `office_convert {"path": "f.xls"}` → `f-converted.xlsx`（会丢格式；仅当需要 `excel_write`/`xlsx_recalc`/样式化输出时） |
 | 简单写入几个格 | `excel_write {"path": "f.xlsx", "cells": [{"cell": "A1", "value": 100}]}` |
 | **生成样式化表格（首选）** | `skill_run` + `ExcelJS`（见下方模板） |
 | 公式重算与错误检查（必做） | `xlsx_recalc {"path": "f.xlsx"}` |

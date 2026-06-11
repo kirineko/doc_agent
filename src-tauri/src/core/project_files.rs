@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -15,6 +16,18 @@ pub struct ProjectFileEntry {
 pub struct ProjectFileList {
     pub entries: Vec<ProjectFileEntry>,
     pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectDirEntry {
+    pub name: String,
+    pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProjectDirListing {
+    pub path: String,
+    pub entries: Vec<ProjectDirEntry>,
 }
 
 const DOCUMENT_EXTENSIONS: &[&str] = &[
@@ -48,6 +61,42 @@ pub fn recent_document_paths(root: &Path, limit: usize) -> Vec<PathBuf> {
     docs.sort_by_key(|(_, mtime)| std::cmp::Reverse(*mtime));
     docs.truncate(limit);
     docs.into_iter().map(|(path, _)| path).collect()
+}
+
+pub fn list_project_dir(root: &Path, relative_path: &str) -> Result<ProjectDirListing, String> {
+    let sandbox = crate::core::sandbox::Sandbox::new(root).map_err(|e| e.to_string())?;
+    let rel = match relative_path.trim() {
+        "" => ".",
+        other => other,
+    };
+    let dir = sandbox.resolve(rel).map_err(|e| e.to_string())?;
+    if !dir.is_dir() {
+        return Err("not a directory".into());
+    }
+
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(&dir).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if should_skip_name(&name) {
+            continue;
+        }
+        let is_dir = entry.file_type().map_err(|e| e.to_string())?.is_dir();
+        entries.push(ProjectDirEntry { name, is_dir });
+    }
+    entries.sort_by(|a, b| match (a.is_dir, b.is_dir) {
+        (true, false) => std::cmp::Ordering::Less,
+        (false, true) => std::cmp::Ordering::Greater,
+        _ => a.name.cmp(&b.name),
+    });
+    Ok(ProjectDirListing {
+        path: rel.to_string(),
+        entries,
+    })
+}
+
+fn should_skip_name(name: &str) -> bool {
+    name.starts_with('.') || name == "node_modules" || name == "target" || name.starts_with("~$")
 }
 
 pub fn list_project_files(root: &Path) -> ProjectFileList {
@@ -89,16 +138,7 @@ fn should_skip_entry(path: &Path, root: &Path) -> bool {
         return false;
     }
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    if name.starts_with('.') {
-        return true;
-    }
-    if name == "node_modules" || name == "target" {
-        return true;
-    }
-    if name.starts_with("~$") {
-        return true;
-    }
-    false
+    should_skip_name(name)
 }
 
 #[cfg(test)]
@@ -106,6 +146,34 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn rejects_paths_outside_project_root() {
+        let dir = tempdir().unwrap();
+        let err = list_project_dir(dir.path(), "..").unwrap_err();
+        assert!(err.contains("escapes"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn lists_single_directory_level() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("docs")).unwrap();
+        fs::write(root.join("docs/report.docx"), b"x").unwrap();
+        fs::write(root.join("readme.txt"), b"x").unwrap();
+        fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+
+        let root_list = list_project_dir(root, ".").unwrap();
+        let names: Vec<_> = root_list.entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(names.contains(&"docs"));
+        assert!(names.contains(&"readme.txt"));
+        assert!(!names.contains(&"node_modules"));
+
+        let docs_list = list_project_dir(root, "docs").unwrap();
+        assert_eq!(docs_list.path, "docs");
+        assert_eq!(docs_list.entries.len(), 1);
+        assert_eq!(docs_list.entries[0].name, "report.docx");
+    }
 
     #[test]
     fn lists_relative_paths_and_skips_ignored_dirs() {

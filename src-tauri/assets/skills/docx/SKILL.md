@@ -25,9 +25,20 @@ A .docx file is a ZIP archive containing XML files.
 | Add comments | `docx_comment`（需先 unpack，见 editing.md） |
 | Extract tables to CSV | `docx_extract_table {"path": "doc.docx", "out_dir": "tables/"}` |
 
+### 旧格式 `.doc`
+
+**默认：不转换。** 能用读取完成的，不要新建 `-converted` 文件。
+
+| 任务 | 工具 | 是否新建文件 |
+|------|------|-------------|
+| 阅读、摘要、提取内容 | `office_read_to_markdown {"path": "memo.doc"}` | 否 |
+| 提取表格 | `docx_extract_table` 仅支持 `.docx`；旧格式须先读内容或见下方转换 | — |
+| OOXML 解包编辑、`word_create` 改既有文件 | 须先 `office_convert` → `memo-converted.docx`，再 `ooxml_unpack` | 是 |
+
+**仅在必要时**调用 `office_convert`（用户明确要求 `.docx`、或下游工具只认 OOXML）。转换**可能丢失版式/样式**（实测可完成但格式不保真）；输出文件名含 `-converted` 后缀，如 `memo-converted.docx`。
+
 ### 不支持的操作
 
-- **`.doc`（旧格式）**：无法转换，请用户先用 Word/WPS 另存为 `.docx`。
 - **渲染为图片/PDF 视觉校验**：无 LibreOffice；降级为 `ooxml_pack` 自动校验 + `office_read_to_markdown` 文本自检。
 
 ---

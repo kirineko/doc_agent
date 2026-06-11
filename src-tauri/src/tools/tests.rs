@@ -72,6 +72,7 @@ async function main() {{
             "fs_write",
             "fs_search",
             "office_read_to_markdown",
+            "office_convert",
             "word_create",
             "excel_read",
             "excel_write",

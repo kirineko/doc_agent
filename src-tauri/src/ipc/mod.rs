@@ -1,6 +1,9 @@
 use crate::agent::loop_runner;
 use crate::agent::suggest;
-use crate::core::project_files::{list_project_files, ProjectFileList};
+use crate::core::project_files::{
+    list_project_dir, list_project_files, ProjectDirListing, ProjectFileList,
+};
+use crate::core::sandbox::Sandbox;
 use crate::core::store::{Message, Project, Session, ToolCallRecord};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
@@ -56,19 +59,51 @@ pub fn hide_project(state: State<AppState>, project_id: String) -> Result<(), St
         .map_err(|e| e.to_string())
 }
 
+/// 取项目并尽快释放 store 锁，后续文件 I/O 不持锁。
+fn project_by_id(state: &State<AppState>, project_id: &str) -> Result<Project, String> {
+    state
+        .store
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get_project(project_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "project not found".to_string())
+}
+
 #[tauri::command]
 pub fn list_project_files_cmd(
     state: State<AppState>,
     project_id: String,
 ) -> Result<ProjectFileList, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    let project = store
-        .get_project(&project_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "project not found".to_string())?;
+    let project = project_by_id(&state, &project_id)?;
     Ok(list_project_files(
         PathBuf::from(&project.root_path).as_path(),
     ))
+}
+
+#[tauri::command]
+pub fn list_project_dir_cmd(
+    state: State<AppState>,
+    project_id: String,
+    relative_path: String,
+) -> Result<ProjectDirListing, String> {
+    let project = project_by_id(&state, &project_id)?;
+    list_project_dir(PathBuf::from(&project.root_path).as_path(), &relative_path)
+}
+
+#[tauri::command]
+pub fn open_project_file(
+    state: State<AppState>,
+    project_id: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let project = project_by_id(&state, &project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let resolved = sandbox.resolve(&relative_path).map_err(|e| e.to_string())?;
+    if resolved.is_dir() {
+        return Err("cannot open a directory".into());
+    }
+    tauri_plugin_opener::open_path(&resolved, None::<&str>).map_err(|e| e.to_string())
 }
 
 #[derive(Debug, Deserialize)]

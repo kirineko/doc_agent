@@ -1,0 +1,39 @@
+# project-file-browser Specification
+
+## Purpose
+TBD - created by archiving change workspace-product-polish. Update Purpose after archive.
+## Requirements
+### Requirement: 项目目录单层浏览
+系统 SHALL 在右侧栏下半区提供项目文件浏览，仅展示当前项目根下的**单层**目录项；用户进入子目录后只显示该目录直接子项，不提供递归展开整棵树。
+
+#### Scenario: 列出项目根目录
+- **WHEN** 用户选中某项目且浏览路径为 `.`
+- **THEN** 列表展示该项目根目录下的文件与子目录（一层），忽略隐藏目录、`node_modules`、`target` 及 `~$` 临时 Office 文件（与 `list_project_files` 规则一致）
+
+#### Scenario: 进入子目录
+- **WHEN** 用户点击某子目录 `docs/`
+- **THEN** 列表更新为 `docs/` 下的直接子项，并展示返回上级（`..`）入口
+
+#### Scenario: 返回上级
+- **WHEN** 用户在 `docs/` 下点击 `..`
+- **THEN** 列表回到项目根目录内容
+
+#### Scenario: 无项目时不展示
+- **WHEN** 用户尚未选择项目
+- **THEN** 文件浏览区显示占位提示，不发起目录列表请求
+
+### Requirement: 用系统默认应用打开文件
+系统 SHALL 允许用户从文件浏览区打开项目内文件，调用操作系统默认关联应用。
+
+#### Scenario: 双击打开文件
+- **WHEN** 用户双击浏览列表中的 `报告.docx`
+- **THEN** 系统用默认应用打开该项目目录下对应文件
+
+#### Scenario: 目录不可打开
+- **WHEN** 用户双击某目录项
+- **THEN** 系统进入该目录（与单击行为一致），不调用外部打开
+
+#### Scenario: 打开越界路径被拒绝
+- **WHEN** 前端传入的相对路径经 sandbox 解析后越界
+- **THEN** IPC 返回错误，不调用系统打开
+

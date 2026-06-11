@@ -8,6 +8,16 @@ export interface ProjectFileList {
   truncated: boolean;
 }
 
+export interface ProjectDirEntry {
+  name: string;
+  is_dir: boolean;
+}
+
+export interface ProjectDirListing {
+  path: string;
+  entries: ProjectDirEntry[];
+}
+
 export interface Project {
   id: string;
   name: string;

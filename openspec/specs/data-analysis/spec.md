@@ -22,7 +22,7 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 - **THEN** 返回「无文本层，需 OCR（不在当前能力范围）」类错误
 
 ### Requirement: SQL 数据整理
-系统 SHALL 提供 `data_query` 工具，对沙箱内 CSV / xlsx 数据源执行 SQL（polars-sql），支持过滤、聚合、排序、UNION 等整理操作，结果写回沙箱内 CSV 或直接返回（小结果集）。
+系统 SHALL 提供 `data_query` 工具，对沙箱内 CSV / xlsx / **xls** 数据源执行 SQL（polars-sql），支持过滤、聚合、排序、UNION 等整理操作，结果写回沙箱内 CSV 或直接返回（小结果集）。
 
 #### Scenario: 聚合查询
 - **WHEN** Agent 以某 CSV 为源执行 `SELECT category, SUM(amount) FROM t GROUP BY category`
@@ -31,6 +31,10 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 #### Scenario: xlsx 作为数据源
 - **WHEN** Agent 以某 `.xlsx` 的指定工作表为源执行查询
 - **THEN** 系统经 calamine 读取并完成查询，无需先手工转 CSV
+
+#### Scenario: xls 作为数据源
+- **WHEN** Agent 以某 `.xls` 的指定工作表为源执行查询
+- **THEN** 系统读取该旧格式表格并完成查询，无需 Agent 事先手动另存为 xlsx
 
 ### Requirement: 公式重算校验
 系统 SHALL 提供 `xlsx_recalc` 工具，用 IronCalc 载入 xlsx 并重算全部公式，报告各单元格公式错误（#REF!、#DIV/0!、#VALUE!、#N/A）；IronCalc 不支持的函数导致的 #NAME? SHALL 作为 warning 而非错误返回。

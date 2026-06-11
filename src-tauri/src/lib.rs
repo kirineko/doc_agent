@@ -29,6 +29,8 @@ pub fn run() {
             ipc::create_project,
             ipc::hide_project,
             ipc::list_project_files_cmd,
+            ipc::list_project_dir_cmd,
+            ipc::open_project_file,
             ipc::generate_suggestions,
             ipc::list_sessions,
             ipc::create_session,

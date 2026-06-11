@@ -75,10 +75,20 @@ fn load_source(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError>
             .finish()
             .map_err(|e| ToolError::Execution(e.to_string())),
         Some("xlsx") | Some("xlsm") => xlsx_to_dataframe(path, sheet),
+        Some("xls") => xls_to_dataframe(path, sheet),
         other => Err(ToolError::InvalidArgs(format!(
             "unsupported source type: {other:?}"
         ))),
     }
+}
+
+fn xls_to_dataframe(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError> {
+    let temp = tempfile::Builder::new()
+        .suffix(".xlsx")
+        .tempfile()
+        .map_err(|e| ToolError::Execution(e.to_string()))?;
+    crate::tools::office::convert_legacy(path, temp.path())?;
+    xlsx_to_dataframe(temp.path(), sheet)
 }
 
 fn xlsx_to_dataframe(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError> {

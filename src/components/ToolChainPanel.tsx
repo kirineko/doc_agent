@@ -49,7 +49,7 @@ export function formatCharCount(count: number): string {
 
 export function ToolChainPanel({ items }: ToolChainPanelProps) {
   return (
-    <aside className="panel flex h-full w-64 shrink-0 flex-col p-2.5">
+    <section className="flex min-h-0 flex-1 flex-col">
       <div className="mb-1.5 text-xs font-medium text-slate-200">工具调用链</div>
       <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
         {items.length === 0 && (
@@ -84,6 +84,6 @@ export function ToolChainPanel({ items }: ToolChainPanelProps) {
           </div>
         ))}
       </div>
-    </aside>
+    </section>
   );
 }

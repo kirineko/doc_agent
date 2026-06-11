@@ -25,7 +25,7 @@ pub fn extract_docx_tool() -> ToolSpec {
 pub fn query_tool() -> ToolSpec {
     ToolSpec {
         name: "data_query",
-        description: "Run SQL (polars-sql) over sandbox CSV/xlsx sources",
+        description: "Run SQL (polars-sql) over sandbox CSV/xlsx/xls sources. For .xls, reads in-memory without creating a converted project file.",
         parameters: json!({
             "type": "object",
             "properties": {

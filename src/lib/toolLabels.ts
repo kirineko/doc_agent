@@ -4,6 +4,7 @@ export const TOOL_LABELS: Record<string, string> = {
   fs_write: "写入文件",
   fs_search: "搜索文件",
   office_read_to_markdown: "读取文档",
+  office_convert: "转换 Office 格式",
   word_create: "创建 Word",
   excel_read: "读取 Excel",
   excel_write: "写入 Excel",

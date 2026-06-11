@@ -18,10 +18,15 @@ license: Proprietary. LICENSE.txt has complete terms
 | Edit or create from template | `skill_read {"skill": "pptx", "doc": "editing.md"}` |
 | **Create from scratch（最常用）** | `skill_read {"skill": "pptx", "doc": "pptxgenjs.md"}` → `skill_run` |
 
+### 旧格式 `.ppt`
+
+**默认：不转换。** 阅读、摘要、提取幻灯片文字 → `office_read_to_markdown {"path": "slides.ppt"}`（不新建文件）。
+
+**仅在必要时** `office_convert` → `slides-converted.pptx`：用户要 `.pptx` 产物、或须 `ooxml_unpack` / 模板编辑。转换**可能丢失版式**。
+
 ### 不支持的操作
 
 - **缩略图/渲染为图片**：无 LibreOffice；视觉校验降级为文本自检 + 结构检查（见 QA），必要时请用户用 PowerPoint/WPS 打开确认。
-- **`.ppt` 旧格式**：请用户先另存为 `.pptx`。
 
 ---
 

@@ -9,13 +9,11 @@ pub struct UnpackReport {
     pub parts: usize,
 }
 
-const LEGACY: &[&str] = &["doc", "ppt", "xls"];
-
 pub fn unpack(src: &Path, out_dir: &Path, merge_runs: bool) -> Result<UnpackReport, ToolError> {
     if let Some(ext) = src.extension().and_then(|e| e.to_str()) {
-        if LEGACY.contains(&ext) {
+        if crate::tools::office::legacy_target_extension(ext).is_some() {
             return Err(ToolError::InvalidArgs(
-                "旧格式不支持解包编辑，请先在 Office 中另存为 .docx/.pptx/.xlsx".into(),
+                "旧格式不支持解包编辑，请先使用 office_convert 转为 .docx/.pptx/.xlsx".into(),
             ));
         }
     }
