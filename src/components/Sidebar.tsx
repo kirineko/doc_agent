@@ -132,9 +132,9 @@ export function Sidebar({
         id="sidebar-projects"
         className={`shrink-0 rounded-md ${highlightProject ? "ring-1 ring-amber-600/60" : ""}`}
       >
-        <div className="mb-1 text-[11px] uppercase tracking-[0.16em] text-slate-400">项目</div>
+        <div className="mb-1 text-[11px] uppercase tracking-[0.16em] text-fg-secondary">项目</div>
         <button
-          className="mb-2 w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium hover:bg-indigo-500"
+          className="mb-2 w-full rounded-md bg-indigo-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
           onClick={() => void pickProject()}
         >
           选择目录创建项目
@@ -144,9 +144,7 @@ export function Sidebar({
             <div
               key={project.id}
               className={`group flex items-stretch rounded-md border text-xs ${
-                project.id === activeProjectId
-                  ? "border-indigo-500 bg-indigo-950/40"
-                  : "border-slate-800 hover:border-slate-600"
+                project.id === activeProjectId ? "item-project-active" : "item-surface"
               }`}
             >
               <button
@@ -154,11 +152,11 @@ export function Sidebar({
                 onClick={() => void onSelectProject(project.id)}
               >
                 <div className="font-medium">{project.name}</div>
-                <div className="truncate text-[11px] text-slate-400">{project.root_path}</div>
+                <div className="truncate text-[11px] text-fg-secondary">{project.root_path}</div>
               </button>
               <button
                 type="button"
-                className="shrink-0 border-l border-transparent px-2 text-slate-500 opacity-0 transition hover:text-rose-400 group-hover:border-slate-700 group-hover:opacity-100"
+                className="shrink-0 border-l border-transparent px-2 text-fg-muted opacity-0 transition hover:text-rose-400 group-hover:border-border-subtle group-hover:opacity-100"
                 title="从列表移除"
                 onClick={() => void hideProject(project.id)}
               >
@@ -171,9 +169,9 @@ export function Sidebar({
 
       <div className="flex min-h-0 flex-1 flex-col">
         <div className="mb-1 flex shrink-0 items-center justify-between">
-          <div className="text-[11px] uppercase tracking-[0.16em] text-slate-400">会话</div>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-fg-secondary">会话</div>
           <button
-            className="rounded border border-slate-700 px-1.5 py-0.5 text-[11px] hover:border-slate-500"
+            className="rounded border border-border-subtle px-1.5 py-0.5 text-[11px] hover:border-border-hover"
             onClick={() => void createSession()}
             disabled={!activeProjectId}
           >
@@ -185,9 +183,7 @@ export function Sidebar({
             <div
               key={session.id}
               className={`group relative rounded-md border text-xs ${
-                session.id === activeSessionId
-                  ? "border-cyan-500 bg-cyan-950/30"
-                  : "border-slate-800 hover:border-slate-600"
+                session.id === activeSessionId ? "item-session-active" : "item-surface"
               }`}
             >
               <button
@@ -195,11 +191,11 @@ export function Sidebar({
                 onClick={() => onSelectSession(session.id)}
               >
                 <div className="truncate font-medium">{plainSessionTitle(session.title)}</div>
-                <div className="text-[11px] text-slate-400">{formatSessionTime(session.updated_at)}</div>
+                <div className="text-[11px] text-fg-secondary">{formatSessionTime(session.updated_at)}</div>
               </button>
               <button
                 type="button"
-                className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1.5 text-slate-500 opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
+                className="absolute right-1 top-1/2 -translate-y-1/2 rounded px-1.5 text-fg-muted opacity-0 transition hover:text-rose-400 group-hover:opacity-100"
                 title="删除会话"
                 onClick={() => void deleteSession(session.id)}
               >

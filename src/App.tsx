@@ -1,19 +1,22 @@
 import { ChatPanel } from "./components/ChatPanel";
-import { Sidebar } from "./components/Sidebar";
+import { Logo } from "./components/Logo";
 import { RightPanel } from "./components/RightPanel";
+import { Sidebar } from "./components/Sidebar";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { useWorkspace } from "./hooks/useWorkspace";
 
 function App() {
   const ws = useWorkspace();
 
   return (
-    <div className="flex h-full flex-col bg-[#0b1020]">
-      <header className="flex items-center gap-3 border-b border-slate-800 px-3 py-1.5">
-        <img src="/logo.svg" alt="" className="h-5 w-5 shrink-0" aria-hidden />
-        <div className="text-sm font-semibold text-white">Doc Agent</div>
-        <div className="truncate text-xs text-slate-400">
+    <div className="flex h-full flex-col bg-app">
+      <header className="flex items-center gap-3 border-b border-border px-3 py-1.5">
+        <Logo />
+        <div className="text-sm font-semibold text-fg">Doc Agent</div>
+        <div className="truncate text-xs text-fg-secondary">
           {ws.activeProjectName ? ws.activeProjectName : "请选择项目目录"}
         </div>
+        <ThemeToggle />
       </header>
       <main className="flex min-h-0 flex-1 gap-2.5 p-2.5">
         <Sidebar

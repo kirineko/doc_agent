@@ -20,7 +20,7 @@ interface BreadcrumbSegment {
 }
 
 const ROOT_BTN_CLASS =
-  "inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded text-base leading-none text-slate-400 hover:bg-slate-800/60 hover:text-cyan-300";
+  "inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded text-base leading-none text-fg-secondary hover:bg-hover hover:text-link";
 
 function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
   const segments = pathSegments(currentPath);
@@ -30,7 +30,7 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
     return (
       <div className="mb-1 flex items-center" aria-current="page">
         <span
-          className={`${ROOT_BTN_CLASS} cursor-default text-slate-200 hover:bg-transparent hover:text-slate-200`}
+          className={`${ROOT_BTN_CLASS} cursor-default text-fg-heading hover:bg-transparent hover:text-fg-heading`}
           aria-label="项目根目录"
           title="项目根目录"
         >
@@ -74,11 +74,11 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
       </button>
       {visibleSegments.map((item) => (
         <span key={item.key} className="flex min-w-0 items-center gap-0.5">
-          <span className="shrink-0 text-slate-600">/</span>
+          <span className="shrink-0 text-fg-muted">/</span>
           {item.path ? (
             <button
               type="button"
-              className="truncate text-slate-400 hover:text-cyan-300"
+              className="truncate text-fg-secondary hover:text-link"
               onClick={() => {
                 if (item.path) onNavigate(item.path);
               }}
@@ -86,7 +86,7 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
               {item.label}
             </button>
           ) : (
-            <span className="truncate text-slate-200" aria-current="page">
+            <span className="truncate text-fg-heading" aria-current="page">
               {item.label}
             </span>
           )}
@@ -154,13 +154,13 @@ export function ProjectFileExplorer({
   }
 
   return (
-    <div className="flex min-h-0 flex-[0.38] flex-col border-t border-slate-800 pt-2">
+    <div className="flex min-h-0 flex-[0.38] flex-col border-t border-border pt-2">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-slate-200">项目文件</div>
+        <div className="text-xs font-medium text-fg-heading">项目文件</div>
         {projectId && (
           <button
             type="button"
-            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-slate-400 hover:bg-slate-800/80 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-fg-secondary hover:bg-hover hover:text-link disabled:cursor-not-allowed disabled:opacity-40"
             aria-label="刷新当前目录"
             title="刷新当前目录"
             disabled={loading}
@@ -176,21 +176,21 @@ export function ProjectFileExplorer({
           onNavigate={(path) => void loadDir(projectId, path)}
         />
       ) : (
-        <div className="mb-1 truncate text-[10px] text-slate-500">未选择项目</div>
+        <div className="mb-1 truncate text-[10px] text-fg-muted">未选择项目</div>
       )}
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
         {!projectId && (
-          <div className="rounded-md border border-dashed border-slate-700 p-2 text-[11px] text-slate-500">
+          <div className="rounded-md border border-dashed border-border-subtle p-2 text-[11px] text-fg-muted">
             选择项目后可浏览文件。
           </div>
         )}
-        {loading && <div className="text-[11px] text-slate-500">加载中…</div>}
-        {error && <div className="text-[11px] text-rose-400">{error}</div>}
+        {loading && <div className="text-[11px] text-fg-muted">加载中…</div>}
+        {error && <div className="text-[11px] text-rose-500">{error}</div>}
         {projectId && currentPath !== "." && (
           <button
             type="button"
             disabled={loading}
-            className="flex w-full items-center gap-1.5 rounded border border-dashed border-slate-700/80 bg-slate-900/40 px-1 py-0.5 text-left text-[11px] text-slate-400 hover:border-slate-600 hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+            className="chip-surface flex w-full items-center gap-1.5 rounded border-dashed px-1 py-0.5 text-left text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => void loadDir(projectId, parentPath(currentPath))}
           >
             <span className="shrink-0">📂</span>
@@ -202,7 +202,7 @@ export function ProjectFileExplorer({
             key={entry.name}
             type="button"
             title={entry.is_dir ? "点击进入" : "双击用默认应用打开"}
-            className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] text-slate-300 hover:bg-slate-800/80"
+            className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] text-fg hover:bg-hover"
             onClick={() => {
               if (entry.is_dir && projectId) {
                 void loadDir(projectId, joinPath(currentPath, entry.name));
@@ -212,12 +212,12 @@ export function ProjectFileExplorer({
               if (!entry.is_dir) void openFile(entry.name);
             }}
           >
-            <span className="shrink-0 text-slate-500">{entry.is_dir ? "📁" : "📄"}</span>
+            <span className="shrink-0 text-fg-muted">{entry.is_dir ? "📁" : "📄"}</span>
             <span className="truncate">{entry.name}</span>
           </button>
         ))}
         {projectId && listing && listing.entries.length === 0 && !loading && (
-          <div className="text-[11px] text-slate-500">空目录</div>
+          <div className="text-[11px] text-fg-muted">空目录</div>
         )}
       </div>
     </div>

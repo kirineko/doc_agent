@@ -41,14 +41,14 @@ export function MessageList({
       )}
 
       {busy && activity && (
-        <div className="mr-4 flex items-center gap-2 rounded-lg border border-sky-900/50 bg-sky-950/20 px-3 py-2 text-xs text-sky-200">
+        <div className="activity-banner mr-4 flex items-center gap-2 rounded-lg border px-3 py-2 text-xs">
           <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sky-400" />
           <span className="truncate">{activity}</span>
         </div>
       )}
 
       {busy && !activity && !showStreaming && (
-        <div className="mr-4 rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-xs text-slate-400">
+        <div className="status-idle-banner mr-4 rounded-lg border px-3 py-2 text-xs">
           助手正在回复…
         </div>
       )}

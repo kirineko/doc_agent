@@ -135,7 +135,7 @@ export function ChatPanel({
 
   return (
     <section className="panel flex min-w-0 flex-1 flex-col p-3">
-      <div className="mb-2 text-xs font-medium text-slate-200">会话</div>
+      <div className="mb-2 text-xs font-medium text-fg-heading">会话</div>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -181,7 +181,7 @@ export function ChatPanel({
           )}
           <textarea
             ref={textareaRef}
-            className="min-h-20 flex-1 resize-none rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+            className="input-field min-h-20 flex-1 resize-none rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
             placeholder={
               initializing
                 ? "正在分析文档…"
@@ -232,7 +232,7 @@ export function ChatPanel({
             }}
           />
           <button
-            className="min-w-16 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium hover:bg-indigo-500 disabled:opacity-50"
+            className="min-w-16 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
             disabled={inputDisabled || !input.trim()}
             onClick={onSend}
           >

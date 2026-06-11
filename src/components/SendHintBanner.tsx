@@ -15,12 +15,12 @@ export function SendHintBanner({ blocker, onDismiss }: SendHintBannerProps) {
   return (
     <div
       role="alert"
-      className="flex items-center justify-between gap-2 rounded-md border border-amber-700/60 bg-amber-950/40 px-3 py-2 text-xs text-amber-200"
+      className="alert-banner flex items-center justify-between gap-2 rounded-md border px-3 py-2 text-xs"
     >
       <span>{message}</span>
       <button
         type="button"
-        className="shrink-0 text-amber-400/80 hover:text-amber-200"
+        className="shrink-0 opacity-80 hover:opacity-100"
         onClick={onDismiss}
         aria-label="关闭"
       >

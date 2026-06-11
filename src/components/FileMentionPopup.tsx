@@ -15,7 +15,7 @@ function highlight(text: string, positions: number[]): ReactNode {
     const ch = text[i]!;
     if (set.has(i)) {
       parts.push(
-        <span key={i} className="text-cyan-200">
+        <span key={i} className="text-link">
           {ch}
         </span>,
       );
@@ -33,22 +33,22 @@ export function FileMentionPopup({
 }: FileMentionPopupProps) {
   if (matches.length === 0) {
     return (
-      <div className="absolute bottom-full left-0 z-20 mb-1 w-full rounded-md border border-slate-700 bg-slate-950 px-2 py-2 text-xs text-slate-500">
+      <div className="mention-popup absolute bottom-full left-0 z-20 mb-1 w-full rounded-md px-2 py-2 text-xs text-fg-muted">
         无匹配文件
       </div>
     );
   }
 
   return (
-    <div className="absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-md border border-slate-700 bg-slate-950 py-1 shadow-lg">
+    <div className="mention-popup absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-md py-1 shadow-lg">
       {matches.map((match, index) => (
         <button
           key={match.item}
           type="button"
           className={`flex w-full px-2 py-1.5 text-left text-xs ${
             index === selectedIndex
-              ? "bg-indigo-950/60 text-indigo-100"
-              : "text-slate-300 hover:bg-slate-900"
+              ? "mention-item-selected"
+              : "text-fg hover:bg-hover"
           }`}
           onMouseDown={(e) => {
             e.preventDefault();
