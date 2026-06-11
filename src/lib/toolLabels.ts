@@ -8,11 +8,27 @@ export const TOOL_LABELS: Record<string, string> = {
   word_create: "创建 Word",
   excel_read: "读取 Excel",
   excel_write: "写入 Excel",
+  skill_read: "读取 Skill 指南",
   skill_run: "运行 Skill",
+  ooxml_unpack: "解压 OOXML",
+  ooxml_pack: "打包 OOXML",
+  docx_comment: "添加批注",
+  docx_accept_changes: "接受修订",
+  docx_extract_table: "提取 Word 表格",
+  excel_describe: "侦察 Excel 结构",
+  excel_normalize: "清洗 Excel",
+  data_query: "SQL 数据查询",
+  xlsx_recalc: "重算公式",
+  pdf_merge: "合并 PDF",
+  pdf_split: "拆分 PDF",
+  pdf_rotate: "旋转 PDF",
+  pdf_delete_pages: "删除 PDF 页面",
 };
 
+export const REGISTERED_TOOL_NAMES = Object.keys(TOOL_LABELS);
+
 export function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? name;
+  return TOOL_LABELS[name] ?? "未知工具";
 }
 
 export function formatToolArgs(args: unknown): string {

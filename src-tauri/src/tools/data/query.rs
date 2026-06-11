@@ -11,6 +11,7 @@ pub fn run_query(
     out_path: Option<&str>,
 ) -> Result<Value, ToolError> {
     let mut sql_ctx = SQLContext::new();
+    let mut schemas: Vec<(String, Vec<String>)> = Vec::new();
     for source in sources {
         let name = source
             .get("name")
@@ -22,13 +23,20 @@ pub fn run_query(
             .ok_or_else(|| ToolError::InvalidArgs("source.path required".into()))?;
         let resolved = resolve_existing(ctx, path)?;
         let df = load_source(&resolved, source.get("sheet").and_then(|v| v.as_str()))?;
+        schemas.push((
+            name.to_string(),
+            df.get_column_names()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+        ));
         sql_ctx.register(name, df.lazy());
     }
-    let result = sql_ctx
+    let mut result = sql_ctx
         .execute(sql)
-        .map_err(|e| ToolError::Execution(e.to_string()))?
+        .map_err(|e| schema_query_error(&schemas, e))?
         .collect()
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
+        .map_err(|e| schema_query_error(&schemas, e))?;
     let rows = result.height();
     if rows <= 50 && out_path.is_none() {
         return Ok(json!({
@@ -48,7 +56,7 @@ pub fn run_query(
     ensure_parent_dir(&out)?;
     let mut file = std::fs::File::create(&out).map_err(|e| ToolError::Execution(e.to_string()))?;
     CsvWriter::new(&mut file)
-        .finish(&mut result.clone())
+        .finish(&mut result)
         .map_err(|e| ToolError::Execution(e.to_string()))?;
     Ok(json!({ "rows": rows, "path": out.display().to_string() }))
 }
@@ -74,55 +82,25 @@ fn load_source(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError>
             .map_err(|e| ToolError::Execution(e.to_string()))?
             .finish()
             .map_err(|e| ToolError::Execution(e.to_string())),
-        Some("xlsx") | Some("xlsm") => xlsx_to_dataframe(path, sheet),
-        Some("xls") => xls_to_dataframe(path, sheet),
+        Some("xlsx") | Some("xlsm") | Some("xls") => {
+            let grid = super::preprocess::load_grid(path, sheet)?;
+            super::preprocess::cells_to_dataframe(&grid.cells, 0)
+        }
         other => Err(ToolError::InvalidArgs(format!(
             "unsupported source type: {other:?}"
         ))),
     }
 }
 
-fn xls_to_dataframe(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError> {
-    let temp = tempfile::Builder::new()
-        .suffix(".xlsx")
-        .tempfile()
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
-    crate::tools::office::convert_legacy(path, temp.path())?;
-    xlsx_to_dataframe(temp.path(), sheet)
-}
-
-fn xlsx_to_dataframe(path: &Path, sheet: Option<&str>) -> Result<DataFrame, ToolError> {
-    use calamine::{Reader, Xlsx};
-    let mut workbook: Xlsx<_> = calamine::open_workbook(path)
-        .map_err(|e| ToolError::Execution(format!("xlsx open: {e}")))?;
-    let sheet_name = sheet
-        .map(str::to_string)
-        .or_else(|| workbook.sheet_names().first().cloned())
-        .ok_or_else(|| ToolError::Execution("xlsx has no sheets".into()))?;
-    let range = workbook
-        .worksheet_range(&sheet_name)
-        .map_err(|e| ToolError::Execution(e.to_string()))?;
-    let mut headers: Vec<String> = Vec::new();
-    let mut columns: Vec<Vec<String>> = Vec::new();
-    for (i, row) in range.rows().enumerate() {
-        let values: Vec<String> = row.iter().map(|c| c.to_string()).collect();
-        if i == 0 {
-            headers = values;
-            columns = headers.iter().map(|_| Vec::new()).collect();
-            continue;
-        }
-        for (idx, v) in values.into_iter().enumerate() {
-            if let Some(col) = columns.get_mut(idx) {
-                col.push(v);
-            }
-        }
-    }
-    let cols: Vec<Column> = headers
-        .into_iter()
-        .enumerate()
-        .map(|(i, name)| Column::new(name.into(), columns.get(i).cloned().unwrap_or_default()))
-        .collect();
-    DataFrame::new_infer_height(cols).map_err(|e| ToolError::Execution(e.to_string()))
+fn schema_query_error(schemas: &[(String, Vec<String>)], err: impl std::fmt::Display) -> ToolError {
+    let hint = schemas
+        .iter()
+        .map(|(n, cols)| format!("{n}: {cols:?}"))
+        .collect::<Vec<_>>()
+        .join("; ");
+    ToolError::Execution(format!(
+        "{err}\n可用表结构: {hint}\n提示: 结构不规则的 Excel 请先用 excel_describe / excel_normalize 清洗为 CSV 再查询"
+    ))
 }
 
 fn dataframe_to_json(df: &DataFrame) -> Result<Value, ToolError> {

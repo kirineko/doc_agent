@@ -53,6 +53,8 @@ impl ToolRegistry {
                 crate::tools::ooxml::comment_tool(),
                 crate::tools::ooxml::accept_changes_tool(),
                 crate::tools::data::extract_docx_tool(),
+                crate::tools::data::describe_tool(),
+                crate::tools::data::normalize_tool(),
                 crate::tools::data::query_tool(),
                 crate::tools::data::recalc_tool(),
                 crate::tools::pdf_ops::merge_tool(),

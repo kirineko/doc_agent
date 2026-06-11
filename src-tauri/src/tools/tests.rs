@@ -83,6 +83,8 @@ async function main() {{
             "docx_comment",
             "docx_accept_changes",
             "docx_extract_table",
+            "excel_describe",
+            "excel_normalize",
             "data_query",
             "xlsx_recalc",
             "pdf_merge",
@@ -1000,6 +1002,291 @@ async function main() {
             )
             .unwrap_err();
         assert!(err.to_string().contains("unsupported"));
+    }
+
+    #[test]
+    fn preprocess_normalize_headers_empty_names() {
+        use crate::tools::data::preprocess::normalize_headers;
+        let raw = vec!["A".into(), "".into(), "C".into()];
+        let (names, renamed) = normalize_headers(&raw);
+        assert_eq!(names, vec!["A", "column_2", "C"]);
+        assert_eq!(renamed.len(), 1);
+        assert_eq!(renamed[0], ("".to_string(), "column_2".to_string()));
+    }
+
+    #[test]
+    fn preprocess_normalize_headers_duplicates() {
+        use crate::tools::data::preprocess::normalize_headers;
+        let raw = vec!["完成人".into(), "完成人".into(), "完成人".into()];
+        let (names, _) = normalize_headers(&raw);
+        assert_eq!(names, vec!["完成人", "完成人_2", "完成人_3"]);
+    }
+
+    #[test]
+    fn preprocess_normalize_headers_trim_and_newlines() {
+        use crate::tools::data::preprocess::normalize_headers;
+        let raw = vec!["  完成\n人  ".into(), "A".into()];
+        let (names, renamed) = normalize_headers(&raw);
+        assert_eq!(names, vec!["完成人", "A"]);
+        assert!(renamed
+            .iter()
+            .any(|(o, n)| o.contains('\n') && n == "完成人"));
+    }
+
+    #[test]
+    fn preprocess_normalize_headers_suffix_collision() {
+        use crate::tools::data::preprocess::normalize_headers;
+        let raw = vec!["完成人_2".into(), "完成人".into(), "完成人".into()];
+        let (names, _) = normalize_headers(&raw);
+        assert_eq!(names, vec!["完成人_2", "完成人", "完成人_3"]);
+    }
+
+    #[test]
+    fn preprocess_fill_merged_vertical() {
+        use crate::tools::data::preprocess::{fill_merged, MergedRegion};
+        let mut cells = vec![
+            vec!["hdr".into(), "b".into()],
+            vec!["anchor".into(), "x".into()],
+            vec!["".into(), "y".into()],
+            vec!["".into(), "z".into()],
+        ];
+        fill_merged(
+            &mut cells,
+            &[MergedRegion {
+                start: (1, 0),
+                end: (3, 0),
+            }],
+        );
+        assert_eq!(cells[2][0], "anchor");
+        assert_eq!(cells[3][0], "anchor");
+    }
+
+    #[test]
+    fn preprocess_fill_merged_horizontal() {
+        use crate::tools::data::preprocess::{fill_merged, MergedRegion};
+        let mut cells = vec![vec!["hdr".into(), "".into(), "".into()]];
+        fill_merged(
+            &mut cells,
+            &[MergedRegion {
+                start: (0, 0),
+                end: (0, 2),
+            }],
+        );
+        assert_eq!(cells[0], vec!["hdr", "hdr", "hdr"]);
+    }
+
+    #[test]
+    fn preprocess_fill_merged_skips_empty_anchor() {
+        use crate::tools::data::preprocess::{fill_merged, MergedRegion};
+        let mut cells = vec![vec!["".into(), "b".into()], vec!["".into(), "c".into()]];
+        fill_merged(
+            &mut cells,
+            &[MergedRegion {
+                start: (0, 0),
+                end: (1, 0),
+            }],
+        );
+        assert_eq!(cells[1][0], "");
+    }
+
+    #[test]
+    fn preprocess_suggest_header_row_with_title_line() {
+        use crate::tools::data::preprocess::suggest_header_row;
+        let cells = vec![
+            vec!["软件工程专业评估指标点".into(), "".into(), "".into()],
+            vec!["指标点".into(), "材料提供人".into(), "完成人".into()],
+            vec!["1.1".into(), "谭".into(), "张".into()],
+        ];
+        assert_eq!(suggest_header_row(&cells), 1);
+    }
+
+    #[test]
+    fn preprocess_suggest_header_row_regular_table() {
+        use crate::tools::data::preprocess::suggest_header_row;
+        let cells = vec![
+            vec!["A".into(), "B".into(), "C".into()],
+            vec!["1".into(), "2".into(), "3".into()],
+        ];
+        assert_eq!(suggest_header_row(&cells), 0);
+    }
+
+    fn build_messy_xlsx(path: &std::path::Path) {
+        let mut book = umya_spreadsheet::new_file();
+        let sheet = book.sheet_mut(0).unwrap();
+        sheet.cell_mut("A1").set_value("软件工程专业评估指标点");
+        sheet.cell_mut("A2").set_value("指标点");
+        sheet.cell_mut("B2").set_value("材料提供人");
+        sheet.cell_mut("C2").set_value("完成人");
+        sheet.cell_mut("D2").set_value("");
+        sheet.cell_mut("E2").set_value("完成人");
+        sheet.cell_mut("A3").set_value("1.1 毕业要求");
+        sheet.add_merge_cells("A3:A5");
+        sheet.cell_mut("B3").set_value("谭艳娴");
+        sheet.cell_mut("C3").set_value("张三");
+        sheet.cell_mut("D3").set_value("10");
+        sheet.cell_mut("E3").set_value("20");
+        sheet.cell_mut("B4").set_value("李四");
+        sheet.cell_mut("C4").set_value("王五");
+        sheet.cell_mut("D4").set_value("30");
+        sheet.cell_mut("E4").set_value("40");
+        sheet.cell_mut("B5").set_value("赵六");
+        sheet.cell_mut("C5").set_value("孙七");
+        sheet.cell_mut("D5").set_value("50");
+        sheet.cell_mut("E5").set_value("60");
+        umya_spreadsheet::writer::xlsx::write(&book, path).unwrap();
+    }
+
+    #[test]
+    fn excel_normalize_messy_xlsx() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext { sandbox: &sandbox };
+        let registry = ToolRegistry::default_tools();
+        build_messy_xlsx(&dir.path().join("messy.xlsx"));
+
+        let out = registry
+            .execute(
+                &ctx,
+                "excel_normalize",
+                json!({
+                    "path": "messy.xlsx",
+                    "header_row": 1,
+                    "out_path": "normalized/messy.csv"
+                }),
+            )
+            .unwrap();
+        let columns = out["columns"].as_array().unwrap();
+        let col_names: Vec<&str> = columns.iter().map(|c| c.as_str().unwrap()).collect();
+        assert_eq!(col_names[0], "指标点");
+        assert_eq!(col_names[3], "column_4");
+        assert_eq!(col_names[4], "完成人_2");
+        assert_eq!(out["rows"], 3);
+
+        let csv = fs::read_to_string(dir.path().join("normalized/messy.csv")).unwrap();
+        assert!(csv.contains("1.1 毕业要求"));
+        assert!(csv.matches("1.1 毕业要求").count() >= 3);
+    }
+
+    #[test]
+    fn excel_describe_messy_xlsx() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext { sandbox: &sandbox };
+        let registry = ToolRegistry::default_tools();
+        build_messy_xlsx(&dir.path().join("messy.xlsx"));
+
+        let out = registry
+            .execute(
+                &ctx,
+                "excel_describe",
+                json!({ "path": "messy.xlsx", "preview_rows": 10 }),
+            )
+            .unwrap();
+        assert_eq!(out["suggested_header_row"], 1);
+        let merged = out["merged_regions"].as_array().unwrap();
+        assert!(
+            merged
+                .iter()
+                .any(|m| m["range"].as_str().unwrap().contains("A3")),
+            "merged: {merged:?}"
+        );
+        let warnings = out["warnings"].as_array().unwrap();
+        let text = warnings
+            .iter()
+            .map(|w| w.as_str().unwrap())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(text.contains("空表头"));
+        assert!(text.contains("重复"));
+        assert!(text.contains("合并单元格"));
+        assert!(text.contains("表头不在首行"));
+    }
+
+    #[test]
+    fn data_query_messy_xlsx_no_dup_error() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext { sandbox: &sandbox };
+        let registry = ToolRegistry::default_tools();
+        build_messy_xlsx(&dir.path().join("messy.xlsx"));
+
+        let out = registry
+            .execute(
+                &ctx,
+                "data_query",
+                json!({
+                    "sources": [{ "name": "t", "path": "messy.xlsx" }],
+                    "sql": "SELECT * FROM t LIMIT 3"
+                }),
+            )
+            .unwrap();
+        assert!(out["data"].is_array());
+    }
+
+    #[test]
+    fn data_query_error_contains_schema() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext { sandbox: &sandbox };
+        let registry = ToolRegistry::default_tools();
+        registry
+            .execute(
+                &ctx,
+                "fs_write",
+                json!({
+                    "path": "t.csv",
+                    "content": "\"a\",\"b\"\n\"1\",\"2\"\n"
+                }),
+            )
+            .unwrap();
+
+        let err = registry
+            .execute(
+                &ctx,
+                "data_query",
+                json!({
+                    "sources": [{ "name": "t", "path": "t.csv" }],
+                    "sql": "SELECT missing_col FROM t"
+                }),
+            )
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("可用表结构"));
+        assert!(msg.contains("excel_describe"));
+        assert!(msg.contains("a"));
+    }
+
+    #[test]
+    fn normalize_csv_sum_query() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext { sandbox: &sandbox };
+        let registry = ToolRegistry::default_tools();
+        build_messy_xlsx(&dir.path().join("messy.xlsx"));
+        registry
+            .execute(
+                &ctx,
+                "excel_normalize",
+                json!({
+                    "path": "messy.xlsx",
+                    "header_row": 1,
+                    "out_path": "normalized/messy.csv"
+                }),
+            )
+            .unwrap();
+
+        let out = registry
+            .execute(
+                &ctx,
+                "data_query",
+                json!({
+                    "sources": [{ "name": "t", "path": "normalized/messy.csv" }],
+                    "sql": "SELECT SUM(CAST(column_4 AS INT)) AS total FROM t"
+                }),
+            )
+            .unwrap();
+        let text = out.to_string();
+        assert!(text.contains("90"), "sum out: {text}");
     }
 
     #[test]
