@@ -236,10 +236,13 @@ jobs:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          ossutil config \
-            -e "${OSS_REGION}.aliyuncs.com" \
-            -i "${ALIYUN_ACCESS_KEY_ID}" \
-            -k "${ALIYUN_ACCESS_KEY_SECRET}"
+          region="${OSS_REGION#oss-}"
+          cat > "${HOME}/.ossutilconfig" <<EOF
+          [default]
+          accessKeyId=${ALIYUN_ACCESS_KEY_ID}
+          accessKeySecret=${ALIYUN_ACCESS_KEY_SECRET}
+          region=${region}
+          EOF
 
       - name: Upload artifacts to OSS
         run: |
