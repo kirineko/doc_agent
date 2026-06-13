@@ -75,13 +75,13 @@ Agent 通过工具链操作项目内文件，主要包括：
 
 版本变更见 [CHANGELOG.md](./CHANGELOG.md)。
 
-**国内用户推荐**从阿里云 OSS 下载（速度更稳定）：
+**国内用户推荐**从阿里云 OSS 下载（广州，速度更稳定）：
 
-- **版本目录**：`https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/<version>/`
-- **macOS**：`DocAgent_<version>_aarch64.dmg`（Apple Silicon）
-- **Windows**：`DocAgent_<version>_x64-setup.exe` 或 `.msi`
+- **macOS (Apple Silicon)**：[Doc Agent 1.0.0 macOS DMG](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/1.0.0/DocAgent_1.0.0_aarch64.dmg)
+- **Windows NSIS**：[Doc Agent 1.0.0 Windows NSIS 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/1.0.0/DocAgent_1.0.0_x64-setup.exe)
+- **Windows MSI**：[Doc Agent 1.0.0 Windows MSI 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/1.0.0/DocAgent_1.0.0_x64_en-US.msi)
 
-也可从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载（备用渠道）。
+其他版本将链接中的 `1.0.0` 替换为对应版本号即可。也可从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载（备用渠道）。
 
 ### 自动更新
 

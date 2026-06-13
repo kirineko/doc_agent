@@ -280,11 +280,19 @@ jobs:
           tag_name: ${{ env.VERSION }}
           name: Doc Agent ${{ env.VERSION }}
           body: |
-            从下方 Assets 下载对应平台的安装包。
+            从下方 Assets 下载对应平台的安装包（备用渠道）。
 
-            国内用户推荐从 OSS 下载：
-            - macOS: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/
-            - Windows: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/
+            **国内用户推荐从阿里云 OSS 下载（广州）**
+
+            macOS (Apple Silicon)：
+            - [Doc Agent ${{ env.VERSION }} macOS DMG](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/DocAgent_${{ env.VERSION }}_aarch64.dmg)
+
+            Windows (x86_64)：
+            - [Doc Agent ${{ env.VERSION }} Windows NSIS 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/DocAgent_${{ env.VERSION }}_x64-setup.exe)
+            - [Doc Agent ${{ env.VERSION }} Windows MSI 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/DocAgent_${{ env.VERSION }}_x64_en-US.msi)
+
+            应用内更新清单：
+            - [latest.json](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json)
           draft: false
           overwrite_files: true
           files: |

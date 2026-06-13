@@ -33,5 +33,5 @@
 - [x] 5.1 更新 README：OSS 为主下载源、GH Release 为备、1.0.0 为自动更新基线
 - [x] 5.2 本地 `npm run tauri build` 验证 updater 产物与 `.sig` 生成
 - [x] 5.3 跑通 CI 自检：`cargo fmt/clippy/test`、`npm run typecheck/test/build`
-- [ ] 5.4 推送 tag `1.0.0` 后验证 OSS `latest.json` 匿名可访问、安装包 URL 有效
+- [x] 5.4 推送 tag `1.0.0` 后验证 OSS `latest.json` 匿名可访问、安装包 URL 有效
 - [ ] 5.5 （可选）发布 `1.0.1` 验证应用内更新闭环
