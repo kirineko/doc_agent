@@ -236,26 +236,40 @@ jobs:
           ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
         run: |
-          region="${OSS_REGION#oss-}"
+          BUCKET_NAME="${OSS_BUCKET#oss://}"
+          BUCKET_NAME="${BUCKET_NAME%/}"
+          REGION_SHORT="${OSS_REGION#oss-}"
+          REGION_SHORT="${REGION_SHORT%.aliyuncs.com}"
+          ENDPOINT="oss-${REGION_SHORT}.aliyuncs.com"
+          echo "OSS endpoint: https://${BUCKET_NAME}.${ENDPOINT}"
+          getent hosts "${BUCKET_NAME}.${ENDPOINT}"
           cat > "${HOME}/.ossutilconfig" <<EOF
           [default]
           accessKeyId=${ALIYUN_ACCESS_KEY_ID}
           accessKeySecret=${ALIYUN_ACCESS_KEY_SECRET}
-          region=${region}
+          region=${REGION_SHORT}
+          endpoint=${ENDPOINT}
           EOF
 
       - name: Upload artifacts to OSS
         run: |
-          BUCKET="oss://${OSS_BUCKET}"
+          BUCKET_NAME="${OSS_BUCKET#oss://}"
+          BUCKET_NAME="${BUCKET_NAME%/}"
+          REGION_SHORT="${OSS_REGION#oss-}"
+          REGION_SHORT="${REGION_SHORT%.aliyuncs.com}"
+          ENDPOINT="oss-${REGION_SHORT}.aliyuncs.com"
+          BUCKET="oss://${BUCKET_NAME}"
           RELEASE_DIR="${BUCKET}/releases/${VERSION}"
 
           while IFS= read -r file; do
             name="$(basename "$file")"
-            ossutil cp "$file" "${RELEASE_DIR}/${name}" -f
+            ossutil cp "$file" "${RELEASE_DIR}/${name}" -f --region "${REGION_SHORT}" -e "${ENDPOINT}"
           done < <(find dist -type f)
 
           ossutil cp latest.json "${BUCKET}/latest.json" \
             -f \
+            --region "${REGION_SHORT}" \
+            -e "${ENDPOINT}" \
             --cache-control "no-cache" \
             --content-type "application/json"
 

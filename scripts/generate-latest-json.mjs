@@ -19,6 +19,16 @@ function walkFiles(dir, predicate, results = []) {
   return results;
 }
 
+function normalizeOssRegion(region) {
+  let value = region.trim().replace(/^oss-/, "").replace(/\.aliyuncs\.com$/, "");
+  return value;
+}
+
+function ossPublicBase(bucket, region) {
+  const shortRegion = normalizeOssRegion(region);
+  const bucketName = bucket.trim().replace(/^oss:\/\//, "").replace(/\/$/, "");
+  return `https://${bucketName}.oss-${shortRegion}.aliyuncs.com`;
+}
 const distDir = process.argv[2] ?? "dist";
 const version = process.env.VERSION ?? process.env.GITHUB_REF_NAME;
 const bucket = process.env.OSS_BUCKET;
@@ -53,7 +63,7 @@ for (const sig of [macSig, winSig]) {
   }
 }
 
-const base = `https://${bucket}.${region}.aliyuncs.com/releases/${version}`;
+const base = `${ossPublicBase(bucket, region)}/releases/${version}`;
 const payload = {
   version,
   notes: `Doc Agent ${version}`,
