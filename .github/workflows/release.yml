@@ -229,7 +229,7 @@ jobs:
           unzip -qo /tmp/ossutil.zip -d /tmp/ossutil-extract
           install -m 755 /tmp/ossutil-extract/ossutil-2.3.0-linux-amd64/ossutil "${install_dir}/ossutil"
           echo "${install_dir}" >> "${GITHUB_PATH}"
-          ossutil version
+          "${install_dir}/ossutil" version
 
       - name: Configure ossutil
         env:
