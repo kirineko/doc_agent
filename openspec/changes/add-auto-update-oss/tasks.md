@@ -25,7 +25,7 @@
 
 - [x] 4.1 新增 `src/lib/updater.ts`：`checkForUpdates`（check → dialog → downloadAndInstall → relaunch）
 - [x] 4.2 应用启动后延迟触发静默检查（避免阻塞首屏）
-- [x] 4.3 `Sidebar` 增加「检查更新」入口及进行中状态
+- [x] 4.3 设置抽屉展示当前/最新版本，打开时拉取 `latest.json`，有新版时提供「更新」入口
 - [x] 4.4 错误场景 dialog 提示（下载失败、无网络等）
 
 ## 5. 文档与验证

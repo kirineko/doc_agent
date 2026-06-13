@@ -1,6 +1,6 @@
 [package]
 name = "doc-agent"
-version = "1.0.0"
+version = "1.0.1"
 description = "Office document AI agent desktop app"
 authors = ["doc-agent"]
 edition = "2021"

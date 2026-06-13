@@ -11,6 +11,8 @@ use std::path::PathBuf;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+pub mod updater;
+
 #[derive(Debug, Deserialize)]
 pub struct CreateProjectRequest {
     pub name: String,

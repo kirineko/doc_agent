@@ -7,6 +7,10 @@ const { checkMock, askMock, messageMock, relaunchMock } = vi.hoisted(() => ({
   relaunchMock: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
 vi.mock("@tauri-apps/plugin-updater", () => ({
   check: checkMock,
 }));
@@ -20,7 +24,36 @@ vi.mock("@tauri-apps/plugin-process", () => ({
   relaunch: relaunchMock,
 }));
 
-import { checkForAppUpdates } from "./updater";
+import { invoke } from "@tauri-apps/api/core";
+import { checkForAppUpdates, fetchLatestReleaseVersion, isNewerVersion } from "./updater";
+
+describe("isNewerVersion", () => {
+  it("compares semver tuples", () => {
+    expect(isNewerVersion("1.0.1", "1.0.0")).toBe(true);
+    expect(isNewerVersion("1.0.0", "1.0.0")).toBe(false);
+    expect(isNewerVersion("1.0.0", "1.0.1")).toBe(false);
+    expect(isNewerVersion("2.0.0", "1.9.9")).toBe(true);
+  });
+});
+
+describe("fetchLatestReleaseVersion", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns version from updater manifest command", async () => {
+    vi.mocked(invoke).mockResolvedValue("1.0.1");
+
+    await expect(fetchLatestReleaseVersion()).resolves.toBe("1.0.1");
+    expect(invoke).toHaveBeenCalledWith("fetch_latest_release_version");
+  });
+
+  it("returns null when command fails", async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error("network"));
+
+    await expect(fetchLatestReleaseVersion()).resolves.toBeNull();
+  });
+});
 
 describe("checkForAppUpdates", () => {
   beforeEach(() => {

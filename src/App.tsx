@@ -1,6 +1,9 @@
+import { useState } from "react";
 import { ChatPanel } from "./components/ChatPanel";
 import { Logo } from "./components/Logo";
 import { RightPanel } from "./components/RightPanel";
+import { SettingsButton } from "./components/SettingsButton";
+import { SettingsDrawer } from "./components/SettingsDrawer";
 import { Sidebar } from "./components/Sidebar";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { useAppUpdater } from "./hooks/useAppUpdater";
@@ -8,6 +11,7 @@ import { useWorkspace } from "./hooks/useWorkspace";
 
 function App() {
   const ws = useWorkspace();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   useAppUpdater();
 
   return (
@@ -18,8 +22,12 @@ function App() {
         <div className="truncate text-xs text-fg-secondary">
           {ws.activeProjectName ? ws.activeProjectName : "请选择项目目录"}
         </div>
-        <ThemeToggle />
+        <div className="ml-auto flex items-center gap-2">
+          <SettingsButton onClick={() => setSettingsOpen(true)} />
+          <ThemeToggle />
+        </div>
       </header>
+      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <main className="flex min-h-0 flex-1 gap-2.5 p-2.5">
         <Sidebar
           projects={ws.projects}

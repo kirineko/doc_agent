@@ -1,8 +1,30 @@
+import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 
+export const UPDATER_MANIFEST_URL =
+  "https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json";
+
 export type UpdateCheckMode = "silent" | "manual";
+
+export function isNewerVersion(latest: string, current: string): boolean {
+  const parse = (value: string) => value.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const [latestMajor, latestMinor, latestPatch] = parse(latest);
+  const [currentMajor, currentMinor, currentPatch] = parse(current);
+
+  if (latestMajor !== currentMajor) return latestMajor > currentMajor;
+  if (latestMinor !== currentMinor) return latestMinor > currentMinor;
+  return latestPatch > currentPatch;
+}
+
+export async function fetchLatestReleaseVersion(): Promise<string | null> {
+  try {
+    return await invoke<string | null>("fetch_latest_release_version");
+  } catch {
+    return null;
+  }
+}
 
 export async function checkForAppUpdates(mode: UpdateCheckMode): Promise<void> {
   try {

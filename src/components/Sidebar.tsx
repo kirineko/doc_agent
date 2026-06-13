@@ -1,11 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useState } from "react";
 import { plainSessionTitle } from "../lib/formatTitle";
 import { formatSessionTime } from "../lib/formatTime";
 import { pathBasename } from "../lib/pathUtils";
 import { buildCreateSessionRequest, type SessionConfig } from "../lib/sessionConfig";
-import { checkForAppUpdates } from "../lib/updater";
 import { Project, Session } from "../types";
 import { ApiKeySection } from "./ApiKeySection";
 import { ModelConfigSection } from "./ModelConfigSection";
@@ -52,7 +50,6 @@ export function Sidebar({
   onApiKeyStatusChange,
   onTavilyStatusChange,
 }: SidebarProps) {
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const effectiveConfig: SessionConfig = activeSession
     ? {
@@ -126,18 +123,6 @@ export function Sidebar({
       }
     } catch (error) {
       console.error(error);
-    }
-  }
-
-  async function handleCheckUpdate() {
-    if (checkingUpdate) return;
-    setCheckingUpdate(true);
-    try {
-      await checkForAppUpdates("manual");
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setCheckingUpdate(false);
     }
   }
 
@@ -230,14 +215,6 @@ export function Sidebar({
       )}
 
       <div className="mt-auto shrink-0 space-y-1.5">
-        <button
-          type="button"
-          className="w-full rounded-md border border-border-subtle px-2.5 py-1.5 text-xs text-fg-secondary hover:border-border-hover hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
-          onClick={() => void handleCheckUpdate()}
-          disabled={checkingUpdate}
-        >
-          {checkingUpdate ? "检查更新中…" : "检查更新"}
-        </button>
         <WebSearchSection enabled={tavilyEnabled} onStatusChange={onTavilyStatusChange} />
         <ApiKeySection
           apiKeyStatus={apiKeyStatus}
