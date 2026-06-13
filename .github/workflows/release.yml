@@ -77,6 +77,9 @@ jobs:
             args: ""
             artifact: windows
     runs-on: ${{ matrix.platform }}
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -102,6 +105,30 @@ jobs:
       - name: Build Tauri bundles
         run: npm run tauri build -- ${{ matrix.args }}
 
+      - name: Find updater artifacts
+        id: updater
+        shell: bash
+        run: |
+          if [[ "${{ matrix.platform }}" == "macos-latest" ]]; then
+            BUNDLE_DIR="src-tauri/target/aarch64-apple-darwin/release/bundle/macos"
+            UPDATE_FILE=$(find "$BUNDLE_DIR" -name "*.app.tar.gz" ! -name "*.sig" | head -1)
+          else
+            BUNDLE_DIR="src-tauri/target/release/bundle/nsis"
+            UPDATE_FILE=$(find "$BUNDLE_DIR" -name "*-setup.exe" ! -name "*.sig" | head -1)
+          fi
+          if [[ -z "$UPDATE_FILE" || ! -f "$UPDATE_FILE" ]]; then
+            echo "Updater bundle not found under $BUNDLE_DIR"
+            exit 1
+          fi
+          SIG_FILE="${UPDATE_FILE}.sig"
+          if [[ ! -f "$SIG_FILE" ]]; then
+            echo "Updater signature not found: $SIG_FILE"
+            exit 1
+          fi
+          echo "update_file=$UPDATE_FILE" >> "$GITHUB_OUTPUT"
+          echo "sig_file=$SIG_FILE" >> "$GITHUB_OUTPUT"
+          echo "Found updater bundle: $UPDATE_FILE"
+
       - name: Upload platform bundles
         uses: actions/upload-artifact@v4
         with:
@@ -112,26 +139,89 @@ jobs:
             src-tauri/target/**/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
 
+      - name: Upload updater artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.artifact }}
+          path: |
+            ${{ steps.updater.outputs.update_file }}
+            ${{ steps.updater.outputs.sig_file }}
+          if-no-files-found: error
+
   publish:
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION: ${{ github.ref_name }}
+      OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+      OSS_REGION: ${{ secrets.OSS_REGION }}
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: bundles-*
           merge-multiple: true
 
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: updater-*
+          merge-multiple: true
+
       - name: List release artifacts
         run: find dist -type f | sort
+
+      - name: Generate latest.json
+        run: node scripts/generate-latest-json.mjs dist
+
+      - name: Install ossutil
+        run: curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | bash
+
+      - name: Configure ossutil
+        env:
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+        run: |
+          ossutil config \
+            -e "${OSS_REGION}.aliyuncs.com" \
+            -i "${ALIYUN_ACCESS_KEY_ID}" \
+            -k "${ALIYUN_ACCESS_KEY_SECRET}"
+
+      - name: Upload artifacts to OSS
+        run: |
+          BUCKET="oss://${OSS_BUCKET}"
+          RELEASE_DIR="${BUCKET}/releases/${VERSION}"
+
+          while IFS= read -r file; do
+            name="$(basename "$file")"
+            ossutil cp "$file" "${RELEASE_DIR}/${name}" -f
+          done < <(find dist -type f)
+
+          ossutil cp latest.json "${BUCKET}/latest.json" \
+            -f \
+            --cache-control "no-cache" \
+            --content-type "application/json"
+
+          echo "OSS upload complete:"
+          ossutil ls "${RELEASE_DIR}/"
+          ossutil stat "${BUCKET}/latest.json"
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: Doc Agent ${{ github.ref_name }}
-          body: 从下方 Assets 下载对应平台的安装包。
+          body: |
+            从下方 Assets 下载对应平台的安装包。
+
+            国内用户推荐从 OSS 下载：
+            - macOS: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ github.ref_name }}/
+            - Windows: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ github.ref_name }}/
           draft: false
           overwrite_files: true
-          files: dist/**/*
+          files: |
+            dist/**/*
+            latest.json

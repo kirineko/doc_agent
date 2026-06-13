@@ -75,10 +75,17 @@ Agent 通过工具链操作项目内文件，主要包括：
 
 版本变更见 [CHANGELOG.md](./CHANGELOG.md)。
 
-从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载对应平台安装包：
+**国内用户推荐**从阿里云 OSS 下载（速度更稳定）：
 
-- **Windows**：`.msi` 或 `.exe`（NSIS）
-- **macOS**：`.dmg`（Apple Silicon）
+- **版本目录**：`https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/<version>/`
+- **macOS**：`DocAgent_<version>_aarch64.dmg`（Apple Silicon）
+- **Windows**：`DocAgent_<version>_x64-setup.exe` 或 `.msi`
+
+也可从 [GitHub Releases](https://github.com/kirineko/doc_agent/releases) 下载（备用渠道）。
+
+### 自动更新
+
+从 **1.0.0** 起，应用支持应用内自动更新（启动时检查 + 侧栏「检查更新」）。更新包从 OSS 拉取；**1.0.0 之前**的版本不含 updater，需手动安装 1.0.0 基线包。
 
 > 暂不提供 Linux 安装包。
 
@@ -125,14 +132,16 @@ npm run tauri build
 ## 发版说明（维护者）
 
 - **CI**：仅 `pull_request → main` 触发测试门禁；push main **不**触发构建
-- **Release**：推送纯数字 SemVer tag 时触发 Windows / macOS 安装包构建，例如：
+- **Release**：推送纯数字 SemVer tag 时触发 Windows / macOS 安装包构建，产物上传 **阿里云 OSS** 并同步 **GitHub Release**，例如：
 
   ```bash
-  git tag 0.1.0
-  git push origin 0.1.0
+  git tag 1.0.0
+  git push origin 1.0.0
   ```
 
 - tag **不要**加 `v` 前缀；版本号需与 `src-tauri/tauri.conf.json` 中的 `version` 一致
+- **Updater endpoint**：`https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json`
+- **GitHub Secrets**：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（可选）、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`OSS_BUCKET`、`OSS_REGION`
 
 ---
 

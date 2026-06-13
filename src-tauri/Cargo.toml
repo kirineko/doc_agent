@@ -1,6 +1,6 @@
 [package]
 name = "doc-agent"
-version = "0.2.0"
+version = "1.0.0"
 description = "Office document AI agent desktop app"
 authors = ["doc-agent"]
 edition = "2021"
@@ -45,6 +45,7 @@ base64 = "0.22"
 tavily = "2.1"
 
 tempfile = "3"
+tauri-plugin-process = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
@@ -55,6 +56,9 @@ objc2-web-kit = { version = "0.3", features = ["WKWebView", "WKPDFConfiguration"
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.38"
 windows = { version = "0.61", features = ["Win32_Foundation"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
 
 [dev-dependencies]
 tempfile = "3"

@@ -1,6 +1,15 @@
 # 更新说明
 
-本文件记录各版本的用户可见变更。安装包见 [GitHub Releases](https://github.com/kirineko/doc_agent/releases)。
+本文件记录各版本的用户可见变更。安装包见 [GitHub Releases](https://github.com/kirineko/doc_agent/releases)；国内用户亦可从阿里云 OSS 下载（见 README）。
+
+---
+
+## [1.0.0] — 2026-06-14
+
+### 自动更新与分发
+
+- **应用内自动更新**：启动时检查新版本，侧栏提供「检查更新」；确认后下载安装并重启（自 1.0.0 起生效，此前版本需手动安装本版基线包）
+- **国内下载加速**：Release 产物同步上传阿里云 OSS（广州），`latest.json` 供 updater 使用；GitHub Releases 保留为备用渠道
 
 ---
 

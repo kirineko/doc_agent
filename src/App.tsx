@@ -3,10 +3,12 @@ import { Logo } from "./components/Logo";
 import { RightPanel } from "./components/RightPanel";
 import { Sidebar } from "./components/Sidebar";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useWorkspace } from "./hooks/useWorkspace";
 
 function App() {
   const ws = useWorkspace();
+  useAppUpdater();
 
   return (
     <div className="flex h-full flex-col bg-app">
