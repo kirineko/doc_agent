@@ -4,9 +4,24 @@ on:
   push:
     tags:
       - "*.*.*"
+  workflow_dispatch:
+    inputs:
+      publish_only:
+        description: Skip check/build and only publish (reuse prior run artifacts)
+        type: boolean
+        default: false
+      source_run_id:
+        description: Workflow run ID containing build artifacts (required when publish_only)
+        type: string
+        required: false
+      version:
+        description: Release version tag (e.g. 1.0.0)
+        type: string
+        required: false
 
 jobs:
   check:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.publish_only }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,6 +80,7 @@ jobs:
         run: npm run build
 
   build:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.publish_only }}
     needs: check
     strategy:
       fail-fast: false
@@ -133,6 +149,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bundles-${{ matrix.artifact }}
+          retention-days: 7
           path: |
             src-tauri/target/**/release/bundle/dmg/*.dmg
             src-tauri/target/**/release/bundle/msi/*.msi
@@ -143,34 +160,60 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: updater-${{ matrix.artifact }}
+          retention-days: 7
           path: |
             ${{ steps.updater.outputs.update_file }}
             ${{ steps.updater.outputs.sig_file }}
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [build]
+    if: >-
+      ${{
+        always() && (
+          (github.event_name == 'workflow_dispatch' && inputs.publish_only) ||
+          (needs.build.result == 'success')
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     env:
-      VERSION: ${{ github.ref_name }}
+      VERSION: ${{ inputs.version || github.ref_name }}
       OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
       OSS_REGION: ${{ secrets.OSS_REGION }}
+      ARTIFACT_RUN_ID: ${{ github.event_name == 'workflow_dispatch' && inputs.source_run_id || github.run_id }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate publish-only inputs
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_only }}
+        run: |
+          if [[ -z "${{ inputs.source_run_id }}" ]]; then
+            echo "source_run_id is required when publish_only=true"
+            exit 1
+          fi
+          if [[ -z "${{ inputs.version }}" ]]; then
+            echo "version is required when publish_only=true"
+            exit 1
+          fi
 
       - uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: bundles-*
           merge-multiple: true
+          run-id: ${{ env.ARTIFACT_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/download-artifact@v4
         with:
           path: dist
           pattern: updater-*
           merge-multiple: true
+          run-id: ${{ env.ARTIFACT_RUN_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List release artifacts
         run: find dist -type f | sort
@@ -179,7 +222,9 @@ jobs:
         run: node scripts/generate-latest-json.mjs dist
 
       - name: Install ossutil
-        run: curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | bash
+        run: |
+          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
+          ossutil --version
 
       - name: Configure ossutil
         env:
@@ -212,14 +257,14 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Doc Agent ${{ github.ref_name }}
+          tag_name: ${{ env.VERSION }}
+          name: Doc Agent ${{ env.VERSION }}
           body: |
             从下方 Assets 下载对应平台的安装包。
 
             国内用户推荐从 OSS 下载：
-            - macOS: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ github.ref_name }}/
-            - Windows: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ github.ref_name }}/
+            - macOS: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/
+            - Windows: https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/
           draft: false
           overwrite_files: true
           files: |
