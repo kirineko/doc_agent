@@ -223,8 +223,13 @@ jobs:
 
       - name: Install ossutil
         run: |
-          curl -fsSL https://gosspublic.alicdn.com/ossutil/install.sh | sudo bash
-          ossutil --version
+          install_dir="${GITHUB_WORKSPACE}/.ossutil"
+          mkdir -p "$install_dir"
+          curl -fsSL -o /tmp/ossutil.zip "https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip"
+          unzip -qo /tmp/ossutil.zip -d /tmp/ossutil-extract
+          install -m 755 /tmp/ossutil-extract/ossutil-2.3.0-linux-amd64/ossutil "${install_dir}/ossutil"
+          echo "${install_dir}" >> "${GITHUB_PATH}"
+          ossutil version
 
       - name: Configure ossutil
         env:
