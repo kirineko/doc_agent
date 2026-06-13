@@ -243,6 +243,9 @@ jobs:
           ENDPOINT="oss-${REGION_SHORT}.aliyuncs.com"
           echo "OSS endpoint: https://${BUCKET_NAME}.${ENDPOINT}"
           getent hosts "${BUCKET_NAME}.${ENDPOINT}"
+          echo "BUCKET_NAME=${BUCKET_NAME}" >> "${GITHUB_ENV}"
+          echo "REGION_SHORT=${REGION_SHORT}" >> "${GITHUB_ENV}"
+          echo "ENDPOINT=${ENDPOINT}" >> "${GITHUB_ENV}"
           cat > "${HOME}/.ossutilconfig" <<EOF
           [default]
           accessKeyId=${ALIYUN_ACCESS_KEY_ID}
@@ -253,11 +256,6 @@ jobs:
 
       - name: Upload artifacts to OSS
         run: |
-          BUCKET_NAME="${OSS_BUCKET#oss://}"
-          BUCKET_NAME="${BUCKET_NAME%/}"
-          REGION_SHORT="${OSS_REGION#oss-}"
-          REGION_SHORT="${REGION_SHORT%.aliyuncs.com}"
-          ENDPOINT="oss-${REGION_SHORT}.aliyuncs.com"
           BUCKET="oss://${BUCKET_NAME}"
           RELEASE_DIR="${BUCKET}/releases/${VERSION}"
 
@@ -274,8 +272,8 @@ jobs:
             --content-type "application/json"
 
           echo "OSS upload complete:"
-          ossutil ls "${RELEASE_DIR}/"
-          ossutil stat "${BUCKET}/latest.json"
+          ossutil ls "${RELEASE_DIR}/" --region "${REGION_SHORT}" -e "${ENDPOINT}"
+          ossutil stat "${BUCKET}/latest.json" --region "${REGION_SHORT}" -e "${ENDPOINT}"
 
       - uses: softprops/action-gh-release@v2
         with:
