@@ -2,6 +2,19 @@
 
 本文件记录各版本的用户可见变更。安装包见 [GitHub Releases](https://github.com/kirineko/doc_agent/releases)；国内用户亦可从阿里云 OSS 下载（见 README）。
 
+**版本号策略（自首个 CalVer 发版起）**：正式版本采用 **SemVer 兼容日历版本 `YYYY.M.D`**（年.月.日，各段无前导零，如 `2026.6.14`）。`1.0.0` / `1.0.1` 为历史 SemVer，保留不改动。
+
+---
+
+## [Unreleased]
+
+首个 CalVer 发版时：将本节标题改为 `## [YYYY.M.D] — YYYY-MM-DD`（tag 用 `npm run calver:today` 查看当日版本），并保留下方「版本策略」条目。
+
+### 版本策略
+
+- 正式版本号改为 SemVer 兼容日历版本 **`YYYY.M.D`**（例：`2026.6.14`）；展示日期可用 `2026-06-14`
+- 历史 SemVer 版本（`1.0.0`、`1.0.1`）的 tag 与 OSS 路径保留不变
+
 ---
 
 ## [1.0.1] — 2026-06-14

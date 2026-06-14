@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bundle:js": "node scripts/bundle-js-libs.mjs"
+    "bundle:js": "node scripts/bundle-js-libs.mjs",
+    "calver:today": "node scripts/calver-today.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

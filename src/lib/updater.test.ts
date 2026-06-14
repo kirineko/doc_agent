@@ -34,6 +34,12 @@ describe("isNewerVersion", () => {
     expect(isNewerVersion("1.0.0", "1.0.1")).toBe(false);
     expect(isNewerVersion("2.0.0", "1.9.9")).toBe(true);
   });
+
+  it("compares CalVer against legacy SemVer", () => {
+    expect(isNewerVersion("2026.6.14", "1.0.1")).toBe(true);
+    expect(isNewerVersion("2026.6.15", "2026.6.14")).toBe(true);
+    expect(isNewerVersion("2026.6.14", "2026.6.15")).toBe(false);
+  });
 });
 
 describe("fetchLatestReleaseVersion", () => {

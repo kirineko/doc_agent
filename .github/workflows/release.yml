@@ -15,7 +15,7 @@ on:
         type: string
         required: false
       version:
-        description: Release version tag (e.g. 1.0.0)
+        description: Release version tag (CalVer YYYY.M.D, e.g. 2026.6.14)
         type: string
         required: false
 
