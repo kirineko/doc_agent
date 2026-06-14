@@ -134,17 +134,19 @@ npm run tauri build
 - **CI**：仅 `pull_request → main` 触发测试门禁；push main **不**触发构建
 - **Release**：推送纯数字三段 tag 时触发 Windows / macOS 安装包构建，产物上传 **阿里云 OSS** 并同步 **GitHub Release**
 - **版本格式（CalVer）**：**`YYYY.M.D`**（年.月.日），**禁止前导零** — 例：`2026.6.14`（✅）、`2026.06.14`（❌）
-- **发版前**：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的 `version` 与 tag 完全一致
+- **取当日版本**：`npm run calver:today`
+- **发版前**：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的 `version` 与 tag 完全一致；更新 `CHANGELOG.md`（`[Unreleased]` → 正式版本节）
 
   ```bash
-  # 将三处 version 设为发布日，例如 2026 年 6 月 14 日：
-  git tag 2026.6.14
-  git push origin 2026.6.14
+  VERSION=$(npm run -s calver:today)
+  git tag "$VERSION"
+  git push origin "$VERSION"
   ```
 
-- tag **不要**加 `v` 前缀；细则见 OpenSpec `openspec/changes/adopt-calver-versioning/`
+- tag **不要**加 `v` 前缀；细则见 `openspec/specs/project-versioning/spec.md`
 - **Updater endpoint**：`https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json`
 - **GitHub Secrets**：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（可选）、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`OSS_BUCKET`、`OSS_REGION`
+- **publish 失败应急**：Actions 手动跑 `Release`，`publish_only=true` + `source_run_id`（成功 build 的 run id）+ `version`（勿用 Re-run failed jobs）
 
 ---
 

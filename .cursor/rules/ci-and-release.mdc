@@ -26,14 +26,39 @@ alwaysApply: true
 - **产物**：GitHub Release 附件 + 阿里云 OSS `releases/<version>/` 与根 `latest.json`
 - **禁止**：未打 tag 的生产构建、跳过 test 的 release、带 `v` 前缀的 tag（如 `v2026.6.14`）
 
+### 应急：仅重发 publish
+
+build 已成功但 publish 失败时，在 Actions 手动触发 `Release` workflow：
+
+- `publish_only=true`
+- `source_run_id=<build 成功的 run id>`
+- `version=<tag 版本号>`
+
+不要用「Re-run failed jobs」代替，否则不会加载 main 上最新 workflow 修复。
+
 ## 版本号与 tag 规范
 
 - Git tag 与 `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的 `version` **完全一致**
 - **CalVer 语义**：MAJOR = 公历年，MINOR = 月（1–12），PATCH = 日（1–31）；示例 `2026.6.1`、`2026.6.14`、`2026.12.31`
+- **取当日版本**：`npm run calver:today`（输出如 `2026.6.14`）；校验逻辑见 `src/lib/version.ts`
 - **禁止前导零**：`6` 月写 `6` 非 `06`；9 日写 `9` 非 `09`（SemVer 2.0 与 Tauri updater 要求）
 - **展示**：Release 标题 / CHANGELOG 可用 `2026-06-14`；tag 与 `latest.json` 仍用 `2026.6.14`
 - **历史**：已发布 SemVer（`1.0.0`、`1.0.1`）保留；自下一版起使用 CalVer。`2026.6.14` 数值上大于 `1.0.1`，updater 可正常升级
-- 细则见 OpenSpec：`openspec/changes/adopt-calver-versioning/`（能力 `project-versioning`）
+- 细则见 `openspec/specs/project-versioning/spec.md`
+
+## 发版前检查清单
+
+1. `npm run calver:today` 确认当日 tag
+2. 同步三处 `version` 与 `CHANGELOG.md`（将 `[Unreleased]` 改为 `## [YYYY.M.D] — YYYY-MM-DD`）
+3. 本地自检（见下）
+4. `git tag <YYYY.M.D>` → `git push origin <YYYY.M.D>`
+5. 等 Release CI 完成后验证 OSS `latest.json` 与 `releases/<version>/`
+
+## Secrets 与 Updater
+
+- **Updater endpoint**：`https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json`
+- **GitHub Secrets**：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（可选）、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`OSS_BUCKET`、`OSS_REGION`
+- `OSS_REGION` 填 `oss-cn-guangzhou`（与 Bucket 地域一致）
 
 ## 本地合并前自检
 
@@ -45,9 +70,11 @@ cd .. && npm run typecheck && npm test && npm run build && npm run bundle:js
 ## 发版命令示例
 
 ```bash
-# 1. 将 package.json、Cargo.toml、tauri.conf.json 的 version 设为发布日 YYYY.M.D（例：2026.6.14）
-git tag 2026.6.14
-git push origin 2026.6.14
+VERSION=$(npm run -s calver:today)
+# 1. 将 package.json、Cargo.toml、tauri.conf.json 的 version 设为 $VERSION
+# 2. 更新 CHANGELOG.md
+git tag "$VERSION"
+git push origin "$VERSION"
 ```
 
 CI 配置文件：`.github/workflows/ci.yml`、`.github/workflows/release.yml`。

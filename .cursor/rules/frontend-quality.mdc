@@ -1,5 +1,5 @@
 ---
-description: 前端 lint、类型检查、测试与组件规范（src）
+description: 前端类型检查、测试与组件规范（src）
 globs: src/**/*
 alwaysApply: false
 ---
@@ -8,13 +8,13 @@ alwaysApply: false
 
 ## 必过检查
 
-提交前必须通过：
+提交前必须通过（与 CI 一致）：
 
-- `npm run lint`（ESLint）
 - `npm run typecheck`（`tsc --noEmit`）
-- `npm test`（Vitest 或项目选定 runner）
+- `npm test`（Vitest）
+- `npm run build`
 
-CI 与 release 流水线必须包含以上三步。
+CI 与 release 的 check job 另含 `npm run bundle:js`；发版规范见 `.cursor/rules/ci-and-release.mdc`。
 
 ## 结构
 
