@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "nsis", "msi"],
+    "targets": ["app", "dmg", "nsis"],
     "createUpdaterArtifacts": true,
     "resources": {
       "pdfium/": "pdfium/"

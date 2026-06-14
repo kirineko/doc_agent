@@ -9,7 +9,9 @@ Release 构建 MUST 启用 `createUpdaterArtifacts: true`，并在持有 `TAURI_
 
 - macOS aarch64：`*.app.tar.gz` 与同名 `.sig`
 - Windows x86_64：`*-setup.exe` 与同名 `.sig`
-- 首次安装包：`.dmg`、`*-setup.exe`、`.msi`
+- 首次安装包：`.dmg`（macOS）、`*-setup.exe`（Windows NSIS）
+
+Windows MUST NOT 构建 MSI：CalVer `YYYY.M.D` 的 MAJOR（公历年）超过 WiX 255 上限会导致打包失败；应用内更新亦仅使用 NSIS `*-setup.exe`。
 
 #### Scenario: macOS 构建产出 updater 包
 
@@ -56,7 +58,7 @@ Release 构建 MUST 启用 `createUpdaterArtifacts: true`，并在持有 `TAURI_
 #### Scenario: GitHub Release 含安装包
 
 - **WHEN** tag 触发 release 且构建成功
-- **THEN** GitHub Release Assets 包含 `.dmg`、Windows 安装包及关联构建产物
+- **THEN** GitHub Release Assets 包含 `.dmg`、Windows NSIS `*-setup.exe` 及关联 updater 产物
 
 ### Requirement: 日历版本触发发布流水线
 

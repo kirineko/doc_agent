@@ -152,7 +152,6 @@ jobs:
           retention-days: 7
           path: |
             src-tauri/target/**/release/bundle/dmg/*.dmg
-            src-tauri/target/**/release/bundle/msi/*.msi
             src-tauri/target/**/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
 
@@ -289,7 +288,6 @@ jobs:
 
             Windows (x86_64)：
             - [Doc Agent ${{ env.VERSION }} Windows NSIS 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/DocAgent_${{ env.VERSION }}_x64-setup.exe)
-            - [Doc Agent ${{ env.VERSION }} Windows MSI 安装包](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/releases/${{ env.VERSION }}/DocAgent_${{ env.VERSION }}_x64_en-US.msi)
 
             应用内更新清单：
             - [latest.json](https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json)

@@ -73,3 +73,12 @@
 
 - **WHEN** 用户访问 `releases/1.0.1/` 下历史安装包 URL
 - **THEN** 该路径 MUST 继续有效（对象未被迁移或删除）
+
+### Requirement: Windows 安装包格式
+
+自 CalVer 策略生效起，Windows 发布目标 MUST 仅使用 NSIS（`bundle.targets` 含 `nsis`，不含 `msi`）。MSI（WiX）的 major 版本字段 MUST NOT 超过 255，与 CalVer 公历年 MAJOR 不兼容。
+
+#### Scenario: CalVer 发版 Windows 构建成功
+
+- **WHEN** 维护者推送 tag `2026.6.14` 且 Release CI 完成 Windows 矩阵 build
+- **THEN** 产物包含 `DocAgent_2026.6.14_x64-setup.exe` 及其 `.sig`，且不尝试生成 `.msi`

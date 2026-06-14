@@ -29,6 +29,10 @@
 - **压缩后同步**：收到 `context_compacted` 后立即刷新消息列表，已归档内容不再显示；压缩摘要不在聊天气泡中展示
 - **侧栏会话拖动排序**：支持 drag handle 拖动重排；**懒激活**——未拖动前仍按 `updated_at` 自动排序，首次拖动后按项目写入 `localStorage` 持久化手动序
 
+### 发布
+
+- **Windows 安装包**：仅 NSIS（`*-setup.exe`）；移除 MSI——CalVer `YYYY.M.D` 的 major 超过 WiX 255 上限，MSI 打包会失败
+
 ### 版本与发布
 
 - **CalVer 版本号**：应用版本由 `1.0.1` 切换为 `2026.6.14`（`YYYY.M.D`，无前导零）
