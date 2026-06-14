@@ -1,6 +1,9 @@
 import { AgentEvent, Message } from "../types";
 
 export function isVisibleMessage(message: Message): boolean {
+  if (message.role === "user" && message.content?.startsWith("Previous context has been compacted.")) {
+    return false;
+  }
   if (message.role === "tool") return false;
   if (message.role === "assistant") {
     return Boolean(message.content?.trim()) || Boolean(message.reasoning_content?.trim());

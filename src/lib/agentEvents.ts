@@ -6,6 +6,8 @@ export interface AgentStreamState {
   streamingContent: string;
   liveTools: LiveToolCall[];
   busy: boolean;
+  contextRatio?: number;
+  compactionNotice?: string | null;
 }
 
 export const initialAgentStreamState: AgentStreamState = {
@@ -13,6 +15,8 @@ export const initialAgentStreamState: AgentStreamState = {
   streamingContent: "",
   liveTools: [],
   busy: false,
+  contextRatio: undefined,
+  compactionNotice: null,
 };
 
 function clearStreamingBuffers(
@@ -111,6 +115,16 @@ export function applyAgentEvent(
       return clearStreamingBuffers(state, false);
     case "assistant_step_done":
       return clearStreamingBuffers(state);
+    case "context_usage":
+      return {
+        ...state,
+        contextRatio: event.ratio,
+      };
+    case "context_compacted":
+      return {
+        ...state,
+        compactionNotice: "已自动压缩较早的对话历史以节省上下文",
+      };
     case "error":
       return {
         ...state,

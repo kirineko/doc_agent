@@ -12,7 +12,8 @@ export type StreamAction =
   | { type: "event"; event: AgentEvent; sessionId?: string }
   | { type: "busy" }
   | { type: "busy_resume" }
-  | { type: "reset" };
+  | { type: "reset" }
+  | { type: "clear_compaction_notice" };
 
 export function streamReducer(state: AgentStreamState, action: StreamAction): AgentStreamState {
   if (action.type === "reset") {
@@ -23,6 +24,9 @@ export function streamReducer(state: AgentStreamState, action: StreamAction): Ag
   }
   if (action.type === "busy_resume") {
     return markAgentResuming(state);
+  }
+  if (action.type === "clear_compaction_notice") {
+    return { ...state, compactionNotice: null };
   }
   return applyAgentEvent(state, action.event, action.sessionId);
 }

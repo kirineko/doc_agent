@@ -273,6 +273,13 @@ export function useWorkspace() {
         if (isStaleSessionResult(payload.session_id, activeSessionRef.current)) return;
         clearSuggestions();
       }
+      if (payload.kind === "context_compacted" && activeSessionRef.current) {
+        const sessionId = activeSessionRef.current;
+        if (isStaleSessionResult(payload.session_id, sessionId)) return;
+        invoke<MessageBundle>("list_messages", { sessionId })
+          .then((bundle) => applyBundle(bundle))
+          .catch(console.error);
+      }
       if (payload.kind === "turn_complete" && activeSessionRef.current) {
         const sessionId = activeSessionRef.current;
         if (isStaleSessionResult(payload.session_id, sessionId)) return;
@@ -526,6 +533,10 @@ export function useWorkspace() {
     clearSendHighlights(setHighlightProject, setHighlightApiKeyProvider);
   }, []);
 
+  const dismissCompactionNotice = useCallback(() => {
+    dispatchStream({ type: "clear_compaction_notice" });
+  }, []);
+
   const handleSessionUpdated = useCallback((session: Session) => {
     setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)));
   }, []);
@@ -619,6 +630,7 @@ export function useWorkspace() {
     handleTavilyStatusChange,
     handlePendingSessionConfigChange,
     dismissSendHint,
+    dismissCompactionNotice,
     handleSessionUpdated,
   };
 }

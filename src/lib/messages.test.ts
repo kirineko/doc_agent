@@ -67,5 +67,14 @@ describe("messages helpers", () => {
         reasoning_content: "thinking",
       }),
     ).toBe(true);
+    expect(
+      isVisibleMessage(
+        makeUserMessage({
+          id: "u2",
+          session_id: "s1",
+          content: "Previous context has been compacted. Continue from this summary:\n\nfoo",
+        }),
+      ),
+    ).toBe(false);
   });
 });

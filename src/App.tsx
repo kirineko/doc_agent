@@ -66,12 +66,15 @@ function App() {
           filePaths={ws.filePaths}
           input={ws.input}
           busy={ws.stream.busy}
+          contextRatio={ws.stream.contextRatio}
+          compactionNotice={ws.stream.compactionNotice}
           sendHint={ws.sendHint}
           onInputChange={ws.setInput}
           onSend={ws.sendMessage}
           onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
           onInitStarter={() => void ws.handleInitStarter()}
           onDismissSendHint={ws.dismissSendHint}
+          onDismissCompactionNotice={ws.dismissCompactionNotice}
         />
         <RightPanel
           liveTools={ws.stream.liveTools}

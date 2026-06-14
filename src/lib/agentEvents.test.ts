@@ -257,8 +257,39 @@ describe("applyAgentEvent", () => {
       liveTools: [
         { id: "call_1", name: "fs_list", args: {}, status: "done" },
       ],
+      contextRatio: 0.42,
+      compactionNotice: "notice",
     };
     expect(resetAgentStream()).toEqual(initialAgentStreamState);
     expect(resetAgentStream()).not.toEqual(dirty);
+  });
+
+  it("updates context ratio from context_usage", () => {
+    const next = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "context_usage",
+        session_id: sessionId,
+        used_tokens: 42_000,
+        max_tokens: 100_000,
+        ratio: 0.42,
+      },
+      sessionId,
+    );
+    expect(next.contextRatio).toBe(0.42);
+  });
+
+  it("shows compaction notice from context_compacted", () => {
+    const next = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "context_compacted",
+        session_id: sessionId,
+        before_tokens: 90_000,
+        after_tokens: 30_000,
+      },
+      sessionId,
+    );
+    expect(next.compactionNotice).toContain("压缩");
   });
 });

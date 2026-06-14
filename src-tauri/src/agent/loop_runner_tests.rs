@@ -1,8 +1,37 @@
 use super::*;
+use crate::agent::compaction::MAX_TOOL_STEPS;
 use crate::agent::types::AgentEvent;
 use crate::core::store::{Message, Store};
 use crate::state::AppState;
 use tempfile::tempdir;
+
+fn seed_bulky_history(store: &Store, session_id: &str, pairs: usize) {
+    for index in 0..pairs {
+        store
+            .add_message(
+                session_id,
+                "user",
+                Some(&format!("old user {index} {}", "a".repeat(8_000))),
+                None,
+                None,
+            )
+            .unwrap();
+        store
+            .add_message(
+                session_id,
+                "assistant",
+                Some(&format!("old assistant {index} {}", "b".repeat(8_000))),
+                None,
+                None,
+            )
+            .unwrap();
+    }
+}
+
+#[test]
+fn max_tool_steps_is_64() {
+    assert_eq!(MAX_TOOL_STEPS, 64);
+}
 
 #[test]
 fn assistant_step_done_event_serializes() {
@@ -18,6 +47,7 @@ fn assistant_step_done_event_serializes() {
             tool_call_id: None,
             seq: 1,
             created_at: "2026-01-01".into(),
+            archived: false,
         },
     };
     let value = serde_json::to_value(&event).unwrap();
@@ -228,5 +258,91 @@ fn mock_mixed_tools_run_before_clarify_pause() {
                     .unwrap_or("")
                     .contains("已收到澄清答案")));
         }
+    });
+}
+
+#[test]
+fn mock_turn_compacts_near_context_limit_before_llm() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let session = store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap();
+            seed_bulky_history(&store, &session.id, 8);
+            store.set_session_token_count(&session.id, 88_000).unwrap();
+            session.id
+        };
+
+        run_turn(
+            handle,
+            state.clone(),
+            session_id.clone(),
+            "继续写文档".into(),
+        )
+        .await
+        .unwrap();
+
+        let store = state.store.lock().unwrap();
+        let all = store.list_all_messages(&session_id).unwrap();
+        let archived = all.iter().filter(|m| m.archived).count();
+        assert!(
+            archived >= 2,
+            "expected archived history after compaction, got {archived}"
+        );
+
+        let active = store.list_active_messages(&session_id).unwrap();
+        assert!(
+            active.iter().any(|m| {
+                m.content
+                    .as_deref()
+                    .unwrap_or("")
+                    .starts_with("Previous context has been compacted.")
+            }),
+            "expected compaction summary in active messages"
+        );
+        assert!(
+            active
+                .first()
+                .and_then(|m| m.content.as_deref())
+                .unwrap_or("")
+                .starts_with("Previous context has been compacted."),
+            "summary should precede preserved messages"
+        );
+        assert_eq!(
+            active
+                .iter()
+                .filter(|m| m.role == "user" && m.content.as_deref() == Some("继续写文档"))
+                .count(),
+            1,
+            "current turn user message must not be duplicated after compaction rebuild"
+        );
+
+        let token_count = store
+            .get_session_token_count(&session_id)
+            .unwrap()
+            .unwrap_or(0);
+        assert!(
+            token_count < 88_000,
+            "expected token baseline to drop after compaction, got {token_count}"
+        );
+        assert!(
+            active.len() < all.len(),
+            "active context should be smaller than full history"
+        );
     });
 }

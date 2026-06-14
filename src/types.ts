@@ -134,6 +134,19 @@ export type AgentEvent =
       turn_id: string;
       message: Message;
     }
+  | {
+      kind: "context_usage";
+      session_id: string;
+      used_tokens: number;
+      max_tokens: number;
+      ratio: number;
+    }
+  | {
+      kind: "context_compacted";
+      session_id: string;
+      before_tokens: number;
+      after_tokens: number;
+    }
   | { kind: "error"; session_id: string; turn_id: string; message: string };
 
 export const MODEL_OPTIONS = [

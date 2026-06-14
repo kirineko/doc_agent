@@ -47,6 +47,7 @@ impl OpenAiCompatClient {
                 })
             }).collect::<Vec<_>>(),
             "stream": true,
+            "stream_options": { "include_usage": true },
         });
 
         if let Some(obj) = body.as_object_mut() {
@@ -245,6 +246,7 @@ mod tests {
             tool_call_id: None,
             seq: 2,
             created_at: "now".into(),
+            archived: false,
         };
         let tool = Message {
             id: "tool-1".into(),
@@ -255,6 +257,7 @@ mod tests {
             tool_call_id: Some("call_1".into()),
             seq: 3,
             created_at: "now".into(),
+            archived: false,
         };
         let tool_calls = vec![ToolCallRecord {
             id: "call_1".into(),

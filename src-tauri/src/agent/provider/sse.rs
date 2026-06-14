@@ -1,4 +1,4 @@
-use crate::agent::types::{AssistantTurn, ToolCall};
+use crate::agent::types::{AssistantTurn, TokenUsage, ToolCall};
 use futures_util::StreamExt;
 use reqwest::Response;
 use serde_json::Value;
@@ -25,6 +25,7 @@ where
     let mut reasoning = String::new();
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut finish_reason: Option<String> = None;
+    let mut usage: Option<TokenUsage> = None;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| SseError::Http(e.to_string()))?;
@@ -44,6 +45,13 @@ where
                 }
                 let value: Value =
                     serde_json::from_str(data).map_err(|e| SseError::Json(e.to_string()))?;
+                if let Some(parsed) = parse_usage(&value) {
+                    usage = Some(parsed);
+                }
+                let choices = value["choices"].as_array();
+                if choices.is_none() || choices.is_some_and(|c| c.is_empty()) {
+                    continue;
+                }
                 let choice = &value["choices"][0];
                 let delta = &choice["delta"];
                 if let Some(reason) = choice["finish_reason"].as_str() {
@@ -77,6 +85,25 @@ where
         reasoning_content: reasoning,
         tool_calls,
         finish_reason,
+        usage,
+    })
+}
+
+fn parse_usage(value: &Value) -> Option<TokenUsage> {
+    let usage = &value["usage"];
+    if usage.is_null() {
+        return None;
+    }
+    let prompt = usage["prompt_tokens"].as_u64()? as u32;
+    let completion = usage["completion_tokens"].as_u64()? as u32;
+    let total = usage["total_tokens"]
+        .as_u64()
+        .map(|v| v as u32)
+        .unwrap_or(prompt.saturating_add(completion));
+    Some(TokenUsage {
+        prompt,
+        completion,
+        total,
     })
 }
 
@@ -242,5 +269,20 @@ mod tests {
             "finish_reason": "length"
         });
         assert_eq!(choice["finish_reason"].as_str(), Some("length"));
+    }
+
+    #[test]
+    fn parse_usage_reads_prompt_completion_total() {
+        let chunk = json!({
+            "usage": {
+                "prompt_tokens": 1200,
+                "completion_tokens": 300,
+                "total_tokens": 1500
+            }
+        });
+        let usage = parse_usage(&chunk).unwrap();
+        assert_eq!(usage.prompt, 1200);
+        assert_eq!(usage.completion, 300);
+        assert_eq!(usage.total, 1500);
     }
 }

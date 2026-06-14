@@ -53,6 +53,21 @@ impl ModelId {
     pub fn supports_effort(self) -> bool {
         matches!(self, Self::DeepSeekV4Flash | Self::DeepSeekV4Pro)
     }
+
+    pub fn max_context_size(self) -> u32 {
+        match self {
+            Self::DeepSeekV4Flash | Self::DeepSeekV4Pro => 1_000_000,
+            Self::KimiK26 => 256_000,
+            Self::Mock => 100_000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TokenUsage {
+    pub prompt: u32,
+    pub completion: u32,
+    pub total: u32,
 }
 
 impl std::str::FromStr for ModelId {
@@ -211,6 +226,17 @@ pub enum AgentEvent {
         turn_id: String,
         message: String,
     },
+    ContextUsage {
+        session_id: String,
+        used_tokens: u32,
+        max_tokens: u32,
+        ratio: f64,
+    },
+    ContextCompacted {
+        session_id: String,
+        before_tokens: u32,
+        after_tokens: u32,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -231,4 +257,5 @@ pub struct AssistantTurn {
     pub reasoning_content: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
+    pub usage: Option<TokenUsage>,
 }

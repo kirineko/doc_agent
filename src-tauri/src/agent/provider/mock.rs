@@ -1,5 +1,7 @@
 use super::{LlmProvider, ProviderError};
-use crate::agent::types::{AgentEvent, AssistantTurn, ChatRequest, ToolCall};
+use crate::agent::types::{
+    AgentEvent, AssistantTurn, ChatMessage, ChatRequest, TokenUsage, ToolCall,
+};
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -47,12 +49,13 @@ impl LlmProvider for MockProvider {
                     delta: answer.clone(),
                 },
             );
-            return Ok(AssistantTurn {
-                content: answer,
-                reasoning_content: "收到 clarify tool result 后继续回答。".into(),
-                tool_calls: vec![],
-                finish_reason: None,
-            });
+            return Ok(finish_turn(
+                &request.messages,
+                answer,
+                "收到 clarify tool result 后继续回答。",
+                vec![],
+                None,
+            ));
         }
 
         let wants_clarify =
@@ -66,10 +69,11 @@ impl LlmProvider for MockProvider {
             && request.tools.iter().any(|t| t.name == "fs_list")
         {
             let args = clarify_question_args();
-            return Ok(AssistantTurn {
-                content: String::new(),
-                reasoning_content: "先查看目录，同时向用户澄清文档类型。".into(),
-                tool_calls: vec![
+            return Ok(finish_turn(
+                &request.messages,
+                String::new(),
+                "先查看目录，同时向用户澄清文档类型。",
+                vec![
                     ToolCall {
                         id: "call_mock_fs_1".into(),
                         call_type: "function".into(),
@@ -87,8 +91,8 @@ impl LlmProvider for MockProvider {
                         },
                     },
                 ],
-                finish_reason: None,
-            });
+                None,
+            ));
         }
 
         if wants_clarify && request.tools.iter().any(|t| t.name == "clarify_ask") {
@@ -105,10 +109,11 @@ impl LlmProvider for MockProvider {
                     status: "running".into(),
                 },
             );
-            return Ok(AssistantTurn {
-                content: String::new(),
-                reasoning_content: "需要向用户澄清文档类型。".into(),
-                tool_calls: vec![ToolCall {
+            return Ok(finish_turn(
+                &request.messages,
+                String::new(),
+                "需要向用户澄清文档类型。",
+                vec![ToolCall {
                     id: tool_id,
                     call_type: "function".into(),
                     function: crate::agent::types::FunctionCall {
@@ -116,8 +121,8 @@ impl LlmProvider for MockProvider {
                         arguments: args.to_string(),
                     },
                 }],
-                finish_reason: None,
-            });
+                None,
+            ));
         }
 
         if wants_list && request.tools.iter().any(|t| t.name == "fs_list") {
@@ -133,10 +138,11 @@ impl LlmProvider for MockProvider {
                     status: "running".into(),
                 },
             );
-            return Ok(AssistantTurn {
-                content: String::new(),
-                reasoning_content: "需要列出目录内容。".into(),
-                tool_calls: vec![ToolCall {
+            return Ok(finish_turn(
+                &request.messages,
+                String::new(),
+                "需要列出目录内容。",
+                vec![ToolCall {
                     id: tool_id,
                     call_type: "function".into(),
                     function: crate::agent::types::FunctionCall {
@@ -144,8 +150,8 @@ impl LlmProvider for MockProvider {
                         arguments: json!({ "path": "." }).to_string(),
                     },
                 }],
-                finish_reason: None,
-            });
+                None,
+            ));
         }
 
         let answer =
@@ -161,13 +167,62 @@ impl LlmProvider for MockProvider {
             );
         }
 
-        Ok(AssistantTurn {
-            content: answer,
-            reasoning_content: "直接回答。".into(),
-            tool_calls: vec![],
-            finish_reason: None,
-        })
+        Ok(finish_turn(
+            &request.messages,
+            answer.clone(),
+            "直接回答。",
+            vec![],
+            None,
+        ))
     }
+}
+
+fn finish_turn(
+    messages: &[ChatMessage],
+    content: String,
+    reasoning_content: &str,
+    tool_calls: Vec<ToolCall>,
+    finish_reason: Option<String>,
+) -> AssistantTurn {
+    let prompt = estimate_messages_tokens(messages);
+    let completion = estimate_text_tokens(&content) + estimate_text_tokens(reasoning_content);
+    AssistantTurn {
+        content,
+        reasoning_content: reasoning_content.to_string(),
+        tool_calls,
+        finish_reason,
+        usage: Some(TokenUsage {
+            prompt,
+            completion,
+            total: prompt.saturating_add(completion),
+        }),
+    }
+}
+
+fn estimate_text_tokens(text: &str) -> u32 {
+    (text.chars().count() / 4).max(if text.is_empty() { 0 } else { 1 }) as u32
+}
+
+fn estimate_messages_tokens(messages: &[ChatMessage]) -> u32 {
+    messages
+        .iter()
+        .map(|m| {
+            estimate_text_tokens(m.content.as_deref().unwrap_or(""))
+                + estimate_text_tokens(m.reasoning_content.as_deref().unwrap_or(""))
+                + m.tool_calls
+                    .as_ref()
+                    .map(|calls| {
+                        calls
+                            .iter()
+                            .map(|c| {
+                                estimate_text_tokens(&c.function.name)
+                                    + estimate_text_tokens(&c.function.arguments)
+                            })
+                            .sum::<u32>()
+                    })
+                    .unwrap_or(0)
+        })
+        .sum()
 }
 
 fn emit(on_event: &mut (dyn FnMut(AgentEvent) + Send), event: AgentEvent) {

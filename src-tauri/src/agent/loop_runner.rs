@@ -1,3 +1,7 @@
+use crate::agent::compaction::{
+    compact_session_if_needed, emit_context_usage, estimate_chat_message_tokens,
+    estimate_chat_messages_tokens, MAX_TOOL_STEPS,
+};
 use crate::agent::loop_support::*;
 use crate::agent::provider::openai_compat::{effort_from_str, model_from_str};
 use crate::agent::provider::provider_for;
@@ -10,8 +14,6 @@ use serde_json::{json, Value};
 use std::time::Instant;
 use tauri::{AppHandle, Runtime};
 use uuid::Uuid;
-
-const MAX_TOOL_STEPS: usize = 32;
 
 pub async fn run_turn<R: Runtime>(
     app: AppHandle<R>,
@@ -39,7 +41,7 @@ pub async fn run_turn<R: Runtime>(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "project not found".to_string())?;
         let history = store
-            .list_messages(&session_id)
+            .list_active_messages(&session_id)
             .map_err(|e| e.to_string())?;
         let tool_call_history = store
             .list_tool_calls_for_session(&session_id)
@@ -120,7 +122,7 @@ pub async fn resume_turn<R: Runtime>(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "project not found".to_string())?;
         let history = store
-            .list_messages(&session_id)
+            .list_active_messages(&session_id)
             .map_err(|e| e.to_string())?;
         let tool_call_history = store
             .list_tool_calls_for_session(&session_id)
@@ -198,7 +200,39 @@ async fn continue_loop<R: Runtime>(
     let provider = provider_for(model_id);
     let tool_defs = state.tools.definitions(web_enabled);
 
+    let mut token_count = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_session_token_count(&session_id)
+            .map_err(|e| e.to_string())?
+            .unwrap_or(0)
+    };
+    let full_estimate = estimate_chat_messages_tokens(working_messages);
+    let mut pending_estimate = if token_count == 0 {
+        full_estimate
+    } else {
+        full_estimate.saturating_sub(token_count)
+    };
+
     for _step in 0..MAX_TOOL_STEPS {
+        let (rebuilt, new_token_count, new_pending, compaction) = compact_session_if_needed(
+            &app,
+            &state,
+            &session_id,
+            &turn_id,
+            model_id,
+            api_key.as_deref(),
+            token_count,
+            pending_estimate,
+            web_enabled,
+        )
+        .await?;
+        if compaction.is_some() {
+            *working_messages = rebuilt;
+            token_count = new_token_count;
+            pending_estimate = new_pending;
+        }
+
         let request = ChatRequest {
             session_id: session_id.clone(),
             turn_id: turn_id.clone(),
@@ -238,6 +272,19 @@ async fn continue_loop<R: Runtime>(
             .await
             .map_err(|e| e.to_string())?;
 
+        let usage_reported = turn.usage.is_some();
+        if let Some(usage) = turn.usage {
+            token_count = usage.total;
+            pending_estimate = 0;
+            {
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                store
+                    .set_session_token_count(&session_id, token_count)
+                    .map_err(|e| e.to_string())?;
+            }
+            emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
+        }
+
         if turn.tool_calls.is_empty() {
             cleanup_skill_run_tmp(&sandbox);
             let msg = persist_assistant(
@@ -247,6 +294,22 @@ async fn continue_loop<R: Runtime>(
                 Some(turn.reasoning_content.as_str()),
                 None,
             )?;
+            if !usage_reported {
+                let mut estimated_messages = working_messages.clone();
+                estimated_messages.push(ChatMessage {
+                    role: "assistant".into(),
+                    content: Some(turn.content.clone()),
+                    reasoning_content: Some(turn.reasoning_content.clone()),
+                    tool_calls: None,
+                    tool_call_id: None,
+                });
+                token_count = estimate_chat_messages_tokens(&estimated_messages);
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                store
+                    .set_session_token_count(&session_id, token_count)
+                    .map_err(|e| e.to_string())?;
+                emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
+            }
             maybe_autotitle_session(
                 &state,
                 &session_id,
@@ -290,6 +353,9 @@ async fn continue_loop<R: Runtime>(
             tool_calls: Some(turn.tool_calls.clone()),
             tool_call_id: None,
         });
+        if !usage_reported {
+            pending_estimate += estimate_chat_message_tokens(working_messages.last().unwrap());
+        }
 
         let mut has_pending_clarify = false;
         for call in &turn.tool_calls {
@@ -361,6 +427,7 @@ async fn continue_loop<R: Runtime>(
                             Vec::new(),
                             working_messages,
                         )?;
+                        bump_pending_estimate(working_messages, &mut pending_estimate);
                         continue;
                     }
                     Err(err) => {
@@ -377,6 +444,7 @@ async fn continue_loop<R: Runtime>(
                             Vec::new(),
                             working_messages,
                         )?;
+                        bump_pending_estimate(working_messages, &mut pending_estimate);
                         continue;
                     }
                 }
@@ -433,6 +501,7 @@ async fn continue_loop<R: Runtime>(
                 changed_paths,
                 working_messages,
             )?;
+            bump_pending_estimate(working_messages, &mut pending_estimate);
         }
 
         if has_pending_clarify {
@@ -457,6 +526,34 @@ async fn continue_loop<R: Runtime>(
         },
     );
     Ok(())
+}
+
+fn bump_pending_estimate(working_messages: &[ChatMessage], pending_estimate: &mut u32) {
+    if let Some(last) = working_messages.last() {
+        *pending_estimate += estimate_chat_message_tokens(last);
+    }
+}
+
+#[cfg(test)]
+mod token_accounting_tests {
+    #[test]
+    fn effective_count_counts_tools_not_assistant_after_usage() {
+        let token_count = 1500u32;
+        let assistant_tokens = 200u32;
+        let tool_tokens = 100u32;
+        let mut pending = 0u32;
+        pending += tool_tokens;
+        assert_eq!(
+            token_count + pending,
+            1600,
+            "usage.total already includes assistant completion"
+        );
+        assert_ne!(
+            token_count + pending + assistant_tokens,
+            token_count + pending,
+            "assistant must not be added to pending after usage update"
+        );
+    }
 }
 
 /// Turn 结束兜底：无论 style_warnings 是否被处理，只要没有未修复的脚本失败

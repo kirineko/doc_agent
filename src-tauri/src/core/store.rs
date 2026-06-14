@@ -43,6 +43,8 @@ pub struct Message {
     pub tool_call_id: Option<String>,
     pub seq: i64,
     pub created_at: String,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +144,14 @@ impl Store {
         // 兼容旧库：列已存在则忽略
         let _ = self.conn.execute(
             "ALTER TABLE projects ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = self.conn.execute(
+            "ALTER TABLE messages ADD COLUMN archived INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = self.conn.execute(
+            "ALTER TABLE sessions ADD COLUMN last_token_count INTEGER",
             [],
         );
         Ok(())
@@ -384,6 +394,41 @@ impl Store {
         Ok(max + 1)
     }
 
+    /// Inserts a compaction summary before preserved messages (summary seq < preserved seq).
+    pub fn add_compaction_summary(
+        &self,
+        session_id: &str,
+        content: &str,
+        insert_before_seq: i64,
+    ) -> Result<Message, StoreError> {
+        let id = Uuid::new_v4().to_string();
+        let created_at = now();
+        self.conn.execute(
+            "UPDATE messages SET seq = seq + 1 WHERE session_id = ?1 AND seq >= ?2",
+            params![session_id, insert_before_seq],
+        )?;
+        self.conn.execute(
+            "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at)
+             VALUES (?1, ?2, 'user', ?3, NULL, NULL, ?4, ?5)",
+            params![id, session_id, content, insert_before_seq, created_at],
+        )?;
+        self.conn.execute(
+            "UPDATE sessions SET updated_at = ?1 WHERE id = ?2",
+            params![created_at, session_id],
+        )?;
+        Ok(Message {
+            id,
+            session_id: session_id.to_string(),
+            role: "user".into(),
+            content: Some(content.to_string()),
+            reasoning_content: None,
+            tool_call_id: None,
+            seq: insert_before_seq,
+            created_at,
+            archived: false,
+        })
+    }
+
     pub fn add_message(
         &self,
         session_id: &str,
@@ -422,12 +467,76 @@ impl Store {
             tool_call_id: tool_call_id.map(str::to_string),
             seq,
             created_at,
+            archived: false,
         })
     }
 
-    pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
+    pub fn list_active_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived
+             FROM messages WHERE session_id = ?1 AND archived = 0 ORDER BY seq ASC",
+        )?;
+        let rows = stmt.query_map(params![session_id], |row| {
+            Ok(Message {
+                id: row.get(0)?,
+                session_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                reasoning_content: row.get(4)?,
+                tool_call_id: row.get(5)?,
+                seq: row.get(6)?,
+                created_at: row.get(7)?,
+                archived: row.get::<_, i32>(8)? != 0,
+            })
+        })?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
+
+    pub fn mark_messages_archived(&self, ids: &[String]) -> Result<(), StoreError> {
+        for id in ids {
+            self.conn.execute(
+                "UPDATE messages SET archived = 1 WHERE id = ?1",
+                params![id],
+            )?;
+        }
+        Ok(())
+    }
+
+    pub fn set_session_token_count(
+        &self,
+        session_id: &str,
+        token_count: u32,
+    ) -> Result<(), StoreError> {
+        let updated = self.conn.execute(
+            "UPDATE sessions SET last_token_count = ?1 WHERE id = ?2",
+            params![token_count as i64, session_id],
+        )?;
+        if updated == 0 {
+            return Err(StoreError::Message("session not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn get_session_token_count(&self, session_id: &str) -> Result<Option<u32>, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT last_token_count FROM sessions WHERE id = ?1")?;
+        let mut rows = stmt.query(params![session_id])?;
+        if let Some(row) = rows.next()? {
+            let value: Option<i64> = row.get(0)?;
+            Ok(value.map(|v| v as u32))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn list_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
+        self.list_active_messages(session_id)
+    }
+
+    pub fn list_all_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived
              FROM messages WHERE session_id = ?1 ORDER BY seq ASC",
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
@@ -440,6 +549,7 @@ impl Store {
                 tool_call_id: row.get(5)?,
                 seq: row.get(6)?,
                 created_at: row.get(7)?,
+                archived: row.get::<_, i32>(8)? != 0,
             })
         })?;
         Ok(rows.collect::<Result<_, _>>()?)
@@ -764,5 +874,72 @@ mod tests {
         assert!(store.get_setting("theme").unwrap().is_none());
         store.set_setting("theme", "dark").unwrap();
         assert_eq!(store.get_setting("theme").unwrap().as_deref(), Some("dark"));
+    }
+
+    #[test]
+    fn archived_messages_are_hidden_from_active_list() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        let old = store
+            .add_message(&session.id, "user", Some("old"), None, None)
+            .unwrap();
+        store
+            .add_message(&session.id, "user", Some("new"), None, None)
+            .unwrap();
+        store.mark_messages_archived(&[old.id]).unwrap();
+        let active = store.list_active_messages(&session.id).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].content.as_deref(), Some("new"));
+    }
+
+    #[test]
+    fn session_token_count_roundtrip() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        store.set_session_token_count(&session.id, 42_000).unwrap();
+        assert_eq!(
+            store.get_session_token_count(&session.id).unwrap(),
+            Some(42_000)
+        );
+    }
+
+    #[test]
+    fn compaction_summary_is_inserted_before_preserved_messages() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        let old = store
+            .add_message(&session.id, "user", Some("old"), None, None)
+            .unwrap();
+        let preserved = store
+            .add_message(&session.id, "user", Some("recent"), None, None)
+            .unwrap();
+        store.mark_messages_archived(&[old.id]).unwrap();
+        store
+            .add_compaction_summary(
+                &session.id,
+                "Previous context has been compacted. Continue from this summary:\n\nsummary",
+                preserved.seq,
+            )
+            .unwrap();
+        let active = store.list_active_messages(&session.id).unwrap();
+        assert_eq!(active.len(), 2);
+        assert!(active[0]
+            .content
+            .as_deref()
+            .unwrap_or("")
+            .starts_with("Previous context has been compacted."));
+        assert_eq!(active[1].content.as_deref(), Some("recent"));
     }
 }

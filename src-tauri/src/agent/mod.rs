@@ -1,4 +1,5 @@
 pub mod clarify_interaction;
+pub mod compaction;
 pub mod loop_runner;
 pub mod loop_support;
 pub mod provider;

@@ -3,6 +3,7 @@ import { fuzzyMatch } from "../lib/fuzzy";
 import { applyMention, deleteMentionBeforeCursor, detectMention } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
+import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { InitCapsule, InitLoadingCapsule } from "./InitCapsule";
@@ -26,12 +27,15 @@ interface ChatPanelProps {
   filePaths?: string[];
   input: string;
   busy: boolean;
+  contextRatio?: number;
+  compactionNotice?: string | null;
   sendHint?: SendBlocker | null;
   onInputChange: (value: string) => void;
   onSend: () => void;
   onSubmitClarify?: (payload: { selected: string[]; custom?: string | null }) => void;
   onInitStarter?: () => void;
   onDismissSendHint?: () => void;
+  onDismissCompactionNotice?: () => void;
 }
 
 export function ChatPanel({
@@ -49,12 +53,15 @@ export function ChatPanel({
   filePaths = [],
   input,
   busy,
+  contextRatio,
+  compactionNotice,
   sendHint,
   onInputChange,
   onSend,
   onSubmitClarify,
   onInitStarter,
   onDismissSendHint,
+  onDismissCompactionNotice,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -142,9 +149,20 @@ export function ChatPanel({
     focusTextareaAt(text.length);
   }
 
+  useEffect(() => {
+    if (!compactionNotice) return;
+    const timer = window.setTimeout(() => {
+      onDismissCompactionNotice?.();
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [compactionNotice, onDismissCompactionNotice]);
+
   return (
     <section className="panel flex min-w-0 flex-1 flex-col p-3">
-      <div className="mb-2 text-xs font-medium text-fg-heading">会话</div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-fg-heading">会话</div>
+        <ContextUsageIndicator ratio={contextRatio} />
+      </div>
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -176,6 +194,12 @@ export function ChatPanel({
 
         {sendHint && onDismissSendHint && (
           <SendHintBanner blocker={sendHint} onDismiss={onDismissSendHint} />
+        )}
+
+        {compactionNotice && (
+          <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-fg-secondary">
+            {compactionNotice}
+          </div>
         )}
 
         {(showStarterCapsule || initializing) && (
