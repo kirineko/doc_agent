@@ -1,8 +1,11 @@
 import type { Session } from "../types";
 
-/** 后端 list_sessions 已按 updated_at DESC 排序，首项即最近会话。 */
+/** 按 updated_at 选取最近会话，与侧栏展示顺序无关。 */
 export function mostRecentSessionId(sessions: Session[]): string | undefined {
-  return sessions[0]?.id;
+  if (sessions.length === 0) return undefined;
+  return sessions.reduce((best, session) =>
+    session.updated_at > best.updated_at ? session : best,
+  ).id;
 }
 
 export function shouldApplyProjectSelection(

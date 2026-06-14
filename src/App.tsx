@@ -40,9 +40,11 @@ function App() {
           highlightProject={ws.highlightProject}
           highlightApiKeyProvider={ws.highlightApiKeyProvider}
           onProjectsChange={ws.setProjects}
-          onSessionsChange={ws.setSessions}
           onSelectProject={ws.selectProject}
           onSelectSession={ws.setActiveSessionId}
+          onCreateSession={() => ws.createSession()}
+          onDeleteSession={(sessionId) => ws.deleteSession(sessionId)}
+          onReorderSessions={ws.reorderSessions}
           onPendingSessionConfigChange={ws.handlePendingSessionConfigChange}
           onSessionUpdated={ws.handleSessionUpdated}
           onApiKeyStatusChange={ws.handleApiKeyStatusChange}

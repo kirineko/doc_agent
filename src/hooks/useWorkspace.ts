@@ -15,6 +15,13 @@ import {
   shouldApplyProjectSelection,
 } from "../lib/projectSession";
 import {
+  displaySessionsForProject,
+  moveSessionInList,
+  prependSessionToOrder,
+  removeSessionFromOrder,
+  writeProjectOrder,
+} from "../lib/sessionOrder";
+import {
   buildCreateSessionRequest,
   DEFAULT_SESSION_CONFIG,
   isSessionModelLocked,
@@ -101,6 +108,12 @@ export function useWorkspace() {
     setFollowupSuggestions([]);
   }
 
+  const setSessionsFromBackend = useCallback((list: Session[], projectId: string) => {
+    const ordered = displaySessionsForProject(list, projectId);
+    sessionsRef.current = ordered;
+    setSessions(ordered);
+  }, []);
+
   useEffect(() => {
     invoke<Project[]>("list_projects").then(setProjects).catch(console.error);
     API_PROVIDERS.forEach(async (provider) => {
@@ -129,13 +142,13 @@ export function useWorkspace() {
     try {
       const list = await invoke<Session[]>("list_sessions", { projectId });
       if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return;
-      setSessions(list);
+      setSessionsFromBackend(list, projectId);
       void projectFiles.loadInitial(projectId);
       setActiveSessionId(mostRecentSessionId(list));
     } catch (error) {
       console.error(error);
     }
-  }, [projectFiles.loadInitial, projectFiles.reset]);
+  }, [projectFiles.loadInitial, projectFiles.reset, setSessionsFromBackend]);
 
   useEffect(() => {
     dispatchStream({ type: "reset" });
@@ -268,8 +281,9 @@ export function useWorkspace() {
             applyBundle(bundle);
             clearSuggestions();
             if (activeProjectRef.current) {
-              invoke<Session[]>("list_sessions", { projectId: activeProjectRef.current })
-                .then(setSessions)
+              const projectId = activeProjectRef.current;
+              invoke<Session[]>("list_sessions", { projectId })
+                .then((list) => setSessionsFromBackend(list, projectId))
                 .catch(console.error);
             }
             void runFollowup(sessionId, countChatMessages(bundle.messages));
@@ -280,7 +294,7 @@ export function useWorkspace() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [runFollowup]);
+  }, [runFollowup, setSessionsFromBackend]);
 
   useEffect(() => {
     if (!sendHint) return;
@@ -342,6 +356,7 @@ export function useWorkspace() {
       });
 
       skipNextLoadRef.current = true;
+      prependSessionToOrder(projectId, session.id);
       sessionsRef.current = [session, ...sessionsRef.current];
       activeSessionRef.current = session.id;
       setSessions(sessionsRef.current);
@@ -515,11 +530,62 @@ export function useWorkspace() {
     setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)));
   }, []);
 
+  const reorderSessions = useCallback((activeId: string, overId: string) => {
+    const projectId = activeProjectRef.current;
+    if (!projectId) return;
+
+    const next = moveSessionInList(sessionsRef.current, activeId, overId);
+    if (!next) return;
+
+    writeProjectOrder(
+      projectId,
+      next.map((item) => item.id),
+    );
+    sessionsRef.current = next;
+    setSessions(next);
+  }, []);
+
+  const createSession = useCallback(async () => {
+    const projectId = activeProjectRef.current;
+    if (!projectId) return;
+
+    const session = await invoke<Session>("create_session", {
+      req: buildCreateSessionRequest(projectId, pendingSessionConfigRef.current),
+    });
+    prependSessionToOrder(projectId, session.id);
+    sessionsRef.current = [session, ...sessionsRef.current];
+    setSessions(sessionsRef.current);
+    setActiveSessionId(session.id);
+  }, []);
+
+  const deleteSession = useCallback(
+    async (sessionId: string) => {
+      const projectId = activeProjectRef.current;
+      if (!projectId) return;
+
+      try {
+        await invoke("delete_session", { sessionId });
+        removeSessionFromOrder(projectId, sessionId);
+        const next = sessionsRef.current.filter((item) => item.id !== sessionId);
+        sessionsRef.current = next;
+        setSessions(next);
+        if (activeSessionRef.current === sessionId) {
+          setActiveSessionId(mostRecentSessionId(next));
+        }
+      } catch (error) {
+        console.error(error);
+      }
+    },
+    [],
+  );
+
   return {
     projects,
     setProjects,
     sessions,
-    setSessions,
+    createSession,
+    deleteSession,
+    reorderSessions,
     messages,
     toolCalls,
     activeClarify,

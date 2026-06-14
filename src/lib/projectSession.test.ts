@@ -16,8 +16,8 @@ function session(id: string, updatedAt: string): Session {
 }
 
 describe("projectSession", () => {
-  it("picks first session as most recent", () => {
-    const sessions = [session("s-new", "2026-01-02"), session("s-old", "2026-01-01")];
+  it("picks session with latest updated_at regardless of array order", () => {
+    const sessions = [session("s-old", "2026-01-01"), session("s-new", "2026-01-02")];
     expect(mostRecentSessionId(sessions)).toBe("s-new");
   });
 
