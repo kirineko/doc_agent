@@ -1,37 +1,39 @@
 // English academic paper template
 #import "/doc-agent/typst/common/fonts.typ": *
-#import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/page.typ": page-paper, footer-page-no
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-en-body
-#page-a4(margin: 2.5cm)
+#let paper-theme = make-theme(palette: "slate")
+#show: apply-en-body.with(theme: paper-theme)
+#page-paper()
 #footer-page-no()
 
 #set heading(numbering: "1.1")
 
 #align(center)[
-  #text(size: 16pt, font: font-sans-en, weight: "bold")[
+  #text(size: fs-h1, font: font-heading-en, weight: "bold", fill: paper-theme.accent)[
     Mathematical Document Typesetting with Typst
   ]
-  #v(0.6em)
-  #text(size: 12pt)[
+  #v(sp-sm)
+  #text(size: fs-lead)[
     Alice Smith#super[1]　Bob Jones#super[2]
   ]
-  #v(0.4em)
-  #text(size: 10pt)[
+  #v(sp-xs)
+  #text(size: fs-small, fill: color-muted)[
     #super[1]Dept. of Mathematics　#super[2]Dept. of Computer Science
   ]
 ]
 
-#v(1.2em)
-#block(fill: luma(245), inset: 12pt, radius: 4pt)[
-  #text(weight: "bold")[Abstract]　
+#v(sp-lg)
+#block(fill: paper-theme.fill, inset: sp-md, radius: 4pt, stroke: stroke-hair + color-rule)[
+  #text(weight: "bold", fill: paper-theme.accent)[Abstract]　
   We study practical Typst workflows for documents with heavy mathematical notation,
   including font stacks, theorem environments, and cross-references.
-  #v(0.4em)
-  #text(weight: "bold")[Keywords]　Typst; mathematical typesetting; PDF; templates
+  #v(sp-xs)
+  #text(weight: "bold", fill: paper-theme.accent)[Keywords]　Typst; mathematical typesetting; PDF; templates
 ]
 
-#v(1em)
+#v(sp-md)
 = Introduction
 
 Mathematical manuscripts demand consistent equation layout and numbering. Typst offers a modern syntax and fast compilation suitable for offline desktop agents.
@@ -46,7 +48,7 @@ $ integral_a^b f(x) dif x = F(b) - F(a) $
 
 == Theorem statement
 
-#block(fill: luma(250), inset: 10pt, radius: 3pt)[
+#block(fill: paper-theme.fill, inset: sp-sm, radius: 3pt, stroke: stroke-hair + color-rule)[
   *Theorem (Mean Value Theorem)*　
   If $f in C[a,b]$ and differentiable on $(a,b)$, then there exists $xi in (a,b)$ such that
   $ f'(xi) = (f(b) - f(a)) / (b - a) $.

@@ -1,5 +1,7 @@
 pub mod bundled;
 pub mod compile;
+pub mod diagnostics;
+pub mod guide_tests;
 
 use compile::{
     compile_to_temp_pdf, finalize_pdf, remove_temp_pdf, resolve_typst_entry, CompileInput,
@@ -16,7 +18,8 @@ pub fn typst_to_pdf_tool() -> ToolSpec {
         description: "Compile a Typst (.typ) file or directory with main.typ in the project sandbox to PDF. \
             Prerequisite: typst_read_template syntax/typst-guide once per conversation. \
             New or heavily rewritten documents: also typst_list_templates and typst_read_template (scene) before writing .typ. \
-            Recompile-only edits may skip list/scene. Import built-ins via #import \"/doc-agent/typst/...\".",
+            Recompile-only edits may skip list/scene. Import built-ins via #import \"/doc-agent/typst/...\". \
+            On compile failure: read structured diagnostics (file/line/snippet/fix_guidance) and use fs_patch for minimal local fixes; do NOT rewrite the entire .typ.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -95,7 +98,13 @@ pub async fn typst_to_pdf_handler(ctx: &ToolContext<'_>, args: Value) -> Result<
         match tokio::time::timeout(std::time::Duration::from_secs(TIMEOUT_SECS), join).await {
             Ok(join_result) => join_result
                 .map_err(|e| ToolError::Execution(format!("typst 编译线程失败: {e}")))?
-                .map_err(ToolError::Execution)?,
+                .map_err(|failure| {
+                    ToolError::Structured(json!({
+                        "error": "typst 编译失败",
+                        "diagnostics": failure.diagnostics,
+                        "warnings": failure.warnings,
+                    }))
+                })?,
             Err(_) => {
                 tokio::spawn(async move {
                     if let Ok(temp_path) = temp_ready_rx.await {
@@ -113,10 +122,14 @@ pub async fn typst_to_pdf_handler(ctx: &ToolContext<'_>, args: Value) -> Result<
         return Err(ToolError::Execution(err));
     }
 
-    Ok(json!({
+    let mut result = json!({
         "path": out_path,
         "pages": compile_result.pages
-    }))
+    });
+    if !compile_result.warnings.is_empty() {
+        result["warnings"] = json!(compile_result.warnings);
+    }
+    Ok(result)
 }
 
 fn list_templates_handler(_ctx: &ToolContext, _args: Value) -> Result<Value, ToolError> {

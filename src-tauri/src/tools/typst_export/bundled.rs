@@ -20,6 +20,18 @@ struct TemplateFile {
 
 const VPATH_COMMON_FONTS: &str = "/doc-agent/typst/common/fonts.typ";
 const VPATH_COMMON_FONTS_STACK: &str = "/doc-agent/typst/common/fonts-stack.typ";
+const VPATH_COMMON_TOKENS: &str = "/doc-agent/typst/common/tokens.typ";
+const VPATH_COMMON_PAGE: &str = "/doc-agent/typst/common/page.typ";
+const VPATH_COMMON_EXAM: &str = "/doc-agent/typst/common/exam.typ";
+const VPATH_COMMON_LECTURE: &str = "/doc-agent/typst/common/lecture.typ";
+const VPATH_REPORT_ZH: &str = "/doc-agent/typst/report/report-zh.typ";
+const VPATH_REPORT_EN: &str = "/doc-agent/typst/report/report-en.typ";
+const VPATH_EXAM_ZH: &str = "/doc-agent/typst/exam/exam-zh.typ";
+const VPATH_EXAM_EN: &str = "/doc-agent/typst/exam/exam-en.typ";
+const VPATH_PAPER_ZH: &str = "/doc-agent/typst/paper/paper-zh.typ";
+const VPATH_PAPER_EN: &str = "/doc-agent/typst/paper/paper-en.typ";
+const VPATH_LECTURE_ZH: &str = "/doc-agent/typst/lecture/lecture-zh.typ";
+const VPATH_LECTURE_EN: &str = "/doc-agent/typst/lecture/lecture-en.typ";
 
 #[cfg(target_os = "macos")]
 const FONTS_STACK_SOURCE: &str =
@@ -30,18 +42,12 @@ const FONTS_STACK_SOURCE: &str =
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 const FONTS_STACK_SOURCE: &str =
     include_str!("../../../assets/typst-templates/common/fonts-stack-fallback.typ");
-const VPATH_COMMON_PAGE: &str = "/doc-agent/typst/common/page.typ";
-const VPATH_COMMON_EXAM: &str = "/doc-agent/typst/common/exam.typ";
-const VPATH_REPORT_ZH: &str = "/doc-agent/typst/report/report-zh.typ";
-const VPATH_REPORT_EN: &str = "/doc-agent/typst/report/report-en.typ";
-const VPATH_EXAM_ZH: &str = "/doc-agent/typst/exam/exam-zh.typ";
-const VPATH_EXAM_EN: &str = "/doc-agent/typst/exam/exam-en.typ";
-const VPATH_PAPER_ZH: &str = "/doc-agent/typst/paper/paper-zh.typ";
-const VPATH_PAPER_EN: &str = "/doc-agent/typst/paper/paper-en.typ";
-const VPATH_LECTURE_ZH: &str = "/doc-agent/typst/lecture/lecture-zh.typ";
-const VPATH_LECTURE_EN: &str = "/doc-agent/typst/lecture/lecture-en.typ";
 
 const FILES: &[TemplateFile] = &[
+    TemplateFile {
+        rel_path: "common/tokens.typ",
+        source: include_str!("../../../assets/typst-templates/common/tokens.typ"),
+    },
     TemplateFile {
         rel_path: "common/fonts.typ",
         source: include_str!("../../../assets/typst-templates/common/fonts.typ"),
@@ -175,20 +181,39 @@ pub fn vpath(rel_path: &str) -> String {
     format!("{VPATH_PREFIX}/{rel_path}")
 }
 
+pub fn scene_template_ids() -> &'static [&'static str] {
+    &[
+        "report/report-zh",
+        "report/report-en",
+        "exam/exam-zh",
+        "exam/exam-en",
+        "paper/paper-zh",
+        "paper/paper-en",
+        "lecture/lecture-zh",
+        "lecture/lecture-en",
+    ]
+}
+
+pub fn typst_guide_source() -> &'static str {
+    source_for_rel("syntax/typst-guide.md")
+}
+
 pub fn static_sources() -> Vec<(&'static str, &'static str)> {
     vec![
         (VPATH_COMMON_FONTS_STACK, FONTS_STACK_SOURCE),
-        (VPATH_COMMON_FONTS, FILES[0].source),
-        (VPATH_COMMON_PAGE, FILES[1].source),
-        (VPATH_COMMON_EXAM, FILES[2].source),
-        (VPATH_REPORT_ZH, FILES[3].source),
-        (VPATH_REPORT_EN, FILES[4].source),
-        (VPATH_EXAM_ZH, FILES[5].source),
-        (VPATH_EXAM_EN, FILES[6].source),
-        (VPATH_PAPER_ZH, FILES[7].source),
-        (VPATH_PAPER_EN, FILES[8].source),
-        (VPATH_LECTURE_ZH, FILES[9].source),
-        (VPATH_LECTURE_EN, FILES[10].source),
+        (VPATH_COMMON_TOKENS, source_for_rel("common/tokens.typ")),
+        (VPATH_COMMON_FONTS, source_for_rel("common/fonts.typ")),
+        (VPATH_COMMON_PAGE, source_for_rel("common/page.typ")),
+        (VPATH_COMMON_EXAM, source_for_rel("common/exam.typ")),
+        (VPATH_COMMON_LECTURE, source_for_rel("common/lecture.typ")),
+        (VPATH_REPORT_ZH, source_for_rel("report/report-zh.typ")),
+        (VPATH_REPORT_EN, source_for_rel("report/report-en.typ")),
+        (VPATH_EXAM_ZH, source_for_rel("exam/exam-zh.typ")),
+        (VPATH_EXAM_EN, source_for_rel("exam/exam-en.typ")),
+        (VPATH_PAPER_ZH, source_for_rel("paper/paper-zh.typ")),
+        (VPATH_PAPER_EN, source_for_rel("paper/paper-en.typ")),
+        (VPATH_LECTURE_ZH, source_for_rel("lecture/lecture-zh.typ")),
+        (VPATH_LECTURE_EN, source_for_rel("lecture/lecture-en.typ")),
     ]
 }
 
@@ -207,4 +232,25 @@ pub fn find_source(id: &str) -> Option<&'static str> {
         .iter()
         .find(|f| f.rel_path == id || vpath(f.rel_path) == id)
         .map(|f| f.source)
+}
+
+fn source_for_rel(rel_path: &str) -> &'static str {
+    FILES
+        .iter()
+        .find(|f| f.rel_path == rel_path)
+        .unwrap_or_else(|| panic!("missing bundled typst file: {rel_path}"))
+        .source
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn static_sources_include_tokens_and_lecture() {
+        let paths: Vec<_> = static_sources().into_iter().map(|(p, _)| p).collect();
+        assert!(paths.contains(&VPATH_COMMON_TOKENS));
+        assert!(paths.contains(&VPATH_COMMON_LECTURE));
+        assert!(paths.contains(&VPATH_REPORT_ZH));
+    }
 }

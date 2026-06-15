@@ -14,7 +14,7 @@
 2. `typst_list_templates` → 选择场景模板 id
 3. `typst_read_template` → 读取该场景模板（如 `exam/exam-zh`）作为起点
 4. `fs_write` / `fs_patch` → 写入项目内 `.typ`（可复制模板后改）
-5. `typst_to_pdf` → 编译 PDF
+5. `typst_to_pdf` → 编译 PDF；**失败时读取结构化 diagnostics（file/line/snippet/fix_guidance），用 `fs_patch` 局部修复，禁止整篇重写**
 
 **仅重编译**已有 `.typ`、做小改动时：可跳过步骤 2–3，但仍须本会话已读过 `syntax/typst-guide`。
 
@@ -22,10 +22,11 @@
 
 | 路径 | 导出 |
 |------|------|
-| `common/fonts.typ` | `apply-zh-body`、`apply-en-body`、`apply-zh-title`、`font-*` |
-| `common/page.typ` | `page-a4`、`page-a4-compact`、`page-exam`、`footer-page-no` |
-| `common/exam.typ` | `fill-blank`、`calc-item`、`calc-counter-reset`、`exam-header-zh/en`、`mc-options`、`field-line` |
-| `common/lecture.typ` | `definition-zh/en`、`example-zh/en` |
+| `common/tokens.typ` | `make-theme`、`default-theme`、`exam-theme`、`palettes`、`scaled-sp` |
+| `common/fonts.typ` | `apply-zh-body`、`apply-en-body`、`apply-zh-title`、`apply-en-title`、`font-body-*`、`font-heading-*`、`font-math` |
+| `common/page.typ` | `page-a4`、`page-a4-compact`、`page-exam`、`page-paper`、`page-lecture`、`footer-page-no` |
+| `common/exam.typ` | `fill-blank`、`calc-item`、`calc-counter-reset`、`exam-header-zh`、`exam-header-en`、`mc-options`、`field-line` |
+| `common/lecture.typ` | `definition-zh`、`definition-en`、`example-zh`、`example-en` |
 
 ### 0.3 场景模板索引
 
@@ -50,6 +51,7 @@
 | 代码 | `#函数(...)`、`[内容块]` | `#align(center)[标题]` |
 | 数学 | `$ ... $` | `$E = m c^2$` |
 
+<!-- doc-agent:compile -->
 ```typst
 #set page(paper: "a4", margin: 2cm)
 #set text(size: 11pt)
@@ -183,6 +185,12 @@ $ E = m c^2 $ <eq:emc2>
 ```
 
 带名参数调用：`#fill-blank(width: 2.5cm)`（**勿**写 `#fill-blank(2.5cm)`）。
+
+<!-- doc-agent:compile -->
+```typst
+#import "/doc-agent/typst/common/exam.typ": fill-blank
++ $lim_(x->0) (sin x)/x = $ #fill-blank(width: 2.5cm)
+```
 
 ---
 
@@ -352,9 +360,44 @@ def f(): pass
 
 英文用 `definition-en`、`example-en`。
 
+英文：`#show: apply-en-body`、`#apply-en-title([...])`。
+
 ---
 
-## 20. 常见错误
+## 22. 主题与配色（`common/tokens.typ`）
+
+设计系统区分**锁定轴**（字号、正文墨色、行距、版心，不可覆盖）与**自由轴**（palette/accent/density/heading-style，可定制观感）。
+
+**调色板预设**：`academic-blue` / `slate` / `burgundy` / `forest` / `charcoal`（试卷默认，墨色灰阶）。
+
+<!-- doc-agent:compile -->
+```typst
+#import "/doc-agent/typst/common/fonts.typ": apply-zh-body
+#import "/doc-agent/typst/common/tokens.typ": make-theme
+
+#let theme = make-theme(palette: "burgundy", density: "relaxed")
+#show: apply-zh-body.with(theme: theme)
+
+= 标题
+正文 $x^2$。
+```
+
+自定义强调色（仅染标题/链接/表头，正文仍为墨色）：
+
+```typst
+#show: apply-zh-body.with(theme: make-theme(accent: rgb("#0b6e6e")))
+```
+
+试卷场景请使用 `exam-theme`（锁定 charcoal，适合黑白打印）：
+
+```typst
+#import "/doc-agent/typst/common/tokens.typ": exam-theme
+#show: apply-zh-body.with(theme: exam-theme())
+```
+
+---
+
+## 23. 常见错误
 
 | 错误写法 | 后果 | 正确做法 |
 |----------|------|----------|
@@ -368,7 +411,7 @@ def f(): pass
 
 ---
 
-## 21. 官方文档索引
+## 24. 官方文档索引
 
 | 主题 | URL |
 |------|------|

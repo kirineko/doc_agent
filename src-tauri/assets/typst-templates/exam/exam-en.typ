@@ -1,11 +1,10 @@
 // English exam template · edit metadata and questions after copying
-// APIs: common/exam.typ · syntax: syntax/typst-guide
-
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": page-exam, footer-page-no
 #import "/doc-agent/typst/common/exam.typ": *
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-en-body
+#show: apply-en-body.with(theme: exam-theme())
 #page-exam()
 #footer-page-no()
 
@@ -65,7 +64,7 @@
   1, & x > 1,
 )$. Evaluate $display(integral_(-1)^4 f(x) dif x)$]
 
-#v(2em)
+#v(sp-xl)
 #align(center)[
-  #text(size: 9pt)[— End of examination —]
+  #text(size: fs-footnote, fill: color-muted)[— End of examination —]
 ]

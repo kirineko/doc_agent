@@ -1,37 +1,39 @@
 // 中文学术论文模板
 #import "/doc-agent/typst/common/fonts.typ": *
-#import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/page.typ": page-paper, footer-page-no
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-zh-body
-#page-a4(margin: 2.5cm)
+#let paper-theme = make-theme(palette: "slate")
+#show: apply-zh-body.with(theme: paper-theme)
+#page-paper()
 #footer-page-no()
 
 #set heading(numbering: "1.1")
 
 #align(center)[
-  #text(size: 16pt, font: font-sans-zh, weight: "bold")[
+  #text(size: fs-h1, font: font-heading-zh, weight: "bold", fill: paper-theme.accent)[
     基于 Typst 的数学文档排版方法研究
   ]
-  #v(0.6em)
-  #text(size: 12pt)[
+  #v(sp-sm)
+  #text(size: fs-lead)[
     张三#super[1]　李四#super[2]
   ]
-  #v(0.4em)
-  #text(size: 10pt)[
+  #v(sp-xs)
+  #text(size: fs-small, fill: color-muted)[
     #super[1]某某大学数学学院　#super[2]某某大学计算机学院
   ]
 ]
 
-#v(1.2em)
-#block(fill: luma(245), inset: 12pt, radius: 4pt)[
-  #text(weight: "bold")[摘要]　
+#v(sp-lg)
+#block(fill: paper-theme.fill, inset: sp-md, radius: 4pt, stroke: stroke-hair + color-rule)[
+  #text(weight: "bold", fill: paper-theme.accent)[摘要]　
   本文讨论使用 Typst 进行含公式文档排版的实践，包括字体配置、定理环境与引用管理。
   实验表明，在试卷与论文场景下 Typst 可替代传统 LaTeX 工作流。
-  #v(0.4em)
-  #text(weight: "bold")[关键词]　Typst；数学排版；PDF；模板
+  #v(sp-xs)
+  #text(weight: "bold", fill: paper-theme.accent)[关键词]　Typst；数学排版；PDF；模板
 ]
 
-#v(1em)
+#v(sp-md)
 = 引言
 
 数学类文档对公式、编号与版式一致性要求较高。Typst 提供现代语法与快速编译，适合桌面 Agent 离线生成 PDF。
@@ -46,7 +48,7 @@ $ integral_a^b f(x) dif x = F(b) - F(a) $
 
 == 定理表述
 
-#block(fill: luma(250), inset: 10pt, radius: 3pt)[
+#block(fill: paper-theme.fill, inset: sp-sm, radius: 3pt, stroke: stroke-hair + color-rule)[
   *定理（拉格朗日中值定理）*　
   设 $f in C[a,b]$ 且在 $(a,b)$ 可导，则存在 $xi in (a,b)$ 使得
   $ f'(xi) = (f(b) - f(a)) / (b - a) $.
@@ -62,6 +64,6 @@ $ integral_a^b f(x) dif x = F(b) - F(a) $
 
 = 参考文献
 
-#pad(left: 2em)[
+#pad(left: indent-cjk)[
   [1] Typst Contributors. *Typst: A new markup-based typesetting system*. 2024.
 ]

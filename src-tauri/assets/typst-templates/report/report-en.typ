@@ -1,20 +1,23 @@
 // English technical report template
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-en-body
+#let report-theme = make-theme(palette: "academic-blue")
+#show: apply-en-body.with(theme: report-theme)
 #page-a4()
 #footer-page-no()
 
 #apply-en-title(
   [Technical Investigation Report],
-  [Sample template — edit title and body after copying],
+  subtitle: [Sample template — edit title and body after copying],
+  theme: report-theme,
 )
 
 #align(center)[
   #grid(
     columns: (1fr, 1fr),
-    gutter: 1em,
+    gutter: sp-md,
     [Author: Jane Doe],
     [Department: R&D],
     [Date: #datetime.today().display()],
@@ -22,7 +25,7 @@
   )
 ]
 
-#v(1.5em)
+#v(sp-lg)
 #outline(title: [Table of Contents], indent: auto)
 #pagebreak()
 
@@ -47,9 +50,7 @@ Describe the business context, pain points, and constraints.
 #table(
   columns: (auto, 1fr, 1fr, 1fr),
   align: (left, left, left, left),
-  inset: 8pt,
-  stroke: 0.5pt,
-  [*Dimension*], [*Option A*], [*Option B*], [*Option C*],
+  table.header([*Dimension*], [*Option A*], [*Option B*], [*Option C*]),
   [Performance], [High], [Medium], [Medium],
   [Cost], [High], [Low], [Medium],
   [Operations], [Low], [Medium], [High],
@@ -59,7 +60,7 @@ Describe the business context, pain points, and constraints.
 
 We recommend *Option B* and a proof-of-concept in the next phase.
 
-#v(2em)
+#v(sp-xl)
 #align(right)[
-  #text(size: 9pt, fill: gray)[doc-agent built-in · report/report-en]
+  #text(size: fs-footnote, fill: color-muted)[doc-agent built-in · report/report-en]
 ]

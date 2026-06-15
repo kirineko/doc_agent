@@ -1,20 +1,23 @@
 // 中文技术报告模板
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-zh-body
+#let report-theme = make-theme(palette: "academic-blue")
+#show: apply-zh-body.with(theme: report-theme)
 #page-a4()
 #footer-page-no()
 
 #apply-zh-title(
   [技术调研报告],
-  [—— 示例模板，复制后修改标题与正文],
+  subtitle: [—— 示例模板，复制后修改标题与正文],
+  theme: report-theme,
 )
 
 #align(center)[
   #grid(
     columns: (1fr, 1fr),
-    gutter: 1em,
+    gutter: sp-md,
     [撰写人：张三],
     [部门：研发中心],
     [日期：#datetime.today().display()],
@@ -22,7 +25,7 @@
   )
 ]
 
-#v(1.5em)
+#v(sp-lg)
 #outline(title: [目录], indent: auto)
 #pagebreak()
 
@@ -47,9 +50,7 @@
 #table(
   columns: (auto, 1fr, 1fr, 1fr),
   align: (left, left, left, left),
-  inset: 8pt,
-  stroke: 0.5pt,
-  [*维度*], [*方案 A*], [*方案 B*], [*方案 C*],
+  table.header([*维度*], [*方案 A*], [*方案 B*], [*方案 C*]),
   [性能], [高], [中], [中],
   [成本], [高], [低], [中],
   [运维复杂度], [低], [中], [高],
@@ -59,7 +60,7 @@
 
 推荐采用 *方案 B*，并在下一阶段开展 PoC 验证。
 
-#v(2em)
+#v(sp-xl)
 #align(right)[
-  #text(size: 9pt, fill: gray)[本模板由 doc-agent 内置 · report/report-zh]
+  #text(size: fs-footnote, fill: color-muted)[本模板由 doc-agent 内置 · report/report-zh]
 ]

@@ -2895,6 +2895,39 @@ async function main() {
     }
 
     #[test]
+    fn typst_to_pdf_returns_structured_compile_error() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("bad.typ"), "#fillblank()").unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "bad.typ",
+                "out_path": "bad.pdf"
+            }),
+        )
+        .unwrap_err();
+        match err {
+            ToolError::Structured(v) => {
+                assert_eq!(v["error"], "typst 编译失败");
+                let diags = v["diagnostics"].as_array().expect("diagnostics array");
+                assert!(!diags.is_empty());
+                assert_eq!(diags[0]["error_type"], "unknown-variable");
+                assert!(diags[0]["snippet"].as_str().is_some());
+                assert!(diags[0]["fix_guidance"]
+                    .as_str()
+                    .unwrap()
+                    .contains("fs_patch"));
+            }
+            other => panic!("expected structured typst error, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn typst_to_pdf_compiles_minimal_document() {
         let dir = tempdir().unwrap();
         fs::create_dir_all(dir.path().join("typst")).unwrap();

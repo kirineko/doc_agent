@@ -1,11 +1,10 @@
 // 中文试卷模板 · 复制到项目后修改元信息与题目
-// 内置 API 见 common/exam.typ；语法见 syntax/typst-guide
-
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": page-exam, footer-page-no
 #import "/doc-agent/typst/common/exam.typ": *
+#import "/doc-agent/typst/common/tokens.typ": *
 
-#show: apply-zh-body
+#show: apply-zh-body.with(theme: exam-theme())
 #page-exam()
 #footer-page-no()
 
@@ -65,7 +64,7 @@
   1, & x > 1,
 )$，计算 $display(integral_(-1)^4 f(x) dif x)$]
 
-#v(2em)
+#v(sp-xl)
 #align(center)[
-  #text(size: 9pt)[—— 试卷结束 ——]
+  #text(size: fs-footnote, fill: color-muted)[—— 试卷结束 ——]
 ]
