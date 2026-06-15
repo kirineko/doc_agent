@@ -2,6 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { check } from "@tauri-apps/plugin-updater";
 import { ask, message } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
+import {
+  applyDownloadEvent,
+  resetUpdateProgress,
+  startUpdateDownload,
+} from "./updateProgress";
 
 export const UPDATER_MANIFEST_URL =
   "https://doc-agent.oss-cn-guangzhou.aliyuncs.com/latest.json";
@@ -48,9 +53,13 @@ export async function checkForAppUpdates(mode: UpdateCheckMode): Promise<void> {
     );
     if (!confirmed) return;
 
-    await update.downloadAndInstall();
+    startUpdateDownload(update.version);
+    await update.downloadAndInstall((event) => {
+      applyDownloadEvent(event);
+    });
     await relaunch();
   } catch (error) {
+    resetUpdateProgress();
     const detail = error instanceof Error ? error.message : String(error);
     await message(`更新失败：${detail}`, { title: "更新失败", kind: "error" });
     if (mode === "manual") {

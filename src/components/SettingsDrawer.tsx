@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import packageJson from "../../package.json";
+import { useUpdateProgress } from "../hooks/useUpdateProgress";
 import {
   configuredBalanceProviders,
   fetchProviderBalances,
@@ -39,7 +40,9 @@ export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerPr
   const currentVersion = packageJson.version;
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [loadingLatest, setLoadingLatest] = useState(false);
-  const [updating, setUpdating] = useState(false);
+  const [updatePending, setUpdatePending] = useState(false);
+  const updateProgress = useUpdateProgress();
+  const updating = updatePending || updateProgress.phase !== "idle";
   const [balances, setBalances] = useState<ProviderBalanceRow[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
 
@@ -109,13 +112,13 @@ export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerPr
 
   async function handleUpdate() {
     if (updating || !hasUpdate) return;
-    setUpdating(true);
+    setUpdatePending(true);
     try {
       await checkForAppUpdates("manual");
     } catch (error) {
       console.error(error);
     } finally {
-      setUpdating(false);
+      setUpdatePending(false);
     }
   }
 

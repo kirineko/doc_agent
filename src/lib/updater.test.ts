@@ -26,6 +26,10 @@ vi.mock("@tauri-apps/plugin-process", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import { checkForAppUpdates, fetchLatestReleaseVersion, isNewerVersion } from "./updater";
+import {
+  getUpdateProgressSnapshot,
+  resetUpdateProgress,
+} from "./updateProgress";
 
 describe("isNewerVersion", () => {
   it("compares semver tuples", () => {
@@ -64,6 +68,7 @@ describe("fetchLatestReleaseVersion", () => {
 describe("checkForAppUpdates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetUpdateProgress();
   });
 
   it("shows message when manual check finds no update", async () => {
@@ -78,7 +83,11 @@ describe("checkForAppUpdates", () => {
   });
 
   it("downloads and relaunches when user confirms", async () => {
-    const downloadAndInstall = vi.fn().mockResolvedValue(undefined);
+    const downloadAndInstall = vi.fn().mockImplementation(async (onEvent) => {
+      onEvent?.({ event: "Started", data: { contentLength: 100 } });
+      onEvent?.({ event: "Progress", data: { chunkLength: 40 } });
+      onEvent?.({ event: "Finished" });
+    });
     checkMock.mockResolvedValue({
       available: true,
       version: "1.0.1",
@@ -90,8 +99,26 @@ describe("checkForAppUpdates", () => {
     await checkForAppUpdates("manual");
 
     expect(askMock).toHaveBeenCalled();
-    expect(downloadAndInstall).toHaveBeenCalled();
+    expect(downloadAndInstall).toHaveBeenCalledWith(expect.any(Function));
+    expect(getUpdateProgressSnapshot().phase).toBe("installing");
     expect(relaunchMock).toHaveBeenCalled();
+  });
+
+  it("resets progress when download fails", async () => {
+    const downloadAndInstall = vi.fn().mockImplementation(async (onEvent) => {
+      onEvent?.({ event: "Started", data: { contentLength: 100 } });
+      throw new Error("network");
+    });
+    checkMock.mockResolvedValue({
+      available: true,
+      version: "1.0.1",
+      body: "",
+      downloadAndInstall,
+    });
+    askMock.mockResolvedValue(true);
+
+    await expect(checkForAppUpdates("manual")).rejects.toThrow("network");
+    expect(getUpdateProgressSnapshot().phase).toBe("idle");
   });
 
   it("does nothing when user declines update", async () => {

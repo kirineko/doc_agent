@@ -6,6 +6,7 @@ import { RightPanel } from "./components/RightPanel";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { Sidebar } from "./components/Sidebar";
+import { UpdateProgressOverlay } from "./components/UpdateProgressOverlay";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useWorkspace } from "./hooks/useWorkspace";
@@ -28,6 +29,7 @@ function App() {
           <ThemeToggle />
         </div>
       </header>
+      <UpdateProgressOverlay />
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
