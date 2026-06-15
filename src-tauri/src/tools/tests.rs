@@ -25,6 +25,16 @@ mod tool_tests {
         name: &str,
         args: serde_json::Value,
     ) -> Result<serde_json::Value, ToolError> {
+        exec_tool_model(registry, ctx, ModelId::Mock, name, args)
+    }
+
+    fn exec_tool_model(
+        registry: &ToolRegistry,
+        ctx: &ToolContext,
+        model_id: ModelId,
+        name: &str,
+        args: serde_json::Value,
+    ) -> Result<serde_json::Value, ToolError> {
         let app = tauri::test::mock_app();
         let handle = app.handle().clone();
         tokio::runtime::Builder::new_multi_thread()
@@ -32,7 +42,7 @@ mod tool_tests {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(registry.execute(ctx, &handle, ModelId::Mock, name, args))
+            .block_on(registry.execute(ctx, &handle, model_id, name, args))
     }
 
     fn create_docx_via_skill_run(
@@ -147,6 +157,8 @@ async function main() {{
             "pdf_split",
             "pdf_rotate",
             "pdf_delete_pages",
+            "pdf_render_pages",
+            "pdf_read",
             "html_to_pdf",
             "web_search",
             "web_extract",
@@ -1564,6 +1576,385 @@ async function main() {
     }
 
     #[test]
+    fn tools_for_model_pdf_read_always_image_read_only_on_vision() {
+        let registry = ToolRegistry::default_tools();
+        let deepseek = registry
+            .tools_for_model(ModelId::DeepSeekV4Flash, false)
+            .into_iter()
+            .map(|t| t.name)
+            .collect::<Vec<_>>();
+        assert!(deepseek.contains(&"pdf_read".to_string()));
+        assert!(deepseek.contains(&"pdf_render_pages".to_string()));
+        assert!(!deepseek.contains(&"image_read".to_string()));
+
+        let kimi = registry
+            .tools_for_model(ModelId::KimiK26, false)
+            .into_iter()
+            .map(|t| t.name)
+            .collect::<Vec<_>>();
+        assert!(kimi.contains(&"image_read".to_string()));
+
+        let kimi_defs = registry.tools_for_model(ModelId::KimiK26, false);
+        let pdf = kimi_defs.iter().find(|t| t.name == "pdf_read").unwrap();
+        let modes = pdf.parameters["properties"]["mode"]["enum"]
+            .as_array()
+            .unwrap();
+        assert!(!modes.iter().any(|v| v.as_str() == Some("text")));
+    }
+
+    #[test]
+    fn pdf_read_non_vision_auto_returns_text() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        let out = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf" }),
+        )
+        .unwrap();
+        assert_eq!(out["mode"], "auto");
+        assert_eq!(out["resolved"], "text");
+        assert!(out["markdown"].as_str().unwrap().contains("Page"));
+
+        let explicit = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf", "mode": "text" }),
+        )
+        .unwrap();
+        assert_eq!(explicit["mode"], "text");
+    }
+
+    #[test]
+    fn pdf_read_auto_explicit_matches_default_on_non_vision() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        let default = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf" }),
+        )
+        .unwrap();
+        let auto = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf", "mode": "auto" }),
+        )
+        .unwrap();
+        assert_eq!(default["mode"], "auto");
+        assert_eq!(auto["mode"], "auto");
+        assert_eq!(default["resolved"], auto["resolved"]);
+        assert_eq!(default["markdown"], auto["markdown"]);
+    }
+
+    #[test]
+    fn pdf_read_non_vision_rejects_explicit_vision_mode() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        let err = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf", "mode": "vision" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("vision-capable"));
+    }
+
+    #[test]
+    fn pdf_read_rejects_invalid_dpi() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        let err = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "doc.pdf", "dpi": 50 }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("dpi must be between"));
+    }
+
+    #[test]
+    fn pdf_render_pages_cache_hit() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 2);
+
+        let first = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        );
+        if first.is_err() {
+            let msg = first.unwrap_err().to_string();
+            if msg.contains("PDFium") {
+                return;
+            }
+            panic!("unexpected error: {msg}");
+        }
+        let first = first.unwrap();
+        assert_eq!(first["cache_hit"], false);
+        assert_eq!(first["page_count"], 2);
+
+        let second = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        )
+        .unwrap();
+        assert_eq!(second["cache_hit"], true);
+        assert_eq!(second["page_count"], 2);
+    }
+
+    #[test]
+    fn pdf_render_pages_accepts_pages_array() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 4);
+
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf", "pages": [1, 3] }),
+        );
+        if let Err(e) = &out {
+            if pdfium_unavailable(e) {
+                return;
+            }
+            panic!("unexpected error: {e}");
+        }
+        assert_eq!(out.unwrap()["page_count"], 2);
+    }
+
+    fn pdfium_unavailable(err: &ToolError) -> bool {
+        err.to_string().contains("PDFium")
+    }
+
+    #[test]
+    fn pdf_render_pages_cache_miss_when_source_changes() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 2);
+
+        let first = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        );
+        if let Err(e) = &first {
+            if pdfium_unavailable(e) {
+                return;
+            }
+            panic!("unexpected error: {e}");
+        }
+        assert_eq!(first.unwrap()["cache_hit"], false);
+
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 3);
+
+        let second = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        )
+        .unwrap();
+        assert_eq!(second["cache_hit"], false);
+        assert_eq!(second["page_count"], 3);
+    }
+
+    #[test]
+    fn pdf_render_pages_cache_miss_when_page_file_missing() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 2);
+
+        let first = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        );
+        if let Err(e) = &first {
+            if pdfium_unavailable(e) {
+                return;
+            }
+            panic!("unexpected error: {e}");
+        }
+        let first = first.unwrap();
+        assert_eq!(first["cache_hit"], false);
+
+        let page_path = dir.path().join(first["pages"][0].as_str().unwrap());
+        fs::remove_file(&page_path).unwrap();
+
+        let second = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        )
+        .unwrap();
+        assert_eq!(second["cache_hit"], false);
+        assert!(page_path.is_file());
+    }
+
+    #[test]
+    fn pdf_read_vision_four_pages_single_batch_reaches_subcall() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "exam.pdf", 4);
+
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "exam.pdf" }),
+        );
+        match result {
+            Ok(out) => {
+                assert_eq!(out["mode"], "auto");
+                assert_eq!(out["resolved"], "vision");
+                assert_eq!(out["page_count"], 4);
+                let md = out["markdown"].as_str().unwrap();
+                assert!(md.contains("## Pages 1-4"));
+                assert!(!md.contains("## Pages 5-"));
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                assert!(
+                    msg.to_ascii_lowercase().contains("api key"),
+                    "expected vision subcall failure, got: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_text_mode_matches_office_read_baseline() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        let office = exec_tool(
+            &registry,
+            &ctx,
+            "office_read_to_markdown",
+            json!({ "path": "doc.pdf" }),
+        )
+        .unwrap();
+        let pdf = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::DeepSeekV4Flash,
+            "pdf_read",
+            json!({ "path": "doc.pdf", "mode": "text" }),
+        )
+        .unwrap();
+        assert_eq!(pdf["mode"], "text");
+        assert_eq!(
+            pdf["markdown"].as_str().unwrap(),
+            office["markdown"].as_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn image_read_paths_accepts_cache_page_pngs() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "src.pdf", 2);
+
+        let render = exec_tool(
+            &registry,
+            &ctx,
+            "pdf_render_pages",
+            json!({ "path": "src.pdf" }),
+        );
+        if let Err(e) = &render {
+            if pdfium_unavailable(e) {
+                return;
+            }
+            panic!("unexpected error: {e}");
+        }
+        let pages = render
+            .unwrap()
+            .get("pages")
+            .and_then(|v| v.as_array())
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect::<Vec<_>>();
+
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "image_read",
+            json!({ "paths": pages }),
+        );
+        match result {
+            Ok(out) => {
+                assert_eq!(out["count"], 2);
+                assert!(out["text"].as_str().unwrap().len() > 0);
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                assert!(
+                    msg.to_ascii_lowercase().contains("api key"),
+                    "expected vision subcall failure, got: {msg}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn skill_read_pdf_reference_doc() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
@@ -1578,6 +1969,7 @@ async function main() {
         .unwrap();
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("pdf_merge"));
+        assert!(content.contains("pdf_read"));
         assert!(content.contains("1-based"));
         assert!(!content.contains("qpdf"));
     }

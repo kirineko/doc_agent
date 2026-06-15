@@ -2,7 +2,112 @@ use pdfium_render::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+use crate::tools::pdf_cache::{
+    self, page_image_rel, RenderManifest,
+};
+
 static PDFIUM: OnceLock<Result<Mutex<Pdfium>, String>> = OnceLock::new();
+
+pub struct RenderPagesResult {
+    pub cache_key: String,
+    pub cache_hit: bool,
+    pub manifest: RenderManifest,
+}
+
+pub fn page_count(path: &Path) -> Result<u32, String> {
+    let guard = pdfium_instance()?
+        .lock()
+        .map_err(|_| "PDFium lock poisoned".to_string())?;
+    let document = guard
+        .load_pdf_from_file(path, None)
+        .map_err(|e| format!("PDF 打开失败: {e}"))?;
+    Ok(document.pages().len() as u32)
+}
+
+pub fn render_pages_cached(
+    sandbox_root: &Path,
+    rel_path: &str,
+    abs_path: &Path,
+    dpi: u32,
+    pages_spec: Option<&str>,
+) -> Result<RenderPagesResult, String> {
+    let total = page_count(abs_path)?;
+    let (page_list, pages_spec_norm) = pdf_cache::parse_pages_spec(pages_spec, total)?;
+    let fingerprint = pdf_cache::fingerprint_from_path(rel_path, abs_path, dpi, &pages_spec_norm)?;
+    let key = pdf_cache::cache_key(&fingerprint);
+    let cache_abs = sandbox_root.join(pdf_cache::cache_dir_rel(&key));
+
+    if let Some(manifest) =
+        pdf_cache::try_cache_hit(sandbox_root, &fingerprint, &page_list)
+    {
+        return Ok(RenderPagesResult {
+            cache_key: key,
+            cache_hit: true,
+            manifest,
+        });
+    }
+
+    pdf_cache::clear_cache_dir(&cache_abs)?;
+    fs::create_dir_all(&cache_abs).map_err(|e| e.to_string())?;
+
+    let guard = pdfium_instance()?
+        .lock()
+        .map_err(|_| "PDFium lock poisoned".to_string())?;
+    let document = guard
+        .load_pdf_from_file(abs_path, None)
+        .map_err(|e| format!("PDF 打开失败: {e}"))?;
+
+    let mut entries = Vec::with_capacity(page_list.len());
+    for page_no in &page_list {
+        let index = (*page_no - 1) as i32;
+        let page = document
+            .pages()
+            .get(index)
+            .map_err(|e| format!("PDF 第 {page_no} 页读取失败: {e}"))?;
+        let width_pts = page.width().value as f32;
+        let target_width = ((width_pts / 72.0) * dpi as f32).round().max(1.0) as i32;
+        let config = PdfRenderConfig::new().set_target_width(target_width);
+        let bitmap = page
+            .render_with_config(&config)
+            .map_err(|e| format!("PDF 第 {page_no} 页渲染失败: {e}"))?;
+        let image = bitmap
+            .as_image()
+            .map_err(|e| format!("PDF 第 {page_no} 页转图像失败: {e}"))?;
+        let rel_image = page_image_rel(&key, *page_no);
+        let out_abs = sandbox_root.join(&rel_image);
+        if let Some(parent) = out_abs.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        image
+            .save(&out_abs)
+            .map_err(|e| format!("保存 {rel_image} 失败: {e}"))?;
+        entries.push(pdf_cache::PageEntry {
+            index: *page_no,
+            path: rel_image,
+        });
+    }
+
+    let manifest = RenderManifest {
+        version: 1,
+        source_path: fingerprint.rel_path.clone(),
+        source_size: fingerprint.size,
+        source_mtime_secs: fingerprint.mtime_secs,
+        dpi: fingerprint.dpi,
+        pages_spec: fingerprint.pages_spec.clone(),
+        page_count: entries.len() as u32,
+        pages: entries,
+        created_at: chrono::Utc::now().to_rfc3339(),
+    };
+    pdf_cache::write_manifest(&cache_abs, &manifest)?;
+
+    Ok(RenderPagesResult {
+        cache_key: key,
+        cache_hit: false,
+        manifest,
+    })
+}
+
+use std::fs;
 
 pub fn configure_resource_dir(path: PathBuf) {
     std::env::set_var("DOC_AGENT_PDFIUM_DIR", path);

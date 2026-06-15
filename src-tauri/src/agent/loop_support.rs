@@ -48,6 +48,7 @@ pub(crate) fn build_working_messages(
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
                      html_to_pdf 可单独使用，不要求先生成报告。\
+                     读取 PDF 时：vision 模型（Kimi K2.6、MiMo v2.5）调用 pdf_read 只传 path，不要传 mode=text；纯文本用 office_read_to_markdown。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),

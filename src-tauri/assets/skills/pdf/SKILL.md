@@ -12,7 +12,10 @@ license: Proprietary. LICENSE.txt has complete terms
 
 | Task | Tool |
 |------|------|
-| 读取正文/文本 | `office_read_to_markdown {"path": "doc.pdf"}` |
+| **读取 PDF（推荐）** | `pdf_read {"path": "doc.pdf"}` — **只传 path，不要传 mode**；vision 模型自动走图片理解 |
+| 读取正文/纯文本 | `office_read_to_markdown {"path": "doc.pdf"}`（vision 模型纯文本用这个，勿 pdf_read+mode=text） |
+| 仅渲染页图为 PNG | `pdf_render_pages {"path": "doc.pdf"}` → `.cache/pdf/`（可缓存命中） |
+| 读取 1–4 张图片 | `image_read {"paths": ["a.png","b.png"]}`（vision 模型） |
 | 合并 | `pdf_merge {"inputs": ["a.pdf", "b.pdf"], "out_path": "merged.pdf"}` |
 | 拆分（按范围/逐页） | `pdf_split`（详见 reference.md） |
 | 旋转页面 | `pdf_rotate`（90/180/270，详见 reference.md） |
@@ -72,7 +75,7 @@ async function main() {
 
 | 操作 | 说明 |
 |---|---|
-| OCR 扫描件 | 无 OCR 能力；扫描件无文本层，`office_read_to_markdown` 会返回空或错误 |
+| OCR 扫描件 | 无独立 OCR；扫描件用 **vision 模型** `pdf_read`（`mode=auto` 或 `mode=vision`），纯 `mode=text` 会报错 |
 | 加密/解密 | 加密 PDF 不支持操作；提示用户先在外部工具解密 |
 | 提取内嵌图片 | 无工具 |
 | 自动填 AcroForm 表单 | 见 forms.md 的降级方案 |
@@ -80,10 +83,11 @@ async function main() {
 
 ## 典型流程
 
-1. `office_read_to_markdown` 了解内容
-2. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
-3. `pdf_merge` 合并交付物
-4. 需要新建/重绘 → `skill_run` + PDFLib（注意中文限制）
+1. **含公式 / 扫描件 / 一般阅读**：`pdf_read` 只传 `path`（vision 会话）
+2. **纯文本快速试探**：`office_read_to_markdown`（vision 会话不要用 pdf_read 的 mode=text）
+3. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
+4. `pdf_merge` 合并交付物
+5. 需要新建/重绘 → `skill_run` + PDFLib（注意中文限制）
 
 ---
 

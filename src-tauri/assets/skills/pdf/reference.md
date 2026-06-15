@@ -6,8 +6,10 @@
 
 | 任务 | 工具 | 说明 |
 |---|---|---|
-| 读取正文 | `office_read_to_markdown` | pdfium 文本提取 |
-| 读取正文/表格文本 | `office_read_to_markdown` | 无自动表格结构化，需 Agent 整理 |
+| **读取 PDF（推荐）** | `pdf_read` | 默认 auto：文本模型返回 PDFium 文本；vision 模型再图片理解 |
+| 读取纯文本 | `office_read_to_markdown` / `pdf_read`+`mode=text` | pdfium 文本；公式可能失真 |
+| 渲染页图 | `pdf_render_pages` | PNG 写入 `.cache/pdf/`，支持缓存命中 |
+| 理解 1–4 张图 | `image_read` | `paths` 数组；可读 `.cache/pdf/` 页图 |
 | 合并 PDF | `pdf_merge` | 按顺序拼接多个文件 |
 | 拆分 PDF | `pdf_split` | 按范围或 burst 每页一个文件 |
 | 旋转页面 | `pdf_rotate` | 90 / 180 / 270 度 |
@@ -78,9 +80,47 @@
 
 不能删除全部页；删空会报错。
 
+## pdf_read
+
+```json
+{ "path": "exam.pdf" }
+```
+
+**vision 模型（Kimi K2.6、MiMo v2.5）**：只传 `path`，不要传 `mode`。系统走 auto（先 PDFium，再 vision 理解全部页）。
+
+**非 vision 模型**：只传 `path` 即可（auto 返回 PDFium 文本）。显式 `mode=text` 等价。
+
+显式单路径（仅当需要时）：
+- **`mode=vision`**（vision 模型）：跳过文本提取，仅渲染+vision（扫描件）
+- **`mode=text`**（非 vision 模型）：仅 PDFium
+
+vision 模型需要纯文本时用 `office_read_to_markdown`，不要用 `pdf_read`+`mode=text`。
+
+可选：`pages`（如 `"1-4"`）、`dpi`（默认 150）。
+
+## pdf_render_pages
+
+```json
+{ "path": "exam.pdf", "pages": "all", "dpi": 150 }
+```
+
+返回 `cache_hit`、`pages`（PNG 相对路径）、`manifest_path`。相同源文件与参数再次调用时 `cache_hit: true`，跳过渲染。
+
+## image_read（多图）
+
+```json
+{
+  "paths": [".cache/pdf/<key>/page_001.png", ".cache/pdf/<key>/page_002.png"],
+  "prompt": "按顺序提取文字与公式"
+}
+```
+
+`paths` 长度 1–4，无单张 `path` 参数。
+
 ## 典型流程
 
-1. `office_read_to_markdown` 了解文档内容
+1. 含公式或扫描件：`pdf_read` 只传 `path`（vision 会话）
+2. 纯文本试探：`office_read_to_markdown`
 2. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
 3. `pdf_merge` 合并交付物
 4. 需表格数据时：先用 `office_read_to_markdown` 提取文本，再 `data_query` 或 `skill_run`+exceljs
@@ -90,4 +130,4 @@
 
 - 合并不保证保留书签、表单、注释等复杂结构，仅保证页面内容与顺序。
 - 加密 PDF 当前不支持解密后操作。
-- 扫描件无文本层需 OCR（不在范围）；无 PDF 表格自动提取工具。
+- 扫描件：用 vision 模型 `pdf_read`，勿仅用 `office_read_to_markdown`

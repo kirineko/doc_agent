@@ -8,11 +8,15 @@ pub mod image_read;
 pub mod office;
 pub mod ooxml;
 pub mod pdf;
+pub mod pdf_cache;
 pub mod pdf_ops;
+pub mod pdf_read;
+pub mod pdf_render_pages;
 pub mod registry;
 pub mod runtime;
 pub mod skill;
 pub mod skill_run_tmp;
+pub mod vision_subcall;
 pub mod web;
 
 #[cfg(test)]

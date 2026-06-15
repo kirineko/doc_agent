@@ -25,6 +25,8 @@ export const TOOL_LABELS: Record<string, string> = {
   pdf_split: "拆分 PDF",
   pdf_rotate: "旋转 PDF",
   pdf_delete_pages: "删除 PDF 页面",
+  pdf_render_pages: "渲染 PDF 页面",
+  pdf_read: "读取 PDF",
   html_to_pdf: "HTML 导出 PDF",
   web_search: "Web 搜索",
   web_extract: "抽取网页正文",

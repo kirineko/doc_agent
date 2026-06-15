@@ -97,6 +97,8 @@ impl ToolRegistry {
                 crate::tools::pdf_ops::split_tool(),
                 crate::tools::pdf_ops::rotate_tool(),
                 crate::tools::pdf_ops::delete_pages_tool(),
+                crate::tools::pdf_render_pages::tool(),
+                crate::tools::pdf_read::tool(),
                 crate::tools::html_export::tool(),
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
@@ -110,15 +112,25 @@ impl ToolRegistry {
             .iter()
             .filter(|t| include_web || !is_web_tool(t.name))
             .filter(|t| t.name != "image_read" || model.supports_vision())
-            .map(|t| crate::agent::types::ToolDefinition {
-                name: t.name.to_string(),
-                description: t.description.to_string(),
-                parameters: t.parameters.clone(),
-                strict: if t.name == "clarify_ask" {
-                    Some(true)
+            .map(|t| {
+                let (description, parameters) = if t.name == "pdf_read" {
+                    (
+                        crate::tools::pdf_read::description_for_model(model).to_string(),
+                        crate::tools::pdf_read::parameters_for_model(model),
+                    )
                 } else {
-                    None
-                },
+                    (t.description.to_string(), t.parameters.clone())
+                };
+                crate::agent::types::ToolDefinition {
+                    name: t.name.to_string(),
+                    description,
+                    parameters,
+                    strict: if t.name == "clarify_ask" {
+                        Some(true)
+                    } else {
+                        None
+                    },
+                }
             })
             .collect()
     }
@@ -140,6 +152,7 @@ impl ToolRegistry {
             "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
             "html_to_pdf" => crate::tools::html_export::handler(ctx, app, args).await,
             "image_read" => crate::tools::image_read::handler(ctx, args, model_id).await,
+            "pdf_read" => crate::tools::pdf_read::handler(ctx, args, model_id).await,
             _ => {
                 let tool = self
                     .tools

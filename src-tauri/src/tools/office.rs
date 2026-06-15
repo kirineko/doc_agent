@@ -12,7 +12,7 @@ pub fn read_markdown_tool() -> ToolSpec {
     ToolSpec {
         name: "office_read_to_markdown",
         description:
-            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF and return Markdown/text. Prefer this for analysis on legacy .doc/.xls/.ppt — no new project file is created.",
+            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF as plain text Markdown. For PDFs with formulas or scans, prefer pdf_read on vision models.",
         parameters: json!({
             "type": "object",
             "properties": {
