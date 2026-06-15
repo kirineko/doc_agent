@@ -94,6 +94,10 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **WHEN** Agent 发起并完成一个工具调用
 - **THEN** 右侧栏上半区出现对应卡片，状态从「执行中」更新为「完成 / 失败」，并显示结果摘要与耗时
 
+#### Scenario: 工具调用链自动贴底滚动
+- **WHEN** Agent 执行中向工具调用链追加新卡片
+- **THEN** 右侧栏上半区在默认贴底状态下自动滚动至最新项；若用户已手动上滑查看历史工具，则暂停自动滚动直至列表清空或重新贴底
+
 ### Requirement: 项目列表展示与隐藏交互
 左侧项目列表 SHALL 提供更大的可视区域（较 MVP 至少加大约一倍），并在每个项目卡片上提供移除（隐藏）交互入口；不提供已隐藏项目的管理入口。
 

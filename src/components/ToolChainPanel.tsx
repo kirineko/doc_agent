@@ -1,3 +1,4 @@
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { formatToolArgs, toolLabel } from "../lib/toolLabels";
 
 export interface LiveToolCall {
@@ -52,10 +53,37 @@ export function formatCharCount(count: number): string {
 }
 
 export function ToolChainPanel({ items }: ToolChainPanelProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: "auto", block: "end" });
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 72;
+  };
+
+  useEffect(() => {
+    if (items.length === 0) stickToBottomRef.current = true;
+  }, [items.length]);
+
+  useLayoutEffect(() => {
+    if (!stickToBottomRef.current || items.length === 0) return;
+    scrollToBottom();
+  }, [items.length]);
+
   return (
     <section className="flex min-h-0 flex-1 flex-col">
       <div className="mb-1.5 text-xs font-medium text-fg-heading">工具调用链</div>
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 space-y-1.5 overflow-y-auto"
+      >
         {items.length === 0 && (
           <div className="rounded-md border border-dashed border-border-subtle p-2.5 text-[11px] text-fg-muted">
             工具调用会在这里实时显示。
@@ -87,6 +115,7 @@ export function ToolChainPanel({ items }: ToolChainPanelProps) {
             )}
           </div>
         ))}
+        <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
       </div>
     </section>
   );

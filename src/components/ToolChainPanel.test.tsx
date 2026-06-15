@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ToolChainPanel } from "../components/ToolChainPanel";
 
 describe("ToolChainPanel", () => {
@@ -42,5 +42,30 @@ describe("ToolChainPanel", () => {
     );
     expect(screen.getByText("生成参数中")).toBeInTheDocument();
     expect(screen.getByText(/已收到 12\.3K 字符/)).toBeInTheDocument();
+  });
+
+  it("scrolls to bottom when a new tool card is appended", () => {
+    const scrollIntoView = vi.spyOn(HTMLElement.prototype, "scrollIntoView");
+
+    const first = {
+      id: "call_1",
+      name: "fs_list",
+      args: { path: "." },
+      status: "done",
+    };
+    const second = {
+      id: "call_2",
+      name: "fs_read",
+      args: { path: "a.txt" },
+      status: "running",
+    };
+
+    const { rerender } = render(<ToolChainPanel items={[first]} />);
+    scrollIntoView.mockClear();
+
+    rerender(<ToolChainPanel items={[first, second]} />);
+    expect(scrollIntoView).toHaveBeenCalled();
+
+    scrollIntoView.mockRestore();
   });
 });
