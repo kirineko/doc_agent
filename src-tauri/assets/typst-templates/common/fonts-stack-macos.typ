@@ -12,3 +12,15 @@
   "Noto Sans SC",
   "Arial",
 )
+
+#let font-serif-en = (
+  "Times New Roman",
+  "Libertinus Serif",
+  "Noto Serif SC",
+)
+
+#let font-sans-en = (
+  "Arial",
+  "Helvetica Neue",
+  "Noto Sans SC",
+)

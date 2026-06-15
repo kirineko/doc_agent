@@ -2,18 +2,6 @@
 #import "/doc-agent/typst/common/fonts-stack.typ": *
 #import "/doc-agent/typst/common/tokens.typ": *
 
-#let font-serif-en = (
-  "Times New Roman",
-  "Libertinus Serif",
-  "Noto Serif SC",
-)
-
-#let font-sans-en = (
-  "Arial",
-  "Helvetica Neue",
-  "Noto Sans SC",
-)
-
 #let font-body-zh = font-serif-zh
 #let font-body-en = font-serif-en
 #let font-heading-zh = font-sans-zh
