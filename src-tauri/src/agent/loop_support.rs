@@ -9,8 +9,10 @@ use crate::core::sandbox::Sandbox;
 use crate::core::store::Message;
 use crate::state::AppState;
 use crate::tools::ToolContext;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
+use uuid::Uuid;
 
 pub(super) fn cleanup_skill_run_tmp(sandbox: &Sandbox) {
     let ctx = ToolContext::new(sandbox);
@@ -48,7 +50,7 @@ pub(crate) fn build_working_messages(
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
                      html_to_pdf 可单独使用，不要求先生成报告。\
-                     读取 PDF 时：vision 模型（Kimi K2.6、MiMo v2.5）调用 pdf_read 只传 path，不要传 mode=text；纯文本用 office_read_to_markdown。\
+                     读取 PDF 时：调用 pdf_read 只传 path（无 mode）；vision 模型会自动 Judge 是否需图片理解；只要 PDFium 纯文本用 office_read_to_markdown。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),
@@ -92,6 +94,31 @@ pub(crate) fn build_working_messages(
         });
     }
     Ok(messages)
+}
+
+/// 保证 tool call id 非空、批内唯一，且不与 DB 已有记录冲突。
+/// 部分模型（如 Kimi）流式响应可能省略 `id` 或复用短 id，直接入库会触发 UNIQUE 约束。
+pub(super) fn normalize_tool_call_ids(
+    calls: &mut [ToolCall],
+    id_exists: impl Fn(&str) -> bool,
+) {
+    let mut seen = HashSet::new();
+    for call in calls.iter_mut() {
+        if call.function.name.is_empty() {
+            continue;
+        }
+        let needs_new = call.id.is_empty() || seen.contains(&call.id) || id_exists(&call.id);
+        if needs_new {
+            loop {
+                let candidate = format!("call_{}", Uuid::new_v4());
+                if !seen.contains(&candidate) && !id_exists(&candidate) {
+                    call.id = candidate;
+                    break;
+                }
+            }
+        }
+        seen.insert(call.id.clone());
+    }
 }
 
 pub(super) fn persist_assistant(
@@ -236,4 +263,45 @@ pub(super) fn emit_assistant_step_done<R: Runtime>(
             message: message.clone(),
         },
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::types::FunctionCall;
+
+    fn sample_call(id: &str, name: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_string(),
+            call_type: "function".into(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: "{}".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn normalize_fills_empty_ids() {
+        let mut calls = vec![sample_call("", "pdf_read")];
+        normalize_tool_call_ids(&mut calls, |_| false);
+        assert!(!calls[0].id.is_empty());
+    }
+
+    #[test]
+    fn normalize_replaces_duplicate_ids_in_batch() {
+        let mut calls = vec![
+            sample_call("dup", "pdf_read"),
+            sample_call("dup", "fs_list"),
+        ];
+        normalize_tool_call_ids(&mut calls, |_| false);
+        assert_ne!(calls[0].id, calls[1].id);
+    }
+
+    #[test]
+    fn normalize_replaces_existing_db_ids() {
+        let mut calls = vec![sample_call("taken", "pdf_read")];
+        normalize_tool_call_ids(&mut calls, |id| id == "taken");
+        assert_ne!(calls[0].id, "taken");
+    }
 }

@@ -104,3 +104,12 @@ pptx skill 的 SKILL.md SHALL 包含中文演示文稿字体指引（pptxgenjs `
 - **WHEN** Agent Loop 组装请求上下文
 - **THEN** system prompt 同时包含「生成 Office 交付物前 MUST skill_read 对应格式 skill」和「模糊创作请求前 MUST skill_read clarify」两条指示
 
+### Requirement: pdf skill 反映统一 pdf_read
+
+内置 pdf skill（`SKILL.md`、`reference.md`）MUST 将 `pdf_read` 描述为仅传 `path` 的智能读取；MUST NOT 文档化已移除的 `mode` 参数。MUST 说明 `office_read_to_markdown` 用于显式纯 PDFium 快速读取。
+
+#### Scenario: reference 无 mode 示例
+
+- **WHEN** Agent 通过 `skill_read` 加载 `pdf/reference.md`
+- **THEN** `pdf_read` 示例仅为 `{ "path": "doc.pdf" }` 形式
+

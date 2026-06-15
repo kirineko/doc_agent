@@ -581,6 +581,14 @@ impl Store {
         })
     }
 
+    pub fn tool_call_exists(&self, id: &str) -> Result<bool, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT 1 FROM tool_calls WHERE id = ?1 LIMIT 1")?;
+        let mut rows = stmt.query(params![id])?;
+        Ok(rows.next()?.is_some())
+    }
+
     pub fn finish_tool_call(
         &self,
         id: &str,
@@ -843,6 +851,24 @@ mod tests {
 
         assert_eq!(store.delete_clarify_pending(&session.id).unwrap(), 1);
         assert_eq!(store.delete_clarify_pending(&session.id).unwrap(), 0);
+    }
+
+    #[test]
+    fn tool_call_exists_detects_primary_key_collision() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "mock", true, "high")
+            .unwrap();
+        let assistant = store
+            .add_message(&session.id, "assistant", None, None, None, None)
+            .unwrap();
+        store
+            .add_tool_call(&assistant.id, "dup_id", "pdf_read", r#"{"path":"a.pdf"}"#)
+            .unwrap();
+        assert!(store.tool_call_exists("dup_id").unwrap());
+        assert!(!store.tool_call_exists("missing").unwrap());
     }
 
     #[test]

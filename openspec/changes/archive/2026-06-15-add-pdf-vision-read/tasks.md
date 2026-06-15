@@ -33,7 +33,7 @@
 
 ## 6. 验收（手动）
 
-- [ ] 6.1 Kimi K2.6：`pdf_read` 默认 auto 解析 `reference/pdf` 样例，vision 结果优于纯 text
-- [ ] 6.2 DeepSeek：`pdf_read` 无 mode（auto）返回文本；`mode=text` 可用；`mode=vision` 报错
-- [ ] 6.3 重复解析同一 PDF，第二次明显跳过渲染（工具返回 `cache_hit: true`）
-- [ ] 6.4 `image_read` 使用 `paths` 一次读 2–4 张 cache 页图
+- [x] 6.1 Kimi K2.6：`pdf_read` 默认 auto 解析 `reference/pdf` 样例，vision 结果优于纯 text
+- [x] 6.2 DeepSeek：`pdf_read` 无 mode（auto）返回文本；`mode=text` 可用；`mode=vision` 报错
+- [x] 6.3 重复解析同一 PDF，第二次明显跳过渲染（工具返回 `cache_hit: true`）
+- [x] 6.4 `image_read` 使用 `paths` 一次读 2–4 张 cache 页图

@@ -318,6 +318,15 @@ async fn continue_loop<R: Runtime>(
             .await
             .map_err(|e| e.to_string())?;
 
+        let mut tool_calls = turn.tool_calls;
+        tool_calls.retain(|c| !c.function.name.is_empty());
+        {
+            let store = state.store.lock().map_err(|e| e.to_string())?;
+            normalize_tool_call_ids(&mut tool_calls, |id| {
+                store.tool_call_exists(id).unwrap_or(false)
+            });
+        }
+
         let usage_reported = turn.usage.is_some();
         if let Some(usage) = turn.usage {
             token_count = usage.total;
@@ -331,7 +340,7 @@ async fn continue_loop<R: Runtime>(
             emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
         }
 
-        if turn.tool_calls.is_empty() {
+        if tool_calls.is_empty() {
             cleanup_skill_run_tmp(&sandbox);
             let msg = persist_assistant(
                 &state,
@@ -385,7 +394,7 @@ async fn continue_loop<R: Runtime>(
                 Some(&turn.content)
             },
             Some(&turn.reasoning_content),
-            Some(&turn.tool_calls),
+            Some(&tool_calls),
         )?;
         emit_assistant_step_done(&app, &session_id, &turn_id, &assistant_msg);
 
@@ -398,7 +407,7 @@ async fn continue_loop<R: Runtime>(
             },
             image_urls: vec![],
             reasoning_content: Some(turn.reasoning_content.clone()),
-            tool_calls: Some(turn.tool_calls.clone()),
+            tool_calls: Some(tool_calls.clone()),
             tool_call_id: None,
         });
         if !usage_reported {
@@ -406,7 +415,7 @@ async fn continue_loop<R: Runtime>(
         }
 
         let mut has_pending_clarify = false;
-        for call in &turn.tool_calls {
+        for call in &tool_calls {
             let ctx = ToolContext::with_secrets(&sandbox, &state.secrets);
             let truncated = turn.finish_reason.as_deref() == Some("length");
             let args_result =

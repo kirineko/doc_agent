@@ -6,8 +6,8 @@
 
 | 任务 | 工具 | 说明 |
 |---|---|---|
-| **读取 PDF（推荐）** | `pdf_read` | 默认 auto：文本模型返回 PDFium 文本；vision 模型再图片理解 |
-| 读取纯文本 | `office_read_to_markdown` / `pdf_read`+`mode=text` | pdfium 文本；公式可能失真 |
+| **读取 PDF（推荐）** | `pdf_read` | 只传 path；vision 模型先 PDFium 再 Judge/vision |
+| 读取纯文本（无 Judge） | `office_read_to_markdown` | PDFium 文本；公式可能失真 |
 | 渲染页图 | `pdf_render_pages` | PNG 写入 `.cache/pdf/`，支持缓存命中 |
 | 理解 1–4 张图 | `image_read` | `paths` 数组；可读 `.cache/pdf/` 页图 |
 | 合并 PDF | `pdf_merge` | 按顺序拼接多个文件 |
@@ -86,17 +86,15 @@
 { "path": "exam.pdf" }
 ```
 
-**vision 模型（Kimi K2.6、MiMo v2.5）**：只传 `path`，不要传 `mode`。系统走 auto（先 PDFium，再 vision 理解全部页）。
+**vision 模型（Kimi K2.6、MiMo v2.5）**：只传 `path`。系统先 PDFium 按页提取，再经硬规则或代表页图文 Judge 决定是否全量 vision。
 
-**非 vision 模型**：只传 `path` 即可（auto 返回 PDFium 文本）。显式 `mode=text` 等价。
+**非 vision 模型**：只传 `path`，返回 PDFium 全文；扫描件（无文本层）会报错并提示切换 vision 模型。
 
-显式单路径（仅当需要时）：
-- **`mode=vision`**（vision 模型）：跳过文本提取，仅渲染+vision（扫描件）
-- **`mode=text`**（非 vision 模型）：仅 PDFium
+需要纯 PDFium、不要 Judge 时用 `office_read_to_markdown`。
 
-vision 模型需要纯文本时用 `office_read_to_markdown`，不要用 `pdf_read`+`mode=text`。
+可选：`pages`（如 `"1-4"` 或 `[1,3]`）、`dpi`（默认 150，72–300）。
 
-可选：`pages`（如 `"1-4"`）、`dpi`（默认 150）。
+返回含 `resolved`（`text` | `vision`）与 `judge` 元数据（样本页、verdict 等）。
 
 ## pdf_render_pages
 

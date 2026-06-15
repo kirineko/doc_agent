@@ -12,7 +12,7 @@ pub fn read_markdown_tool() -> ToolSpec {
     ToolSpec {
         name: "office_read_to_markdown",
         description:
-            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF as plain text Markdown. For PDFs with formulas or scans, prefer pdf_read on vision models.",
+            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF as plain PDFium Markdown without vision judging. For intelligent PDF reading (formulas/scans), use pdf_read on vision models.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -44,13 +44,12 @@ pub fn convert_tool() -> ToolSpec {
 pub fn read_document_text(path: &Path) -> Result<String, ToolError> {
     if is_pdf(path) {
         let text = pdf::extract_text(path).map_err(ToolError::Execution)?;
-        let markdown = text.trim();
-        if markdown.is_empty() {
+        if text.is_empty() {
             return Err(ToolError::Execution(
                 "PDF 未提取到文本（可能为扫描件或纯图片 PDF）".into(),
             ));
         }
-        return Ok(markdown.to_string());
+        return Ok(text);
     }
 
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");

@@ -374,14 +374,13 @@ pub fn messages_from_store(
             let mut image_urls = Vec::new();
             if m.role == "user" {
                 if let (Some(sandbox), Some(raw)) = (sandbox, m.attachments_json.as_deref()) {
-                    if let Ok(attachments) = parse_attachments_json(Some(raw)) {
-                        for attachment in attachments {
-                            if !is_upload_attachment_path(&attachment.path) {
-                                continue;
-                            }
-                            if let Ok(url) = encode_attachment_data_url(sandbox, &attachment) {
-                                image_urls.push(Arc::from(url));
-                            }
+                    let attachments = parse_attachments_json(Some(raw))?;
+                    for attachment in attachments {
+                        if !is_upload_attachment_path(&attachment.path) {
+                            continue;
+                        }
+                        if let Ok(url) = encode_attachment_data_url(sandbox, &attachment) {
+                            image_urls.push(Arc::from(url));
                         }
                     }
                 }
@@ -609,5 +608,29 @@ mod tests {
 
         let chat = messages_from_store(&[user], &[], Some(&sandbox)).expect("missing file should not fail turn");
         assert!(chat[0].image_urls.is_empty());
+    }
+
+    #[test]
+    fn messages_from_store_rejects_corrupt_attachments_json() {
+        use crate::core::sandbox::Sandbox;
+        use tempfile::tempdir;
+
+        let dir = tempdir().unwrap();
+        let sandbox = Sandbox::new(dir.path().to_str().unwrap()).unwrap();
+        let user = Message {
+            id: "user-1".into(),
+            session_id: "session-1".into(),
+            role: "user".into(),
+            content: Some("see image".into()),
+            reasoning_content: None,
+            tool_call_id: None,
+            seq: 1,
+            created_at: "now".into(),
+            archived: false,
+            attachments_json: Some("not-json".into()),
+        };
+
+        let err = messages_from_store(&[user], &[], Some(&sandbox)).unwrap_err();
+        assert!(err.contains("invalid attachments_json"));
     }
 }

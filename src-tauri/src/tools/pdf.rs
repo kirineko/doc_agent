@@ -1,10 +1,12 @@
 use pdfium_render::prelude::*;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use crate::tools::pdf_cache::{
     self, page_image_rel, RenderManifest,
 };
+use crate::tools::pdf_text_quality::format_extracted_text;
 
 static PDFIUM: OnceLock<Result<Mutex<Pdfium>, String>> = OnceLock::new();
 
@@ -107,13 +109,16 @@ pub fn render_pages_cached(
     })
 }
 
-use std::fs;
-
 pub fn configure_resource_dir(path: PathBuf) {
     std::env::set_var("DOC_AGENT_PDFIUM_DIR", path);
 }
 
-pub fn extract_text(path: &Path) -> Result<String, String> {
+pub struct PageText {
+    pub index: u32,
+    pub text: String,
+}
+
+pub fn extract_text_pages(path: &Path, pages_spec: Option<&str>) -> Result<Vec<PageText>, String> {
     let guard = pdfium_instance()?
         .lock()
         .map_err(|_| "PDFium lock poisoned".to_string())?;
@@ -122,24 +127,40 @@ pub fn extract_text(path: &Path) -> Result<String, String> {
         .load_pdf_from_file(path, None)
         .map_err(|e| format!("PDF 打开失败: {e}"))?;
 
-    let page_count = document.pages().len();
-    let mut text = String::new();
+    let total = document.pages().len() as u32;
+    let (page_list, _) = pdf_cache::parse_pages_spec(pages_spec, total)?;
 
-    for index in 0..page_count {
+    let mut pages = Vec::with_capacity(page_list.len());
+    for page_no in page_list {
+        let index = (page_no - 1) as i32;
         let page = document
             .pages()
             .get(index)
-            .map_err(|e| format!("PDF 第 {} 页读取失败: {e}", index + 1))?;
+            .map_err(|e| format!("PDF 第 {page_no} 页读取失败: {e}"))?;
         let page_text = page
             .text()
-            .map_err(|e| format!("PDF 第 {} 页文本提取失败: {e}", index + 1))?;
-        text.push_str(&page_text.all());
-        if index + 1 < page_count {
-            text.push('\n');
-        }
+            .map_err(|e| format!("PDF 第 {page_no} 页文本提取失败: {e}"))?;
+        pages.push(PageText {
+            index: page_no,
+            text: page_text.all(),
+        });
     }
+    Ok(pages)
+}
 
-    Ok(text)
+/// 按页原文规范后拼接，供 `extract_text` 与 `pdf_read` 共用。
+pub fn join_extracted_pages(pages: &[PageText]) -> String {
+    format_extracted_text(
+        &pages
+            .iter()
+            .map(|p| (p.index, p.text.as_str()))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn extract_text(path: &Path) -> Result<String, String> {
+    let pages = extract_text_pages(path, None)?;
+    Ok(join_extracted_pages(&pages))
 }
 
 fn pdfium_instance() -> Result<&'static Mutex<Pdfium>, String> {

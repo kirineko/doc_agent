@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### PDF 智能读取
+
+- **pdf_read**：统一 PDF 理解入口，仅传 `path`（可选 `pages`、`dpi`）；先按页 PDFium 提取，vision 模型经硬规则与代表页图文 Judge 决定返回文本或全量 vision；返回 `resolved`（`text` | `vision`）与 `judge` 元数据（样本页、verdict、method 等）
+- **pdf_render_pages**：将 PDF 指定页渲染为 PNG，写入 `.cache/pdf/<cache_key>/`；源文件与参数未变时 `cache_hit: true` 跳过重复渲染
+- **vision 分批**：全量 vision 每批最多 4 页，与 `image_read` 多图上限一致；共享 `vision_subcall` helper，子调用 usage 不计入会话 token
+- **image_read（BREAKING）**：参数改为 `paths`（1–4 张），移除单张 `path`；可读 `.cache/pdf/` 页图
+- **工具分工**：一般读 PDF 用 `pdf_read`；仅需 PDFium 快速纯文本时用 `office_read_to_markdown`；pdf skill 文档已同步
+
+### Agent 稳定性
+
+- **tool call id 规范化**：流式 tool call 预生成 `call_{uuid}`；持久化前规范化空 id、批内重复及与 DB 冲突，修复 Kimi 等 Provider 返回空/重复 id 导致的 `UNIQUE constraint` 错误
+
 ### 多模态与模型
 
 - **图片输入**：vision 模型（Kimi K2.6、MiMo v2.5）支持粘贴图片发送；可仅发图无文字；附件写入项目 `.uploads/` 并持久化，历史消息展示缩略图

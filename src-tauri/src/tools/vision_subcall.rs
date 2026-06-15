@@ -9,12 +9,25 @@ use crate::tools::{ToolContext, ToolError};
 use serde_json::Value;
 use std::sync::Arc;
 
+#[cfg(test)]
+static TEST_VISION_RESPONSE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+#[cfg(test)]
+pub fn set_test_vision_response(response: Option<String>) {
+    *TEST_VISION_RESPONSE.lock().unwrap() = response;
+}
+
 pub async fn vision_subcall(
     ctx: &ToolContext<'_>,
     model_id: ModelId,
     paths: &[String],
     prompt: &str,
 ) -> Result<String, ToolError> {
+    #[cfg(test)]
+    if let Some(resp) = TEST_VISION_RESPONSE.lock().unwrap().clone() {
+        return Ok(resp);
+    }
+
     if !model_id.supports_vision() {
         return Err(ToolError::Execution(
             "vision subcall requires a vision-capable model".into(),

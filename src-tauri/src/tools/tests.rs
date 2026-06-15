@@ -93,7 +93,7 @@ async function main() {{
   const font = await doc.embedFont(PDFLib.StandardFonts.Helvetica);
   for (let i = 0; i < {pages}; i++) {{
     const page = doc.addPage([300, 200]);
-    page.drawText("Page " + (i + 1), {{ x: 50, y: 100, size: 20, font }});
+    page.drawText("Page " + (i + 1) + " — Sample narrative text for PDFium extraction and judge tests.", {{ x: 50, y: 100, size: 12, font }});
   }}
   const bytes = await doc.save();
   let bin = "";
@@ -1576,7 +1576,7 @@ async function main() {
     }
 
     #[test]
-    fn tools_for_model_pdf_read_always_image_read_only_on_vision() {
+    fn tools_for_model_pdf_read_schema_has_no_mode() {
         let registry = ToolRegistry::default_tools();
         let deepseek = registry
             .tools_for_model(ModelId::DeepSeekV4Flash, false)
@@ -1596,14 +1596,16 @@ async function main() {
 
         let kimi_defs = registry.tools_for_model(ModelId::KimiK26, false);
         let pdf = kimi_defs.iter().find(|t| t.name == "pdf_read").unwrap();
-        let modes = pdf.parameters["properties"]["mode"]["enum"]
+        assert!(pdf.parameters["properties"]["mode"].is_null());
+        assert!(pdf.parameters["required"]
             .as_array()
-            .unwrap();
-        assert!(!modes.iter().any(|v| v.as_str() == Some("text")));
+            .unwrap()
+            .iter()
+            .any(|v| v.as_str() == Some("path")));
     }
 
     #[test]
-    fn pdf_read_non_vision_auto_returns_text() {
+    fn pdf_read_non_vision_returns_text() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
@@ -1618,68 +1620,45 @@ async function main() {
             json!({ "path": "doc.pdf" }),
         )
         .unwrap();
-        assert_eq!(out["mode"], "auto");
         assert_eq!(out["resolved"], "text");
         assert!(out["markdown"].as_str().unwrap().contains("Page"));
-
-        let explicit = exec_tool_model(
-            &registry,
-            &ctx,
-            ModelId::DeepSeekV4Flash,
-            "pdf_read",
-            json!({ "path": "doc.pdf", "mode": "text" }),
-        )
-        .unwrap();
-        assert_eq!(explicit["mode"], "text");
+        assert!(out.get("judge").is_none());
     }
 
     #[test]
-    fn pdf_read_auto_explicit_matches_default_on_non_vision() {
+    fn pdf_read_non_vision_scan_pdf_errors() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
-
-        let default = exec_tool_model(
+        let code = r#"
+async function main() {
+  const doc = await PDFLib.PDFDocument.create();
+  doc.addPage([300, 200]);
+  const bytes = await doc.save();
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  doc_write("blank.pdf", btoa(bin));
+  return { ok: true };
+}
+"#;
+        exec_tool(
             &registry,
             &ctx,
-            ModelId::DeepSeekV4Flash,
-            "pdf_read",
-            json!({ "path": "doc.pdf" }),
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
         )
         .unwrap();
-        let auto = exec_tool_model(
-            &registry,
-            &ctx,
-            ModelId::DeepSeekV4Flash,
-            "pdf_read",
-            json!({ "path": "doc.pdf", "mode": "auto" }),
-        )
-        .unwrap();
-        assert_eq!(default["mode"], "auto");
-        assert_eq!(auto["mode"], "auto");
-        assert_eq!(default["resolved"], auto["resolved"]);
-        assert_eq!(default["markdown"], auto["markdown"]);
-    }
-
-    #[test]
-    fn pdf_read_non_vision_rejects_explicit_vision_mode() {
-        let dir = tempdir().unwrap();
-        let sandbox = setup(&dir);
-        let ctx = ToolContext::new(&sandbox);
-        let registry = ToolRegistry::default_tools();
-        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
 
         let err = exec_tool_model(
             &registry,
             &ctx,
             ModelId::DeepSeekV4Flash,
             "pdf_read",
-            json!({ "path": "doc.pdf", "mode": "vision" }),
+            json!({ "path": "blank.pdf" }),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("vision-capable"));
+        assert!(err.to_string().contains("扫描件"));
     }
 
     #[test]
@@ -1837,13 +1816,53 @@ async function main() {
     }
 
     #[test]
-    fn pdf_read_vision_four_pages_single_batch_reaches_subcall() {
+    fn pdf_read_vision_judge_text_ok_returns_pdfium() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+
+        set_test_vision_response(Some("TEXT_OK".into()));
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "doc.pdf" }),
+        );
+        set_test_vision_response(None);
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "text");
+                assert_eq!(out["judge"]["method"], "page_compare");
+                assert_eq!(out["judge"]["verdict"], "TEXT_OK");
+                assert!(out["markdown"].as_str().unwrap().contains("Page"));
+                assert!(out.get("cache_hit").is_none());
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_vision_judge_need_vision_full_batch() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
         make_multi_page_pdf(&ctx, &registry, "exam.pdf", 4);
 
+        set_test_vision_response(Some("NEED_VISION".into()));
         let result = exec_tool_model(
             &registry,
             &ctx,
@@ -1851,30 +1870,79 @@ async function main() {
             "pdf_read",
             json!({ "path": "exam.pdf" }),
         );
+        set_test_vision_response(None);
+
         match result {
             Ok(out) => {
-                assert_eq!(out["mode"], "auto");
                 assert_eq!(out["resolved"], "vision");
+                assert_eq!(out["judge"]["verdict"], "NEED_VISION");
                 assert_eq!(out["page_count"], 4);
                 let md = out["markdown"].as_str().unwrap();
                 assert!(md.contains("## Pages 1-4"));
-                assert!(!md.contains("## Pages 5-"));
             }
             Err(e) => {
-                let msg = e.to_string();
                 if pdfium_unavailable(&e) {
                     return;
                 }
-                assert!(
-                    msg.to_ascii_lowercase().contains("api key"),
-                    "expected vision subcall failure, got: {msg}"
-                );
+                panic!("unexpected error: {e}");
             }
         }
     }
 
     #[test]
-    fn pdf_read_text_mode_matches_office_read_baseline() {
+    fn pdf_read_vision_no_text_layer_skips_judge() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+async function main() {
+  const doc = await PDFLib.PDFDocument.create();
+  doc.addPage([300, 200]);
+  const bytes = await doc.save();
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  doc_write("scan.pdf", btoa(bin));
+  return { ok: true };
+}
+"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
+
+        set_test_vision_response(Some("OCR page 1".into()));
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "scan.pdf" }),
+        );
+        set_test_vision_response(None);
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "vision");
+                assert_eq!(out["judge"]["method"], "no_text_layer");
+                assert_eq!(out["judge"]["skipped"], true);
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_matches_office_read_on_non_vision() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
@@ -1893,10 +1961,9 @@ async function main() {
             &ctx,
             ModelId::DeepSeekV4Flash,
             "pdf_read",
-            json!({ "path": "doc.pdf", "mode": "text" }),
+            json!({ "path": "doc.pdf" }),
         )
         .unwrap();
-        assert_eq!(pdf["mode"], "text");
         assert_eq!(
             pdf["markdown"].as_str().unwrap(),
             office["markdown"].as_str().unwrap()

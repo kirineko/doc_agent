@@ -116,7 +116,7 @@ impl ToolRegistry {
                 let (description, parameters) = if t.name == "pdf_read" {
                     (
                         crate::tools::pdf_read::description_for_model(model).to_string(),
-                        crate::tools::pdf_read::parameters_for_model(model),
+                        crate::tools::pdf_read::parameters_schema(),
                     )
                 } else {
                     (t.description.to_string(), t.parameters.clone())

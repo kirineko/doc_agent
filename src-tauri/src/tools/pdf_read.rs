@@ -1,7 +1,11 @@
 use crate::agent::types::ModelId;
-use crate::tools::pdf::extract_text;
 use crate::tools::pdf::render_pages_cached;
+use crate::tools::pdf::{extract_text_pages, join_extracted_pages};
 use crate::tools::pdf_cache::{self, PageEntry};
+use crate::tools::pdf_judge::{judge_page_compare, JudgeVerdict};
+use crate::tools::pdf_text_quality::{
+    build_page_stats, full_text_hard_rule, pick_sample_page,
+};
 use crate::tools::vision_subcall::vision_subcall;
 use crate::tools::{required_str_arg, ToolContext, ToolError, ToolSpec};
 use serde_json::{json, Value};
@@ -13,45 +17,26 @@ const VISION_PAGE_PROMPT: &str = "按图片顺序逐页提取全部可见文字�
 pub fn tool() -> ToolSpec {
     ToolSpec {
         name: "pdf_read",
-        description: description_for_model(ModelId::KimiK26),
-        parameters: parameters_for_model(ModelId::KimiK26),
+        description: "Read PDF intelligently: extracts text first; on vision models judges whether full page vision is needed. Pass path only.",
+        parameters: parameters_schema(),
         handler: |_ctx, _args| Err(ToolError::NotImplemented),
     }
 }
 
-pub fn description_for_model(model_id: ModelId) -> &'static str {
-    if model_id.supports_vision() {
-        "Read PDF. Omit mode (recommended): auto extracts text then vision-understands every page. Use mode=vision only for scan-only PDFs without text layer. Do NOT use mode=text on vision models — use office_read_to_markdown for text-only."
-    } else {
-        "Read PDF. Omit mode (recommended): auto returns PDFium text. Use mode=text for explicit text-only. mode=vision is not available on this model."
-    }
+pub fn description_for_model(_model_id: ModelId) -> &'static str {
+    "Read PDF. Pass path only — system extracts text and (on vision models) judges if page images are needed for formulas/layout. For PDFium-only without judging, use office_read_to_markdown."
 }
 
-pub fn parameters_for_model(model_id: ModelId) -> Value {
-    let mode_schema = if model_id.supports_vision() {
-        json!({
-            "type": "string",
-            "enum": ["auto", "vision"],
-            "description": "Omit in normal use (same as auto). auto: text extraction then vision on all pages. vision: skip text, render+vision only (scanned PDFs)."
-        })
-    } else {
-        json!({
-            "type": "string",
-            "enum": ["auto", "text"],
-            "description": "Omit in normal use (same as auto). auto/text: PDFium text only on non-vision models."
-        })
-    };
-
+pub fn parameters_schema() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "path": { "type": "string" },
-            "mode": mode_schema,
+            "path": { "type": "string", "description": "Project-relative PDF path" },
             "pages": {
                 "type": "string",
-                "description": "1-based page range for render in auto/vision (default all); also accepts array e.g. [1,3]"
+                "description": "Optional 1-based page range (default all); also accepts array e.g. [1,3]"
             },
-            "dpi": { "type": "integer", "description": "Render DPI when using vision (default 150, 72-300)" }
+            "dpi": { "type": "integer", "description": "Render DPI when vision runs (default 150, 72-300)" }
         },
         "required": ["path"]
     })
@@ -72,107 +57,178 @@ pub async fn handler(
         return Err(ToolError::InvalidArgs("path must be a .pdf file".into()));
     }
 
-    let mode = resolve_mode(&args, model_id)?;
-    match mode {
-        PdfReadMode::Text => read_text(&abs_path),
-        PdfReadMode::Vision => {
-            let dpi = parse_dpi_arg(&args)?;
-            let pages_spec = parse_pages_arg(&args)?;
-            read_vision(
+    let dpi = parse_dpi_arg(&args)?;
+    let pages_spec = parse_pages_arg(&args)?;
+    let pages_spec_ref = pages_spec.as_deref();
+
+    let page_texts = extract_text_pages(&abs_path, pages_spec_ref).map_err(ToolError::Execution)?;
+    let full_text = join_extracted_pages(&page_texts);
+    let page_count = page_texts.len() as u32;
+    let has_text = !full_text.is_empty();
+
+    if !model_id.supports_vision() {
+        if !has_text {
+            return Err(ToolError::Execution(
+                "PDF 未提取到文本（可能为扫描件）；请切换至支持 vision 的模型（如 Kimi K2.6）后重试 pdf_read"
+                    .into(),
+            ));
+        }
+        return Ok(json!({
+            "resolved": "text",
+            "page_count": page_count,
+            "markdown": full_text,
+        }));
+    }
+
+    if !has_text {
+        return read_full_vision(
+            ctx,
+            model_id,
+            &rel_path,
+            &abs_path,
+            dpi,
+            pages_spec_ref,
+            None,
+            judge_meta_skipped("no_text_layer", None, None),
+        )
+        .await;
+    }
+
+    if let Some(rule) = full_text_hard_rule(&full_text, page_count) {
+        return read_full_vision(
+            ctx,
+            model_id,
+            &rel_path,
+            &abs_path,
+            dpi,
+            pages_spec_ref,
+            Some(full_text.as_str()),
+            judge_meta_skipped("hard_rule", Some(rule), None),
+        )
+        .await;
+    }
+
+    let stats = build_page_stats(
+        &page_texts
+            .iter()
+            .map(|p| (p.index, p.text.clone()))
+            .collect::<Vec<_>>(),
+    );
+    let sample = pick_sample_page(&stats).ok_or_else(|| {
+        ToolError::Execution("failed to pick sample page for judge".into())
+    })?;
+    let sample_text = page_texts
+        .iter()
+        .find(|p| p.index == sample.index)
+        .map(|p| p.text.as_str())
+        .unwrap_or("");
+
+    let sample_pages_spec = Some(sample.index.to_string());
+    let render = render_pages_cached(
+        ctx.sandbox.root(),
+        &rel_path,
+        &abs_path,
+        dpi,
+        sample_pages_spec.as_deref(),
+    )
+    .map_err(ToolError::Execution)?;
+
+    let image_path = render
+        .manifest
+        .pages
+        .iter()
+        .find(|p| p.index == sample.index)
+        .map(|p| p.path.as_str())
+        .ok_or_else(|| ToolError::Execution("sample page render missing".into()))?;
+
+    let verdict = match judge_page_compare(ctx, model_id, sample.index, image_path, sample_text).await
+    {
+        Ok(v) => v,
+        Err(_) => {
+            return read_full_vision(
                 ctx,
                 model_id,
                 &rel_path,
                 &abs_path,
                 dpi,
-                pages_spec.as_deref(),
-                "vision",
-                None,
+                pages_spec_ref,
+                Some(full_text.as_str()),
+                judge_meta_judge_failed(sample),
             )
-            .await
+            .await;
         }
-        PdfReadMode::Auto => read_auto(ctx, model_id, &rel_path, &abs_path, &args).await,
-    }
-}
+    };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PdfReadMode {
-    Text,
-    Vision,
-    Auto,
-}
-
-fn resolve_mode(args: &Value, model_id: ModelId) -> Result<PdfReadMode, ToolError> {
-    let mode = args.get("mode").and_then(|v| v.as_str());
-    match mode {
-        None | Some("auto") => Ok(PdfReadMode::Auto),
-        Some("text") => {
-            if model_id.supports_vision() {
-                // Agent 误传 mode=text 时仍走 auto，避免公式/版式丢失
-                Ok(PdfReadMode::Auto)
-            } else {
-                Ok(PdfReadMode::Text)
-            }
-        }
-        Some("vision") => {
-            if model_id.supports_vision() {
-                Ok(PdfReadMode::Vision)
-            } else {
-                Err(ToolError::InvalidArgs(
-                    "mode=vision requires a vision-capable model; use mode=auto or mode=text".into(),
-                ))
-            }
-        }
-        Some(other) => Err(ToolError::InvalidArgs(format!("unknown mode: {other}"))),
-    }
-}
-
-async fn read_auto(
-    ctx: &ToolContext<'_>,
-    model_id: ModelId,
-    rel_path: &str,
-    abs_path: &Path,
-    args: &Value,
-) -> Result<Value, ToolError> {
-    let text_layer = try_extract_text(abs_path)?;
-
-    if !model_id.supports_vision() {
-        let markdown = text_layer.ok_or_else(|| {
-            ToolError::Execution(
-                "PDF 未提取到文本（可能为扫描件）；请切换至支持 vision 的模型（如 Kimi K2.6）后重试 pdf_read"
-                    .into(),
-            )
-        })?;
+    if verdict == JudgeVerdict::TextOk {
         return Ok(json!({
-            "mode": "auto",
             "resolved": "text",
-            "markdown": markdown,
+            "page_count": page_count,
+            "markdown": full_text,
+            "judge": judge_meta_compare(sample, &verdict, false),
         }));
     }
 
-    let dpi = parse_dpi_arg(args)?;
-    let pages_spec = parse_pages_arg(args)?;
-    read_vision(
+    read_full_vision(
         ctx,
         model_id,
-        rel_path,
-        abs_path,
+        &rel_path,
+        &abs_path,
         dpi,
-        pages_spec.as_deref(),
-        "auto",
-        text_layer.as_deref(),
+        pages_spec_ref,
+        Some(full_text.as_str()),
+        judge_meta_compare(sample, &verdict, true),
     )
     .await
 }
 
-async fn read_vision(
+fn judge_meta_skipped(
+    method: &'static str,
+    hard_rule: Option<&str>,
+    sample_page: Option<u32>,
+) -> Value {
+    json!({
+        "skipped": true,
+        "method": method,
+        "hard_rule": hard_rule,
+        "sample_page": sample_page,
+    })
+}
+
+fn judge_meta_judge_failed(sample: crate::tools::pdf_text_quality::SamplePagePick) -> Value {
+    json!({
+        "skipped": false,
+        "method": "page_compare",
+        "sample_page": sample.index,
+        "sample_reason": sample.reason,
+        "verdict": "JUDGE_FAILED",
+        "followed_by_full_vision": true,
+    })
+}
+
+fn judge_meta_compare(
+    sample: crate::tools::pdf_text_quality::SamplePagePick,
+    verdict: &JudgeVerdict,
+    followed_by_vision: bool,
+) -> Value {
+    json!({
+        "skipped": false,
+        "method": "page_compare",
+        "sample_page": sample.index,
+        "sample_reason": sample.reason,
+        "verdict": if *verdict == JudgeVerdict::TextOk { "TEXT_OK" } else { "NEED_VISION" },
+        "followed_by_full_vision": followed_by_vision,
+    })
+}
+
+async fn read_full_vision(
     ctx: &ToolContext<'_>,
     model_id: ModelId,
     rel_path: &str,
     abs_path: &Path,
     dpi: u32,
     pages_spec: Option<&str>,
-    response_mode: &'static str,
     text_layer: Option<&str>,
+    judge: Value,
 ) -> Result<Value, ToolError> {
     let render = render_pages_cached(ctx.sandbox.root(), rel_path, abs_path, dpi, pages_spec)
         .map_err(ToolError::Execution)?;
@@ -190,12 +246,12 @@ async fn read_vision(
     }
 
     let mut out = json!({
-        "mode": response_mode,
         "resolved": "vision",
         "cache_hit": render.cache_hit,
         "cache_key": render.cache_key,
         "page_count": render.manifest.page_count,
         "markdown": sections.join("\n\n"),
+        "judge": judge,
     });
     if let Some(layer) = text_layer {
         out["text_layer"] = json!(layer);
@@ -210,16 +266,6 @@ fn parse_dpi_arg(args: &Value) -> Result<u32, ToolError> {
 
 fn parse_pages_arg(args: &Value) -> Result<Option<String>, ToolError> {
     pdf_cache::normalize_pages_arg(args.get("pages")).map_err(ToolError::InvalidArgs)
-}
-
-fn try_extract_text(abs_path: &Path) -> Result<Option<String>, ToolError> {
-    let text = extract_text(abs_path).map_err(ToolError::Execution)?;
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(trimmed.to_string()))
-    }
 }
 
 fn format_page_label(entries: &[PageEntry]) -> String {
@@ -237,43 +283,15 @@ fn format_page_label(entries: &[PageEntry]) -> String {
     }
 }
 
-fn read_text(abs_path: &Path) -> Result<Value, ToolError> {
-    let markdown = try_extract_text(abs_path)?.ok_or_else(|| {
-        ToolError::Execution(
-            "PDF 未提取到文本（可能为扫描件）；请使用 vision 模型调用 pdf_read（mode=auto 或 mode=vision）"
-                .into(),
-        )
-    })?;
-    Ok(json!({
-        "mode": "text",
-        "markdown": markdown,
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tools::pdf_cache::PageEntry;
 
     #[test]
-    fn resolve_mode_auto_is_default() {
-        assert_eq!(
-            resolve_mode(&json!({}), ModelId::DeepSeekV4Flash).unwrap(),
-            PdfReadMode::Auto
-        );
-        assert_eq!(
-            resolve_mode(&json!({ "mode": "auto" }), ModelId::KimiK26).unwrap(),
-            PdfReadMode::Auto
-        );
-    }
-
-    #[test]
-    fn resolve_mode_vision_requires_vision_model() {
-        assert!(resolve_mode(&json!({ "mode": "vision" }), ModelId::DeepSeekV4Flash).is_err());
-        assert_eq!(
-            resolve_mode(&json!({ "mode": "vision" }), ModelId::KimiK26).unwrap(),
-            PdfReadMode::Vision
-        );
+    fn parameters_schema_has_no_mode() {
+        let params = parameters_schema();
+        assert!(params["properties"]["path"].is_object());
+        assert!(params["properties"]["mode"].is_null());
     }
 
     #[test]
@@ -289,61 +307,5 @@ mod tests {
             },
         ];
         assert_eq!(format_page_label(&chunk), "1-2");
-    }
-
-    #[test]
-    fn format_page_label_non_contiguous_list() {
-        let chunk = vec![
-            PageEntry {
-                index: 1,
-                path: "p1.png".into(),
-            },
-            PageEntry {
-                index: 3,
-                path: "p3.png".into(),
-            },
-            PageEntry {
-                index: 5,
-                path: "p5.png".into(),
-            },
-        ];
-        assert_eq!(format_page_label(&chunk), "1,3,5");
-    }
-
-    #[test]
-    fn resolve_mode_text_on_vision_model_maps_to_auto() {
-        assert_eq!(
-            resolve_mode(&json!({ "mode": "text" }), ModelId::KimiK26).unwrap(),
-            PdfReadMode::Auto
-        );
-        assert_eq!(
-            resolve_mode(&json!({ "mode": "text" }), ModelId::DeepSeekV4Flash).unwrap(),
-            PdfReadMode::Text
-        );
-    }
-
-    #[test]
-    fn parameters_for_vision_model_omits_text_mode() {
-        let params = parameters_for_model(ModelId::KimiK26);
-        let modes = params["properties"]["mode"]["enum"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(modes, vec!["auto", "vision"]);
-        assert!(!modes.contains(&"text"));
-    }
-
-    #[test]
-    fn parameters_for_non_vision_model_omits_vision_mode() {
-        let params = parameters_for_model(ModelId::DeepSeekV4Flash);
-        let modes = params["properties"]["mode"]["enum"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>();
-        assert_eq!(modes, vec!["auto", "text"]);
     }
 }

@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use reqwest::Response;
 use serde_json::Value;
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum SseError {
@@ -177,7 +178,7 @@ fn merge_tool_call_deltas(tool_calls: &mut Vec<ToolCall>, items: &[Value]) {
         let index = item["index"].as_u64().unwrap_or(0) as usize;
         while tool_calls.len() <= index {
             tool_calls.push(ToolCall {
-                id: String::new(),
+                id: format!("call_{}", Uuid::new_v4()),
                 call_type: "function".into(),
                 function: crate::agent::types::FunctionCall {
                     name: String::new(),
@@ -186,7 +187,9 @@ fn merge_tool_call_deltas(tool_calls: &mut Vec<ToolCall>, items: &[Value]) {
             });
         }
         if let Some(id) = item["id"].as_str() {
-            tool_calls[index].id = id.to_string();
+            if !id.is_empty() {
+                tool_calls[index].id = id.to_string();
+            }
         }
         if let Some(name) = item["function"]["name"].as_str() {
             tool_calls[index].function.name = name.to_string();
@@ -201,6 +204,29 @@ fn merge_tool_call_deltas(tool_calls: &mut Vec<ToolCall>, items: &[Value]) {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn merge_tool_call_deltas_without_provider_id_keeps_generated_id() {
+        let mut tool_calls = Vec::new();
+        merge_tool_call_deltas(
+            &mut tool_calls,
+            &[json!({
+                "index": 0,
+                "function": { "name": "pdf_read", "arguments": "{\"path\":" }
+            })],
+        );
+        assert_eq!(tool_calls.len(), 1);
+        assert!(!tool_calls[0].id.is_empty());
+        assert!(tool_calls[0].id.starts_with("call_"));
+        merge_tool_call_deltas(
+            &mut tool_calls,
+            &[json!({
+                "index": 0,
+                "function": { "arguments": "\"a.pdf\"}" }
+            })],
+        );
+        assert_eq!(tool_calls[0].function.arguments, r#"{"path":"a.pdf"}"#);
+    }
 
     #[test]
     fn merge_tool_call_deltas_accumulates_chunks() {
