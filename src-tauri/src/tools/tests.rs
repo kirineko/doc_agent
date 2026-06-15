@@ -5,6 +5,7 @@ mod tool_tests {
     use crate::tools::ooxml::style_lint::lint_docx;
     use crate::tools::ooxml::validate;
     use crate::tools::{ToolContext, ToolError, ToolRegistry};
+    use serial_test::serial;
     use serde_json::json;
     use std::fs;
     use std::io::Read;
@@ -1935,6 +1936,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_short_pdf_direct_vision() {
         use crate::tools::vision_subcall::set_test_vision_response;
@@ -1972,6 +1974,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_above_short_threshold_still_judges() {
         use crate::tools::vision_subcall::set_test_vision_response;
@@ -2006,6 +2009,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_at_text_threshold_still_judges() {
         use crate::tools::vision_subcall::set_test_vision_response;
@@ -2040,6 +2044,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_judge_text_ok_returns_pdfium() {
         use crate::tools::vision_subcall::set_test_vision_response;
@@ -2077,6 +2082,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_judge_need_vision_full_batch() {
         use crate::tools::vision_subcall::set_test_vision_response;
@@ -2114,6 +2120,7 @@ async function main() {
         }
     }
 
+    #[serial]
     #[test]
     fn pdf_read_vision_no_text_layer_skips_judge() {
         use crate::tools::vision_subcall::set_test_vision_response;

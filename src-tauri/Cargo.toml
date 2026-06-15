@@ -1,6 +1,6 @@
 [package]
 name = "doc-agent"
-version = "2026.6.14"
+version = "2026.6.15"
 description = "Office document AI agent desktop app"
 authors = ["doc-agent"]
 edition = "2021"
@@ -67,6 +67,7 @@ tauri-plugin-updater = "2"
 [dev-dependencies]
 tempfile = "3"
 tauri = { version = "2", features = ["test"] }
+serial_test = "3"
 
 [[example]]
 name = "spike_js"

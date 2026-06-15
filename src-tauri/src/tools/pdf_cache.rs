@@ -16,7 +16,7 @@ pub const MAX_DPI: u32 = 300;
 
 pub fn parse_dpi(dpi_arg: Option<u64>) -> Result<u32, String> {
     let dpi = dpi_arg.map(|v| v as u32).unwrap_or(DEFAULT_DPI);
-    if dpi < MIN_DPI || dpi > MAX_DPI {
+    if !(MIN_DPI..=MAX_DPI).contains(&dpi) {
         return Err(format!("dpi must be between {MIN_DPI} and {MAX_DPI}"));
     }
     Ok(dpi)

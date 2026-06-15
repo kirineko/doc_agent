@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+---
+
+## [2026.6.15] — 2026-06-15
+
+本版本新增 Typst PDF 离线导出、PDF 智能读取与多模态能力，统一项目缓存目录，并改进 Agent 工具链稳定性。
+
 ### Typst PDF 导出
 
 - **typst_to_pdf**：嵌入 `typst-as-lib` 离线编译沙箱内 `.typ`（或含 `main.typ` 的目录）为 PDF；60 秒超时，临时文件 + staging 写入，超时或不成功不覆盖最终 `out_path`

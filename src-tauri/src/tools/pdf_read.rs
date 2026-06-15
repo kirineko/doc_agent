@@ -269,6 +269,7 @@ fn judge_meta_compare(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn read_full_vision(
     ctx: &ToolContext<'_>,
     model_id: ModelId,

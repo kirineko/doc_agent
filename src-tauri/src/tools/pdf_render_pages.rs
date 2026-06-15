@@ -16,7 +16,7 @@ pub fn tool() -> ToolSpec {
             },
             "required": ["path"]
         }),
-        handler: handler,
+        handler,
     }
 }
 

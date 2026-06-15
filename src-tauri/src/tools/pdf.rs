@@ -71,7 +71,7 @@ pub fn render_pages_cached(
                 .pages()
                 .get(index)
                 .map_err(|e| format!("PDF 第 {page_no} 页读取失败: {e}"))?;
-            let width_pts = page.width().value as f32;
+            let width_pts = page.width().value;
             let target_width = ((width_pts / 72.0) * dpi as f32).round().max(1.0) as i32;
             let config = PdfRenderConfig::new().set_target_width(target_width);
             let bitmap = page
