@@ -4,6 +4,7 @@ pub mod ipc;
 pub mod state;
 pub mod tools;
 
+use ipc::provider_balance::fetch_provider_balances;
 use ipc::updater::fetch_latest_release_version;
 
 use state::AppState;
@@ -61,6 +62,7 @@ pub fn run() {
             ipc::clear_api_key,
             ipc::pick_project_directory,
             fetch_latest_release_version,
+            fetch_provider_balances,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

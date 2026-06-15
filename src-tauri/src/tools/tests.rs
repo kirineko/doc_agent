@@ -160,6 +160,9 @@ async function main() {{
             "pdf_render_pages",
             "pdf_read",
             "html_to_pdf",
+            "typst_to_pdf",
+            "typst_list_templates",
+            "typst_read_template",
             "web_search",
             "web_extract",
         ] {
@@ -2554,5 +2557,226 @@ async function main() {
         )
         .unwrap_err();
         assert!(err.to_string().contains("macOS"));
+    }
+
+    #[test]
+    fn typst_list_templates_returns_nine_entries() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "typst_list_templates", json!({})).unwrap();
+        let templates = out["templates"].as_array().unwrap();
+        assert_eq!(templates.len(), 9);
+        assert!(templates.iter().any(|t| t["id"] == "syntax/typst-guide"));
+        let categories: Vec<_> = templates
+            .iter()
+            .map(|t| t["category"].as_str().unwrap())
+            .collect();
+        for cat in ["report", "exam", "paper", "lecture"] {
+            assert!(categories.iter().filter(|c| **c == cat).count() >= 2);
+        }
+    }
+
+    #[test]
+    fn typst_read_template_returns_exam_zh() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "typst_read_template",
+            json!({ "template": "exam/exam-zh" }),
+        )
+        .unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("高等数学"));
+        assert!(content.contains("/doc-agent/typst/common/fonts.typ"));
+    }
+
+    #[test]
+    fn typst_read_template_returns_typst_guide() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "typst_read_template",
+            json!({ "template": "syntax/typst-guide" }),
+        )
+        .unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("typst.app/docs/reference"));
+        assert!(content.contains("#import"));
+        assert!(content.contains("cases("));
+    }
+
+    #[test]
+    fn typst_read_template_rejects_unknown_id() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "typst_read_template",
+            json!({ "template": "missing/template" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown template"));
+    }
+
+    #[test]
+    fn typst_to_pdf_rejects_missing_typ() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "missing.typ",
+                "out_path": "out.pdf"
+            }),
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("不存在") || msg.contains("missing"));
+    }
+
+    #[test]
+    fn typst_to_pdf_rejects_dir_without_main_typ() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("empty")).unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "empty",
+                "out_path": "out.pdf"
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("main.typ"));
+    }
+
+    #[test]
+    fn typst_to_pdf_compiles_minimal_document() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("typst")).unwrap();
+        fs::write(
+            dir.path().join("typst/minimal.typ"),
+            r#"#import "/doc-agent/typst/common/fonts.typ": apply-en-body
+#import "/doc-agent/typst/common/page.typ": page-a4
+#show: apply-en-body
+#page-a4()
+= Minimal Typst Test
+$ E = m c^2 $
+"#,
+        )
+        .unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "typst/minimal.typ",
+                "out_path": "typst/minimal.pdf"
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["path"], "typst/minimal.pdf");
+        assert!(out["pages"].as_u64().unwrap() >= 1);
+        assert!(dir.path().join("typst/minimal.pdf").exists());
+    }
+
+    #[test]
+    fn typst_to_pdf_compiles_bundled_exam_zh_template() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let template = exec_tool(
+            &registry,
+            &ctx,
+            "typst_read_template",
+            json!({ "template": "exam/exam-zh" }),
+        )
+        .unwrap();
+        let content = template["content"].as_str().unwrap();
+        fs::create_dir_all(dir.path().join("docs")).unwrap();
+        fs::write(dir.path().join("docs/exam.typ"), content).unwrap();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "docs/exam.typ",
+                "out_path": "docs/exam.pdf"
+            }),
+        )
+        .unwrap();
+        assert!(out["pages"].as_u64().unwrap() >= 1);
+        assert!(dir.path().join("docs/exam.pdf").exists());
+    }
+
+    #[test]
+    fn typst_to_pdf_overwrites_existing_pdf() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("typst")).unwrap();
+        fs::write(
+            dir.path().join("typst/minimal.typ"),
+            r#"#set text(font: "Libertinus Serif")
+= v1
+"#,
+        )
+        .unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "typst/minimal.typ",
+                "out_path": "typst/out.pdf"
+            }),
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("typst/minimal.typ"),
+            r#"#set text(font: "Libertinus Serif")
+= v2 longer
+#pagebreak()
+Second page
+"#,
+        )
+        .unwrap();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "typst_to_pdf",
+            json!({
+                "path": "typst/minimal.typ",
+                "out_path": "typst/out.pdf"
+            }),
+        )
+        .unwrap();
+        assert!(out["pages"].as_u64().unwrap() >= 2);
     }
 }

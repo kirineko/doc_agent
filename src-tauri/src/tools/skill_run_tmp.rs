@@ -1,12 +1,12 @@
 use super::{ToolContext, ToolError};
-use crate::core::cache_paths::{
-    SKILL_RUN_DIR, SKILL_RUN_ERROR, SKILL_RUN_SCRIPT,
-};
+use crate::core::cache_paths::{SKILL_RUN_DIR, SKILL_RUN_ERROR, SKILL_RUN_SCRIPT};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-pub use crate::core::cache_paths::{SKILL_RUN_DIR as TMP_DIR, SKILL_RUN_ERROR as ERROR_REL, SKILL_RUN_SCRIPT as SCRIPT_REL};
+pub use crate::core::cache_paths::{
+    SKILL_RUN_DIR as TMP_DIR, SKILL_RUN_ERROR as ERROR_REL, SKILL_RUN_SCRIPT as SCRIPT_REL,
+};
 
 pub fn write_temp_script(ctx: &ToolContext, code: &str) -> Result<(), ToolError> {
     let path = ctx.sandbox.resolve_for_write(SKILL_RUN_SCRIPT)?;

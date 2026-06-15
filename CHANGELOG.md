@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Typst PDF 导出
+
+- **typst_to_pdf**：嵌入 `typst-as-lib` 离线编译沙箱内 `.typ`（或含 `main.typ` 的目录）为 PDF；60 秒超时，临时文件 + staging 写入，超时或不成功不覆盖最终 `out_path`
+- **typst_list_templates / typst_read_template**：列出并读取内置资源——通用语法手册 `syntax/typst-guide`、report/exam/paper/lecture 各中英场景模板（共 9 项）
+- **内置模板**：`common/fonts.typ`（中英字体栈）、`common/page.typ`、`common/exam.typ`（`calc-item` 自动递增计算题号）；虚拟路径 `#import "/doc-agent/typst/..."`
+- **Agent 约束**：同一会话首次使用 Typst 能力前 MUST 读取 `syntax/typst-guide`；系统提示与工具描述已同步
+- **与 html_to_pdf 分工**：公式密集、版式严谨文档优先 Typst；图文 HTML 报告仍用 `html_to_pdf`
+
+### 设置与账户
+
+- **账户余额**：设置抽屉（版本信息下）展示已配置 API Key 的 DeepSeek、Kimi 人民币总可用余额；打开抽屉时查询，加载中 `…`、失败 `—`；MiMo 暂无官方余额接口不展示
+
 ### 项目缓存目录
 
 - **BREAKING**：统一项目沙箱缓存至 `.cache/` 单根目录

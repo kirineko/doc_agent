@@ -471,7 +471,11 @@ mod tests {
 
     #[test]
     fn mimo_thinking_has_no_keep_or_effort() {
-        let body = mimo_thinking_extra_body(&sample_request(ModelId::MimoV25, true, ThinkingEffort::High));
+        let body = mimo_thinking_extra_body(&sample_request(
+            ModelId::MimoV25,
+            true,
+            ThinkingEffort::High,
+        ));
         assert_eq!(body["thinking"]["type"], "enabled");
         assert!(body["thinking"].get("keep").is_none());
         assert!(body.get("reasoning_effort").is_none());
@@ -566,7 +570,9 @@ mod tests {
             seq: 1,
             created_at: "now".into(),
             archived: false,
-            attachments_json: Some(r#"[{"path":".cache/attachments/a.png","mime":"image/png"}]"#.into()),
+            attachments_json: Some(
+                r#"[{"path":".cache/attachments/a.png","mime":"image/png"}]"#.into(),
+            ),
         };
         let chat = messages_from_store_text(&[user], &[]);
         assert!(chat[0].image_urls.is_empty());
@@ -601,10 +607,13 @@ mod tests {
             seq: 1,
             created_at: "now".into(),
             archived: false,
-            attachments_json: Some(r#"[{"path":".cache/attachments/missing.png","mime":"image/png"}]"#.into()),
+            attachments_json: Some(
+                r#"[{"path":".cache/attachments/missing.png","mime":"image/png"}]"#.into(),
+            ),
         };
 
-        let chat = messages_from_store(&[user], &[], Some(&sandbox)).expect("missing file should not fail turn");
+        let chat = messages_from_store(&[user], &[], Some(&sandbox))
+            .expect("missing file should not fail turn");
         assert!(chat[0].image_urls.is_empty());
     }
 
@@ -628,8 +637,8 @@ mod tests {
             attachments_json: Some("not-json".into()),
         };
 
-        let chat =
-            messages_from_store(&[user], &[], Some(&sandbox)).expect("corrupt json should not fail turn");
+        let chat = messages_from_store(&[user], &[], Some(&sandbox))
+            .expect("corrupt json should not fail turn");
         assert!(chat[0].image_urls.is_empty());
     }
 }

@@ -28,7 +28,11 @@ function App() {
           <ThemeToggle />
         </div>
       </header>
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsDrawer
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        apiKeyStatus={ws.apiKeyStatus}
+      />
       <ModelSettingsDrawer
         open={ws.modelSettingsOpen}
         models={ws.models}

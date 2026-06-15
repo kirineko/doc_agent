@@ -92,12 +92,20 @@ pub fn page_suspicion(text: &str) -> f32 {
     let cid_count = trimmed.matches("(cid:").count() as f32;
     score += (cid_count / len * 200.0).min(0.5);
 
-    let replacement = trimmed.chars().filter(|c| *c == '\u{FFFD}' || *c == '□').count() as f32;
+    let replacement = trimmed
+        .chars()
+        .filter(|c| *c == '\u{FFFD}' || *c == '□')
+        .count() as f32;
     score += (replacement / len * 100.0).min(0.4);
 
     let math_chars = trimmed
         .chars()
-        .filter(|c| matches!(c, '∫' | '∑' | '√' | '∞' | '±' | '≤' | '≥' | 'π' | 'α' | 'β' | 'θ'))
+        .filter(|c| {
+            matches!(
+                c,
+                '∫' | '∑' | '√' | '∞' | '±' | '≤' | '≥' | 'π' | 'α' | 'β' | 'θ'
+            )
+        })
         .count() as f32;
     score += (math_chars / len * 50.0).min(0.35);
 

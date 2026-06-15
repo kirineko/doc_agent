@@ -3,16 +3,15 @@ use crate::tools::pdf::render_pages_cached;
 use crate::tools::pdf::{extract_text_pages, join_extracted_pages};
 use crate::tools::pdf_cache::{self, PageEntry};
 use crate::tools::pdf_judge::{judge_page_compare, JudgeVerdict};
-use crate::tools::pdf_text_quality::{
-    build_page_stats, full_text_hard_rule, pick_sample_page,
-};
+use crate::tools::pdf_text_quality::{build_page_stats, full_text_hard_rule, pick_sample_page};
 use crate::tools::vision_subcall::vision_subcall;
 use crate::tools::{required_str_arg, ToolContext, ToolError, ToolSpec};
 use serde_json::{json, Value};
 use std::path::Path;
 
 const VISION_BATCH: usize = 4;
-const VISION_PAGE_PROMPT: &str = "按图片顺序逐页提取全部可见文字、公式与题号，保留数学符号，用 Markdown 输出。";
+const VISION_PAGE_PROMPT: &str =
+    "按图片顺序逐页提取全部可见文字、公式与题号，保留数学符号，用 Markdown 输出。";
 
 pub fn tool() -> ToolSpec {
     ToolSpec {
@@ -118,9 +117,8 @@ pub async fn handler(
             .map(|p| (p.index, p.text.clone()))
             .collect::<Vec<_>>(),
     );
-    let sample = pick_sample_page(&stats).ok_or_else(|| {
-        ToolError::Execution("failed to pick sample page for judge".into())
-    })?;
+    let sample = pick_sample_page(&stats)
+        .ok_or_else(|| ToolError::Execution("failed to pick sample page for judge".into()))?;
     let sample_text = page_texts
         .iter()
         .find(|p| p.index == sample.index)
@@ -145,23 +143,23 @@ pub async fn handler(
         .map(|p| p.path.as_str())
         .ok_or_else(|| ToolError::Execution("sample page render missing".into()))?;
 
-    let verdict = match judge_page_compare(ctx, model_id, sample.index, image_path, sample_text).await
-    {
-        Ok(v) => v,
-        Err(_) => {
-            return read_full_vision(
-                ctx,
-                model_id,
-                &rel_path,
-                &abs_path,
-                dpi,
-                pages_spec_ref,
-                Some(full_text.as_str()),
-                judge_meta_judge_failed(sample),
-            )
-            .await;
-        }
-    };
+    let verdict =
+        match judge_page_compare(ctx, model_id, sample.index, image_path, sample_text).await {
+            Ok(v) => v,
+            Err(_) => {
+                return read_full_vision(
+                    ctx,
+                    model_id,
+                    &rel_path,
+                    &abs_path,
+                    dpi,
+                    pages_spec_ref,
+                    Some(full_text.as_str()),
+                    judge_meta_judge_failed(sample),
+                )
+                .await;
+            }
+        };
 
     if verdict == JudgeVerdict::TextOk {
         return Ok(json!({
@@ -264,8 +262,7 @@ async fn read_full_vision(
 }
 
 fn parse_dpi_arg(args: &Value) -> Result<u32, ToolError> {
-    pdf_cache::parse_dpi(args.get("dpi").and_then(|v| v.as_u64()))
-        .map_err(ToolError::InvalidArgs)
+    pdf_cache::parse_dpi(args.get("dpi").and_then(|v| v.as_u64())).map_err(ToolError::InvalidArgs)
 }
 
 fn parse_pages_arg(args: &Value) -> Result<Option<String>, ToolError> {
@@ -274,8 +271,7 @@ fn parse_pages_arg(args: &Value) -> Result<Option<String>, ToolError> {
 
 fn format_page_label(entries: &[PageEntry]) -> String {
     let indices: Vec<u32> = entries.iter().map(|e| e.index).collect();
-    let contiguous =
-        indices.len() <= 1 || indices.windows(2).all(|pair| pair[1] == pair[0] + 1);
+    let contiguous = indices.len() <= 1 || indices.windows(2).all(|pair| pair[1] == pair[0] + 1);
     if contiguous && indices.len() > 1 {
         format!("{}-{}", indices[0], indices[indices.len() - 1])
     } else {

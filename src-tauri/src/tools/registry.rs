@@ -100,6 +100,9 @@ impl ToolRegistry {
                 crate::tools::pdf_render_pages::tool(),
                 crate::tools::pdf_read::tool(),
                 crate::tools::html_export::tool(),
+                crate::tools::typst_export::typst_to_pdf_tool(),
+                crate::tools::typst_export::typst_list_templates_tool(),
+                crate::tools::typst_export::typst_read_template_tool(),
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
                 crate::tools::image_read::tool(),
@@ -107,7 +110,11 @@ impl ToolRegistry {
         }
     }
 
-    pub fn tools_for_model(&self, model: ModelId, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
+    pub fn tools_for_model(
+        &self,
+        model: ModelId,
+        include_web: bool,
+    ) -> Vec<crate::agent::types::ToolDefinition> {
         self.tools
             .iter()
             .filter(|t| include_web || !is_web_tool(t.name))
@@ -151,6 +158,7 @@ impl ToolRegistry {
             "web_search" => crate::tools::web::search_handler(ctx, args).await,
             "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
             "html_to_pdf" => crate::tools::html_export::handler(ctx, app, args).await,
+            "typst_to_pdf" => crate::tools::typst_export::typst_to_pdf_handler(ctx, args).await,
             "image_read" => crate::tools::image_read::handler(ctx, args, model_id).await,
             "pdf_read" => crate::tools::pdf_read::handler(ctx, args, model_id).await,
             _ => {

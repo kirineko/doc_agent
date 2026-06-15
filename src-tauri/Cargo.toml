@@ -47,6 +47,9 @@ tavily = "2.1"
 
 tempfile = "3"
 tauri-plugin-process = "2"
+typst-as-lib = { version = "0.14", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst = "0.13"
+typst-pdf = "0.13"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"

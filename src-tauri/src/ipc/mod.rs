@@ -1,23 +1,24 @@
 use crate::agent::model_catalog::ModelCatalog;
-use crate::agent::suggest;
-use crate::agent::{clarify_interaction, loop_runner};
-use crate::agent::types::MessageAttachment;
 use crate::agent::provider::openai_compat::{
-    encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path,
-    model_from_str, validate_attachments, MAX_ATTACHMENT_BYTES,
+    encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path, model_from_str,
+    validate_attachments, MAX_ATTACHMENT_BYTES,
 };
-use base64::Engine;
+use crate::agent::suggest;
+use crate::agent::types::MessageAttachment;
+use crate::agent::{clarify_interaction, loop_runner};
 use crate::core::project_files::{
     list_project_dir, list_project_files, ProjectDirListing, ProjectFileList,
 };
 use crate::core::sandbox::Sandbox;
 use crate::core::store::{ClarifyPending, Message, Project, Session, ToolCallRecord};
 use crate::state::AppState;
+use base64::Engine;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
+pub mod provider_balance;
 pub mod updater;
 
 #[derive(Debug, Deserialize)]
@@ -334,7 +335,10 @@ pub fn get_session_context_usage(
 }
 
 #[tauri::command]
-pub fn save_upload(state: State<AppState>, req: SaveUploadRequest) -> Result<SaveUploadResponse, String> {
+pub fn save_upload(
+    state: State<AppState>,
+    req: SaveUploadRequest,
+) -> Result<SaveUploadResponse, String> {
     if !is_allowed_image_mime(&req.mime) {
         return Err(format!("unsupported image mime: {}", req.mime));
     }

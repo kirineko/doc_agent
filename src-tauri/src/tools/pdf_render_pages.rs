@@ -23,15 +23,19 @@ pub fn tool() -> ToolSpec {
 pub fn handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
     let rel_path = required_str_arg(&args, "path")?;
     let abs_path = ctx.sandbox.resolve(&rel_path)?;
-    if abs_path.extension().and_then(|e| e.to_str()).is_none_or(|ext| !ext.eq_ignore_ascii_case("pdf")) {
+    if abs_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_none_or(|ext| !ext.eq_ignore_ascii_case("pdf"))
+    {
         return Err(ToolError::InvalidArgs("path must be a .pdf file".into()));
     }
 
     let dpi = pdf_cache::parse_dpi(args.get("dpi").and_then(|v| v.as_u64()))
         .map_err(ToolError::InvalidArgs)?;
 
-    let pages_spec = pdf_cache::normalize_pages_arg(args.get("pages"))
-        .map_err(ToolError::InvalidArgs)?;
+    let pages_spec =
+        pdf_cache::normalize_pages_arg(args.get("pages")).map_err(ToolError::InvalidArgs)?;
     let pages_spec = pages_spec.as_deref();
 
     let result = render_pages_cached(ctx.sandbox.root(), &rel_path, &abs_path, dpi, pages_spec)

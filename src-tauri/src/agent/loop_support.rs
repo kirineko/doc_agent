@@ -49,7 +49,10 @@ pub(crate) fn build_working_messages(
                      澄清问题 MUST 通过 clarify_ask 工具逐问提出，禁止以纯文本罗列问题。\
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
-                     html_to_pdf 可单独使用，不要求先生成报告。\
+                     html_to_pdf 可单独使用，不要求先生成报告；\
+                     Typst PDF：调用 typst_to_pdf、typst_list_templates、typst_read_template（场景模板），或 fs_write/fs_patch 编写 .typ 前，\
+                     同一会话 MUST 先 typst_read_template syntax/typst-guide；不得凭记忆臆造 Typst/LaTeX 语法。\
+                     公式密集文档优先 typst_to_pdf；图文 HTML 报告可用 html_to_pdf。\
                      读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
                      仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",
@@ -71,9 +74,7 @@ pub(crate) fn build_working_messages(
         let sandbox = sandbox.ok_or_else(|| "attachments require project sandbox".to_string())?;
         user_attachments
             .iter()
-            .map(|attachment| {
-                encode_attachment_data_url(sandbox, attachment).map(Arc::<str>::from)
-            })
+            .map(|attachment| encode_attachment_data_url(sandbox, attachment).map(Arc::<str>::from))
             .collect::<Result<Vec<_>, _>>()?
     };
     if !messages
@@ -99,10 +100,7 @@ pub(crate) fn build_working_messages(
 
 /// 保证 tool call id 非空、批内唯一，且不与 DB 已有记录冲突。
 /// 部分模型（如 Kimi）流式响应可能省略 `id` 或复用短 id，直接入库会触发 UNIQUE 约束。
-pub(super) fn normalize_tool_call_ids(
-    calls: &mut [ToolCall],
-    id_exists: impl Fn(&str) -> bool,
-) {
+pub(super) fn normalize_tool_call_ids(calls: &mut [ToolCall], id_exists: impl Fn(&str) -> bool) {
     let mut seen = HashSet::new();
     for call in calls.iter_mut() {
         if call.function.name.is_empty() {
@@ -131,7 +129,14 @@ pub(super) fn persist_assistant(
 ) -> Result<Message, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let msg = store
-        .add_message(session_id, "assistant", content, reasoning_content, None, None)
+        .add_message(
+            session_id,
+            "assistant",
+            content,
+            reasoning_content,
+            None,
+            None,
+        )
         .map_err(|e| e.to_string())?;
     if let Some(calls) = tool_calls {
         for call in calls {
@@ -188,7 +193,14 @@ pub(super) fn persist_tool_result<R: Runtime>(
             .finish_tool_call(&call.id, &summary, status, duration_ms)
             .map_err(|e| e.to_string())?;
         store
-            .add_message(session_id, "tool", Some(&summary), None, Some(&call.id), None)
+            .add_message(
+                session_id,
+                "tool",
+                Some(&summary),
+                None,
+                Some(&call.id),
+                None,
+            )
             .map_err(|e| e.to_string())?;
     }
 

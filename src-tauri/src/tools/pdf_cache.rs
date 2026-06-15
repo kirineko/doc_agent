@@ -64,11 +64,7 @@ pub fn cache_dir_rel(cache_key: &str) -> String {
 }
 
 pub fn page_image_rel(cache_key: &str, page_index: u32) -> String {
-    format!(
-        "{}/page_{:03}.png",
-        cache_dir_rel(cache_key),
-        page_index
-    )
+    format!("{}/page_{:03}.png", cache_dir_rel(cache_key), page_index)
 }
 
 pub fn fingerprint_from_path(
@@ -278,10 +274,7 @@ mod tests {
 
     #[test]
     fn normalize_pages_arg_accepts_string_and_array() {
-        assert_eq!(
-            normalize_pages_arg(None).unwrap(),
-            None
-        );
+        assert_eq!(normalize_pages_arg(None).unwrap(), None);
         assert_eq!(
             normalize_pages_arg(Some(&serde_json::json!("1-3"))).unwrap(),
             Some("1-3".into())

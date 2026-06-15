@@ -1,5 +1,5 @@
 use crate::agent::types::ModelId;
-use crate::tools::vision_subcall::{parse_paths_arg, vision_subcall, mime_for_path};
+use crate::tools::vision_subcall::{mime_for_path, parse_paths_arg, vision_subcall};
 use crate::tools::{ToolContext, ToolError};
 use serde_json::{json, Value};
 
@@ -79,13 +79,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let sandbox = Sandbox::new(dir.path()).unwrap();
         let ctx = ToolContext::new(&sandbox);
-        let err = handler(
-            &ctx,
-            json!({ "paths": ["notes.txt"] }),
-            ModelId::KimiK26,
-        )
-        .await
-        .unwrap_err();
+        let err = handler(&ctx, json!({ "paths": ["notes.txt"] }), ModelId::KimiK26)
+            .await
+            .unwrap_err();
         assert!(err.to_string().contains("image_read only supports"));
     }
 

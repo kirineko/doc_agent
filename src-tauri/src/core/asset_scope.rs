@@ -11,7 +11,10 @@ pub fn allow_project_root<R: Runtime>(app: &AppHandle<R>, root_path: &str) {
     }
 }
 
-pub fn allow_project_roots<R: Runtime>(app: &AppHandle<R>, roots: impl IntoIterator<Item = impl AsRef<str>>) {
+pub fn allow_project_roots<R: Runtime>(
+    app: &AppHandle<R>,
+    roots: impl IntoIterator<Item = impl AsRef<str>>,
+) {
     for root in roots {
         allow_project_root(app, root.as_ref());
     }

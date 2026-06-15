@@ -28,7 +28,7 @@ pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> V
             push_arg_path(&mut paths, args, "out_path");
             push_arg_path(&mut paths, args, "out_dir");
         }
-        "html_to_pdf" => {
+        "html_to_pdf" | "typst_to_pdf" => {
             push_arg_path(&mut paths, args, "out_path");
         }
         "docx_extract_table" => {

@@ -3,9 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use crate::tools::pdf_cache::{
-    self, page_image_rel, RenderManifest,
-};
+use crate::tools::pdf_cache::{self, page_image_rel, RenderManifest};
 use crate::tools::pdf_text_quality::format_extracted_text;
 
 static PDFIUM: OnceLock<Result<Mutex<Pdfium>, String>> = OnceLock::new();
@@ -39,9 +37,7 @@ pub fn render_pages_cached(
     let key = pdf_cache::cache_key(&fingerprint);
     let cache_abs = sandbox_root.join(pdf_cache::cache_dir_rel(&key));
 
-    if let Some(manifest) =
-        pdf_cache::try_cache_hit(sandbox_root, &fingerprint, &page_list)
-    {
+    if let Some(manifest) = pdf_cache::try_cache_hit(sandbox_root, &fingerprint, &page_list) {
         return Ok(RenderPagesResult {
             cache_key: key,
             cache_hit: true,

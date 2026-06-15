@@ -156,10 +156,9 @@ impl Store {
             "ALTER TABLE sessions ADD COLUMN last_token_count INTEGER",
             [],
         );
-        let _ = self.conn.execute(
-            "ALTER TABLE messages ADD COLUMN attachments_json TEXT",
-            [],
-        );
+        let _ = self
+            .conn
+            .execute("ALTER TABLE messages ADD COLUMN attachments_json TEXT", []);
         Ok(())
     }
 
@@ -750,7 +749,14 @@ mod tests {
             .add_message(&session.id, "user", Some("hello"), None, None, None)
             .unwrap();
         let assistant = store
-            .add_message(&session.id, "assistant", Some("hi"), Some("thinking"), None, None)
+            .add_message(
+                &session.id,
+                "assistant",
+                Some("hi"),
+                Some("thinking"),
+                None,
+                None,
+            )
             .unwrap();
 
         let messages = store.list_messages(&session.id).unwrap();

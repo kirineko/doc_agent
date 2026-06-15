@@ -1,14 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import packageJson from "../../package.json";
+import {
+  configuredBalanceProviders,
+  fetchProviderBalances,
+  type ProviderBalanceRow,
+} from "../lib/providerBalance";
 import {
   checkForAppUpdates,
   fetchLatestReleaseVersion,
   isNewerVersion,
 } from "../lib/updater";
+import { providerLabel } from "../types";
 
 interface SettingsDrawerProps {
   open: boolean;
   onClose: () => void;
+  apiKeyStatus: Record<string, boolean>;
 }
 
 function formatLatestVersion(
@@ -19,11 +26,27 @@ function formatLatestVersion(
   return latestVersion ?? "—";
 }
 
-export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
+function balanceDisplayForProvider(
+  provider: string,
+  loading: boolean,
+  balances: ProviderBalanceRow[],
+): string {
+  if (loading) return "…";
+  return balances.find((row) => row.provider === provider)?.display ?? "—";
+}
+
+export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerProps) {
   const currentVersion = packageJson.version;
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [loadingLatest, setLoadingLatest] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [balances, setBalances] = useState<ProviderBalanceRow[]>([]);
+  const [loadingBalances, setLoadingBalances] = useState(false);
+
+  const configuredProviders = useMemo(
+    () => configuredBalanceProviders(apiKeyStatus),
+    [apiKeyStatus],
+  );
 
   const hasUpdate =
     latestVersion !== null && isNewerVersion(latestVersion, currentVersion);
@@ -58,6 +81,31 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
       cancelled = true;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (configuredProviders.length === 0) {
+      setBalances([]);
+      setLoadingBalances(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingBalances(true);
+    setBalances([]);
+
+    void fetchProviderBalances(configuredProviders)
+      .then((rows) => {
+        if (!cancelled) setBalances(rows);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBalances(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, configuredProviders]);
 
   async function handleUpdate() {
     if (updating || !hasUpdate) return;
@@ -120,6 +168,20 @@ export function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
             </button>
           )}
         </section>
+
+        {(configuredProviders.length > 0 || loadingBalances) && (
+          <section className="config-surface rounded-md p-3 text-xs text-fg-secondary">
+            <div className="text-fg">账户余额</div>
+            {configuredProviders.map((provider) => (
+              <div key={provider} className="mt-2 flex items-center justify-between gap-3">
+                <span>{providerLabel(provider)}</span>
+                <span className="text-fg">
+                  {balanceDisplayForProvider(provider, loadingBalances, balances)}
+                </span>
+              </div>
+            ))}
+          </section>
+        )}
       </aside>
     </div>
   );

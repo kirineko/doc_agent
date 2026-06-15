@@ -68,10 +68,7 @@ mod tests {
 
     #[test]
     fn parse_need_vision() {
-        assert_eq!(
-            parse_judge_verdict("NEED_VISION"),
-            JudgeVerdict::NeedVision
-        );
+        assert_eq!(parse_judge_verdict("NEED_VISION"), JudgeVerdict::NeedVision);
     }
 
     #[test]

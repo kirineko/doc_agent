@@ -28,6 +28,9 @@ export const TOOL_LABELS: Record<string, string> = {
   pdf_render_pages: "渲染 PDF 页面",
   pdf_read: "读取 PDF",
   html_to_pdf: "HTML 导出 PDF",
+  typst_to_pdf: "Typst 导出 PDF",
+  typst_list_templates: "列出 Typst 模板",
+  typst_read_template: "读取 Typst 模板",
   web_search: "Web 搜索",
   web_extract: "抽取网页正文",
 };

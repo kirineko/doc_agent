@@ -1,7 +1,7 @@
+use crate::agent::provider::openai_compat::MAX_ATTACHMENTS_PER_MESSAGE;
 use crate::agent::provider::openai_compat::{encode_attachment_data_url, is_image_path};
 use crate::agent::provider::provider_for;
 use crate::agent::provider::ProviderError;
-use crate::agent::provider::openai_compat::MAX_ATTACHMENTS_PER_MESSAGE;
 use crate::agent::types::{
     ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig, ThinkingEffort,
 };
@@ -42,16 +42,14 @@ pub async fn vision_subcall(
     let mut image_urls = Vec::with_capacity(paths.len());
     for path in paths {
         if !is_image_path(path) {
-            return Err(ToolError::Execution(format!(
-                "not an image file: {path}"
-            )));
+            return Err(ToolError::Execution(format!("not an image file: {path}")));
         }
         let attachment = MessageAttachment {
             path: path.clone(),
             mime: mime_for_path(path),
         };
-        let data_url = encode_attachment_data_url(ctx.sandbox, &attachment)
-            .map_err(ToolError::Execution)?;
+        let data_url =
+            encode_attachment_data_url(ctx.sandbox, &attachment).map_err(ToolError::Execution)?;
         image_urls.push(Arc::from(data_url));
     }
 

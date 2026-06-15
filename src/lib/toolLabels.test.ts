@@ -32,6 +32,9 @@ const EXPECTED_TOOLS = [
   "pdf_render_pages",
   "pdf_read",
   "html_to_pdf",
+  "typst_to_pdf",
+  "typst_list_templates",
+  "typst_read_template",
   "web_search",
   "web_extract",
 ] as const;
