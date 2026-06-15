@@ -10,6 +10,30 @@
 
 ---
 
+## [2026.6.16] — 2026-06-16
+
+本版本改进应用更新下载反馈、Typst 编译诊断与模板体系，并优化工具调用链滚动体验。
+
+### 应用更新
+
+- **下载进度遮罩**：用户确认更新后展示全局 `UpdateProgressOverlay`；下载阶段圆环进度（有 `contentLength` 时显示百分比，否则旋转指示 +「正在下载…」）；安装阶段文案「正在安装，即将重启…」
+- **双路径覆盖**：启动静默检查与设置抽屉手动更新均接入 `downloadAndInstall(onEvent)` 进度回调
+- **失败处理**：沿用现有 error dialog，遮罩自动关闭
+
+### Typst PDF 导出
+
+- **结构化编译诊断**：`typst_to_pdf` 失败时返回 `error_type`、文件路径、行列、`snippet`、`message`、`hints` 与 `fix_guidance`；由 Typst `Span` 还原可读位置，引导 Agent 优先 `fs_patch` 局部修改
+- **编译警告回传**：成功与失败均将 warnings（字体回退、弃用语法等）随工具结果返回 Agent，不再仅输出到 stderr
+- **设计 token 体系**：新增 `common/tokens.typ`（字号/间距/行距/页边距/字体角色）；`make-theme(...)` 支持受控主题覆盖
+- **模板重构**：`common/{fonts,page,exam,lecture}.typ` 与 8 个场景模板统一消费 token，消除硬编码魔数，零警告编译
+- **手册校验**：新增测试校验 `typst-guide.md` 可编译示例与 `common/*.typ` 公开 API 一致性；同步修订手册
+
+### 界面
+
+- **工具调用链贴底滚动**：右侧工具调用链在新工具追加时自动滚至最新项；用户手动上滑查看历史工具时暂停自动滚动
+
+---
+
 ## [2026.6.15] — 2026-06-15
 
 本版本新增 Typst PDF 离线导出、PDF 智能读取与多模态能力，统一项目缓存目录，并改进 Agent 工具链稳定性。
