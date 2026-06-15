@@ -1,8 +1,5 @@
-# multimodal-input Specification
+## MODIFIED Requirements
 
-## Purpose
-TBD - created by archiving change add-multimodal-support. Update Purpose after archive.
-## Requirements
 ### Requirement: 用户图片粘贴与附件
 
 系统 SHALL 支持用户在聊天输入框通过剪贴板粘贴图片（`image/png`、`image/jpeg`、`image/webp`、`image/gif`）。粘贴成功后图片 MUST 写入当前项目沙箱 `.cache/attachments/` 目录，并在输入区上方以可删除的缩略图 chip 展示；发送时随 `send_message` 一并提交附件元数据（相对路径、MIME）。
@@ -47,13 +44,3 @@ TBD - created by archiving change add-multimodal-support. Update Purpose after a
 - **WHEN** 用户重新打开含图片附件的会话但磁盘文件已被删除
 - **THEN** 消息列表展示「无法加载」占位，消息文本仍可见
 - **AND** Agent 重建上下文时不因缺失附件失败
-
-### Requirement: 附件限制
-
-系统 SHALL 限制单条 user 消息最多 4 个图片附件，单文件最大 50MB；超限 MUST 返回明确错误且不发送。
-
-#### Scenario: 超过 4 张拒绝
-
-- **WHEN** 用户尝试在第 5 张粘贴或发送
-- **THEN** 系统提示超出上限并阻止发送
-

@@ -12,11 +12,11 @@ describe("attachments helpers", () => {
       id: "u1",
       session_id: "s1",
       attachments_json: JSON.stringify([
-        { path: ".uploads/a.png", mime: "image/png" },
+        { path: ".cache/attachments/a.png", mime: "image/png" },
       ]),
     });
     expect(parseMessageAttachments(message)).toEqual([
-      { path: ".uploads/a.png", mime: "image/png" },
+      { path: ".cache/attachments/a.png", mime: "image/png" },
     ]);
   });
 

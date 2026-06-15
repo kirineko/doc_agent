@@ -38,7 +38,7 @@ pub fn run_tool() -> ToolSpec {
         description: "Execute JavaScript in the embedded skill runtime. \
             Before generating any .docx/.pptx/.xlsx deliverable you MUST first call skill_read for that format. \
             Provide exactly one of code (inline script) or path (project-relative .js file). \
-            Long scripts: failed inline runs are saved to .skill-run/script.js; repair with fs_patch (not fs_write) and rerun with path. \
+            Long scripts: failed inline runs are saved to .cache/skill-run/script.js; repair with fs_patch (not fs_write) and rerun with path. \
             After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned automatically when the turn ends. \
             Define async function main() returning JSON-serializable value; do NOT call main() at end. \
             Libraries (auto-loaded): ExcelJS, PptxGenJS, PDFLib, docx — use globals OR require('exceljs') etc. \
@@ -50,11 +50,11 @@ pub fn run_tool() -> ToolSpec {
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Inline JavaScript source. Saved to .skill-run/script.js before execution."
+                    "description": "Inline JavaScript source. Saved to .cache/skill-run/script.js before execution."
                 },
                 "path": {
                     "type": "string",
-                    "description": "Project-relative path to a JavaScript file, e.g. .skill-run/script.js after repair."
+                    "description": "Project-relative path to a JavaScript file, e.g. .cache/skill-run/script.js after repair."
                 },
                 "timeout_secs": { "type": "integer", "default": 30 }
             },
@@ -213,7 +213,7 @@ fn is_office_deliverable(path: &str) -> bool {
         })
 }
 
-/// Keep `.skill-run/script.js` for in-turn repair; the turn-end hook in the
+/// Keep `.cache/skill-run/script.js` for in-turn repair; the turn-end hook in the
 /// agent loop removes it once the turn finishes without a pending failure.
 fn should_retain_skill_run_script(written_paths: &[String], has_style_warnings: bool) -> bool {
     has_style_warnings || written_paths.iter().any(|path| is_office_deliverable(path))

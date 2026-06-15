@@ -58,7 +58,7 @@ describe("MessageList smoke scenarios", () => {
       session_id: "s1",
       content: "看图",
       attachments_json: JSON.stringify([
-        { path: ".uploads/a.png", mime: "image/png" },
+        { path: ".cache/attachments/a.png", mime: "image/png" },
       ]),
     });
     render(

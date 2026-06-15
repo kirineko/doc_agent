@@ -72,15 +72,15 @@ async function main() {
 
 ### 长脚本失败恢复
 
-`skill_run` 会把 inline `code` 先保存到 `.skill-run/script.js`。若执行失败，目录会保留，错误会指出行列号与引号类型（ASCII `"` vs 弯引号 `“`/`”`）。
+`skill_run` 会把 inline `code` 先保存到 `.cache/skill-run/script.js`。若执行失败，目录会保留，错误会指出行列号与引号类型（ASCII `"` vs 弯引号 `“`/`”`）。
 
 **修复**：`fs_read` + `fs_patch` 局部替换（不要用 `fs_write` 整文件重写），然后：
 
 ```json
-{ "path": ".skill-run/script.js", "timeout_secs": 60 }
+{ "path": ".cache/skill-run/script.js", "timeout_secs": 60 }
 ```
 
-**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮结束时若没有未修复的执行失败，`.skill-run/` 会自动清理，无需手动删除。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
+**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮结束时若没有未修复的执行失败，`.cache/skill-run/` 会自动清理，无需手动删除。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
 
 ### Validation
 

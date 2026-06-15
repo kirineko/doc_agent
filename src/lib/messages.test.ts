@@ -58,7 +58,7 @@ describe("messages helpers", () => {
           id: "u3",
           session_id: "s1",
           content: "",
-          attachments_json: JSON.stringify([{ path: ".uploads/a.png", mime: "image/png" }]),
+          attachments_json: JSON.stringify([{ path: ".cache/attachments/a.png", mime: "image/png" }]),
         }),
       ),
     ).toBe(true);

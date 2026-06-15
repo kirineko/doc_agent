@@ -112,11 +112,11 @@ mod tests {
         let err = build_script_error(
             code,
             "SyntaxError: unexpected identifier at line 2, col 10",
-            Some(".skill-run/script.js"),
+            Some(".cache/skill-run/script.js"),
         );
         assert_eq!(err["error"], "JavaScript parse error");
         assert_eq!(err["line"], 2);
-        assert_eq!(err["script_path"], ".skill-run/script.js");
+        assert_eq!(err["script_path"], ".cache/skill-run/script.js");
         assert!(err["source"].as_str().unwrap_or("").contains("广软"));
         assert!(err.get("quote_diagnostics").is_some());
     }

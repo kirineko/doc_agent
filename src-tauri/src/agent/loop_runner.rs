@@ -614,7 +614,7 @@ mod token_accounting_tests {
 }
 
 /// Turn 结束兜底：无论 style_warnings 是否被处理，只要没有未修复的脚本失败
-/// （`.skill-run/error.json` 不存在），就清理 `.skill-run/` 临时目录。
+/// （`.cache/skill-run/error.json` 不存在），就清理 `.cache/skill-run/` 临时目录。
 #[cfg(test)]
 #[path = "loop_runner_tests.rs"]
 mod loop_runner_tests;

@@ -1,3 +1,4 @@
+use crate::core::cache_paths;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -6,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-pub const CACHE_ROOT: &str = ".cache/pdf";
+pub use cache_paths::PDF_CACHE_ROOT as CACHE_ROOT;
 pub const MANIFEST_FILE: &str = "manifest.json";
 pub const DEFAULT_DPI: u32 = 150;
 pub const MIN_DPI: u32 = 72;

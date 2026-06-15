@@ -52,7 +52,7 @@ pub fn patch_tool() -> ToolSpec {
     ToolSpec {
         name: "fs_patch",
         description: "Apply exact substring replacements in a UTF-8 text file. \
-            Prefer over fs_write when fixing .skill-run/script.js or other large files: \
+            Prefer over fs_write when fixing .cache/skill-run/script.js or other large files: \
             read once, patch locally, rerun skill_run with path. \
             Each edit must match exactly once unless replace_all is true. \
             Atomic: if any edit fails to match, NO changes are written and the error lists every missed edit.",

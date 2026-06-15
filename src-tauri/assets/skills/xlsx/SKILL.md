@@ -24,7 +24,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 复杂表格、多 sheet、样式、冻结窗格 → 用 `skill_run`，**不要**用 `excel_write` 逐格写。
 
-长脚本若 `skill_run` 失败，检查 `.skill-run/script.js` 与错误中的行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".skill-run/script.js"}` 重跑；生成 xlsx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
+长脚本若 `skill_run` 失败，检查 `.cache/skill-run/script.js` 与错误中的行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".cache/skill-run/script.js"}` 重跑；生成 xlsx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
 
 ```javascript
 // ✅ 正确模板（可直接复制）

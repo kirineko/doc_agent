@@ -149,7 +149,7 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 3. 对第一个 `clarify_ask`：更新 tool_call status 为 `awaiting_user`、写入 `clarify_pending`、emit `ToolCall` 事件（status=`awaiting_user`）、emit `clarify_question` 事件（payload 含完整 ClarifyQuestion + `tool_call_id`）
 4. 对其余多出的 `clarify_ask`：立即写入结构化错误 result
 5. emit `turn_awaiting_user`（含 session_id、turn_id）
-6. `run_turn` 正常 return；MUST NOT emit `turn_complete`，MUST NOT 执行下一轮 LLM，MUST NOT 执行 turn 结束清理（`.skill-run/` 清理留待 turn 真正结束）
+6. `run_turn` 正常 return；MUST NOT emit `turn_complete`，MUST NOT 执行下一轮 LLM，MUST NOT 执行 turn 结束清理（`.cache/skill-run/` 清理留待 turn 真正结束）
 
 #### Scenario: clarify 后 loop 暂停
 
@@ -170,8 +170,6 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 
 - **WHEN** 模型返回 `fs_read` 等普通工具
 - **THEN** 行为与变更前一致，同步 execute 并继续 loop
-
----
 
 ### Requirement: resume_turn 恢复循环
 

@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### 项目缓存目录
+
+- **BREAKING**：统一项目沙箱缓存至 `.cache/` 单根目录
+  - 用户粘贴图片：`.uploads/` → `.cache/attachments/`
+  - `skill_run` 临时脚本：`.skill-run/` → `.cache/skill-run/`
+  - PDF 渲染缓存：仍为 `.cache/pdf/`（不变）
+- 新增 `core/cache_paths` 集中路径常量；不迁移或读写旧 `.uploads/` / `.skill-run/` 目录
+- 附件文件缺失时 UI 显示「无法加载」、Agent 重建上下文静默跳过（既有行为，见 spec）
+
 ### PDF 智能读取
 
 - **pdf_read**：统一 PDF 理解入口，仅传 `path`（可选 `pages`、`dpi`）；先按页 PDFium 提取，vision 模型经硬规则与代表页图文 Judge 决定返回文本或全量 vision；返回 `resolved`（`text` | `vision`）与 `judge` 元数据（样本页、verdict、method 等）
@@ -22,7 +31,7 @@
 
 ### 多模态与模型
 
-- **图片输入**：vision 模型（Kimi K2.6、MiMo v2.5）支持粘贴图片发送；可仅发图无文字；附件写入项目 `.uploads/` 并持久化，历史消息展示缩略图
+- **图片输入**：vision 模型（Kimi K2.6、MiMo v2.5）支持粘贴图片发送；可仅发图无文字；附件写入项目 `.cache/attachments/` 并持久化，历史消息展示缩略图
 - **image_read 工具**：vision 模型可调用 `image_read` 读取项目内图片并返回文本描述（MiMo / DeepSeek 非 vision 模型不暴露该工具）
 - **MiMo Provider**：新增小米 MiMo v2.5、MiMo v2.5 Pro、MiMo v2.5 Pro Ultraspeed（1M 上下文）；侧栏「模型与密钥」Drawer 统一配置三 Provider 的 API Key
 - **模型目录 IPC**：`list_models` 暴露 vision / effort / 上下文上限；新建会话默认沿用上次模型配置

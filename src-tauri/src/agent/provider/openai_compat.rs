@@ -291,9 +291,7 @@ pub fn parse_attachments_json(raw: Option<&str>) -> Result<Vec<MessageAttachment
 }
 
 pub fn is_upload_attachment_path(path: &str) -> bool {
-    let normalized = path.replace('\\', "/");
-    let trimmed = normalized.trim_start_matches("./");
-    trimmed.starts_with(".uploads/") && !trimmed.contains("..")
+    crate::core::cache_paths::is_attachment_path(path)
 }
 
 pub fn validate_attachments(attachments: &[MessageAttachment]) -> Result<(), String> {
@@ -305,7 +303,7 @@ pub fn validate_attachments(attachments: &[MessageAttachment]) -> Result<(), Str
     for attachment in attachments {
         if !is_upload_attachment_path(&attachment.path) {
             return Err(format!(
-                "attachment path must be under .uploads/: {}",
+                "attachment path must be under .cache/attachments/: {}",
                 attachment.path
             ));
         }
@@ -374,7 +372,7 @@ pub fn messages_from_store(
             let mut image_urls = Vec::new();
             if m.role == "user" {
                 if let (Some(sandbox), Some(raw)) = (sandbox, m.attachments_json.as_deref()) {
-                    let attachments = parse_attachments_json(Some(raw))?;
+                    let attachments = parse_attachments_json(Some(raw)).unwrap_or_default();
                     for attachment in attachments {
                         if !is_upload_attachment_path(&attachment.path) {
                             continue;
@@ -568,7 +566,7 @@ mod tests {
             seq: 1,
             created_at: "now".into(),
             archived: false,
-            attachments_json: Some(r#"[{"path":".uploads/a.png","mime":"image/png"}]"#.into()),
+            attachments_json: Some(r#"[{"path":".cache/attachments/a.png","mime":"image/png"}]"#.into()),
         };
         let chat = messages_from_store_text(&[user], &[]);
         assert!(chat[0].image_urls.is_empty());
@@ -581,8 +579,8 @@ mod tests {
             mime: "image/png".into(),
         }];
         assert!(validate_attachments(&attachments).is_err());
-        assert!(is_upload_attachment_path(".uploads/a.png"));
-        assert!(!is_upload_attachment_path("../.uploads/a.png"));
+        assert!(is_upload_attachment_path(".cache/attachments/a.png"));
+        assert!(!is_upload_attachment_path("../.cache/attachments/a.png"));
     }
 
     #[test]
@@ -591,7 +589,7 @@ mod tests {
         use tempfile::tempdir;
 
         let dir = tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join(".uploads")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".cache/attachments")).unwrap();
         let sandbox = Sandbox::new(dir.path().to_str().unwrap()).unwrap();
         let user = Message {
             id: "user-1".into(),
@@ -603,7 +601,7 @@ mod tests {
             seq: 1,
             created_at: "now".into(),
             archived: false,
-            attachments_json: Some(r#"[{"path":".uploads/missing.png","mime":"image/png"}]"#.into()),
+            attachments_json: Some(r#"[{"path":".cache/attachments/missing.png","mime":"image/png"}]"#.into()),
         };
 
         let chat = messages_from_store(&[user], &[], Some(&sandbox)).expect("missing file should not fail turn");
@@ -611,7 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn messages_from_store_rejects_corrupt_attachments_json() {
+    fn messages_from_store_skips_corrupt_attachments_json() {
         use crate::core::sandbox::Sandbox;
         use tempfile::tempdir;
 
@@ -630,7 +628,8 @@ mod tests {
             attachments_json: Some("not-json".into()),
         };
 
-        let err = messages_from_store(&[user], &[], Some(&sandbox)).unwrap_err();
-        assert!(err.contains("invalid attachments_json"));
+        let chat =
+            messages_from_store(&[user], &[], Some(&sandbox)).expect("corrupt json should not fail turn");
+        assert!(chat[0].image_urls.is_empty());
     }
 }

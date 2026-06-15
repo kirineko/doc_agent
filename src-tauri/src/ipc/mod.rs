@@ -287,7 +287,7 @@ pub fn read_attachment_preview(
     req: ReadAttachmentPreviewRequest,
 ) -> Result<String, String> {
     if !is_upload_attachment_path(&req.path) {
-        return Err("attachment path must be under .uploads/".into());
+        return Err("attachment path must be under .cache/attachments/".into());
     }
     let attachment = MessageAttachment {
         path: req.path,
@@ -340,8 +340,10 @@ pub fn save_upload(state: State<AppState>, req: SaveUploadRequest) -> Result<Sav
     }
     let project = project_by_id(&state, &req.project_id)?;
     let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
-    let uploads_dir = sandbox.resolve_for_write(".uploads").map_err(|e| e.to_string())?;
-    std::fs::create_dir_all(&uploads_dir).map_err(|e| e.to_string())?;
+    let attachments_dir = sandbox
+        .resolve_for_write(crate::core::cache_paths::ATTACHMENTS_DIR)
+        .map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&attachments_dir).map_err(|e| e.to_string())?;
 
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(req.data_base64.as_bytes())
@@ -358,7 +360,7 @@ pub fn save_upload(state: State<AppState>, req: SaveUploadRequest) -> Result<Sav
         .and_then(|ext| ext.to_str())
         .unwrap_or("png");
     let stored_name = format!("{}.{}", uuid::Uuid::new_v4(), ext);
-    let relative_path = format!(".uploads/{stored_name}");
+    let relative_path = crate::core::cache_paths::attachment_rel_path(&stored_name);
     let target = sandbox
         .resolve_for_write(&relative_path)
         .map_err(|e| e.to_string())?;

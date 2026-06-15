@@ -19,13 +19,13 @@ pub fn truncation_error(tool_name: &str, raw_arguments: &str) -> Value {
         "error": "tool call truncated",
         "tool": tool_name,
         "received_argument_chars": raw_arguments.chars().count(),
-        "hint": "The model output ended before tool arguments were complete. Retry with a shorter script, or write the script to .skill-run/script.js and rerun with skill_run {\"path\":\".skill-run/script.js\"}."
+        "hint": "The model output ended before tool arguments were complete. Retry with a shorter script, or write the script to .cache/skill-run/script.js and rerun with skill_run {\"path\":\".cache/skill-run/script.js\"}."
     })
 }
 
 fn argument_parse_hint(tool_name: &str) -> &'static str {
     match tool_name {
-        "skill_run" => "If this is skill_run code, avoid embedding long double-quoted text in JSON arguments. Use single-quoted JavaScript strings, or repair .skill-run/script.js with fs_patch and rerun with skill_run {\"path\":\".skill-run/script.js\"}.",
+        "skill_run" => "If this is skill_run code, avoid embedding long double-quoted text in JSON arguments. Use single-quoted JavaScript strings, or repair .cache/skill-run/script.js with fs_patch and rerun with skill_run {\"path\":\".cache/skill-run/script.js\"}.",
         _ => "Ensure tool arguments are valid JSON.",
     }
 }

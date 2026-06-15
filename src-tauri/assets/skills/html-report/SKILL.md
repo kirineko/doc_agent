@@ -14,7 +14,7 @@
 ## 落盘规则（必须遵守）
 
 - 所有报告文件 MUST 写在用户选定的**项目根目录**内（如 `reports/q1-sales/`）。
-- **禁止**写入 `.skill-run/` 或任何 turn 内临时目录。
+- **禁止**写入 `.cache/skill-run/` 或任何 turn 内临时目录。
 - **禁止**使用 React、Vue、npm、Vite 等框架或构建链。
 - 资源只用**相对路径**（`./styles.css`、`./assets/logo.svg`）；避免外网 CDN，保证离线打开与 PDF 导出时样式完整。
 
@@ -92,7 +92,7 @@ reports/<报告名>/
 
 ## 交付前检查
 
-- [ ] 文件均在项目目录内，**不在** `.skill-run/`
+- [ ] 文件均在项目目录内，**不在** `.cache/skill-run/`
 - [ ] `index.html` 可用相对路径加载 CSS
 - [ ] 中文使用系统字体
 - [ ] 含 `@page` / `@media print`

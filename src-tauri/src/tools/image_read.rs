@@ -8,7 +8,7 @@ const DEFAULT_PROMPT: &str = "请详细描述图片内容";
 pub fn tool() -> crate::tools::ToolSpec {
     crate::tools::ToolSpec {
         name: "image_read",
-        description: "Read 1-4 image files via vision and return a text description. Use paths array (e.g. rendered PDF pages under .cache/pdf/).",
+        description: "Read 1-4 image files via vision and return a text description. Use paths array (e.g. rendered PDF pages under .cache/pdf/ or chat attachments under .cache/attachments/).",
         parameters: json!({
             "type": "object",
             "properties": {

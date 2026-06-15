@@ -34,7 +34,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 **Read [pptxgenjs.md](pptxgenjs.md) for full details.** Use when no template is available.
 
-长脚本 `skill_run` 失败时，查看 `.skill-run/script.js` 与错误行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".skill-run/script.js"}` 重跑；生成 pptx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
+长脚本 `skill_run` 失败时，查看 `.cache/skill-run/script.js` 与错误行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".cache/skill-run/script.js"}` 重跑；生成 pptx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
 
 最小模板（`skill_run`，可直接复制）：
 
