@@ -1,3 +1,4 @@
+// English academic paper template
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": *
 

@@ -40,9 +40,37 @@
 - **WHEN** 非 vision 模型调用 `pdf_read` 且 PDFium 全文为空
 - **THEN** 返回明确错误
 
+### Requirement: vision 模型小页数直接 vision
+
+当会话模型 `supports_vision=true` 且 PDF 页数 **不大于 4** 时，系统 MUST 跳过 Judge 与全文硬规则，直接全量渲染并分批 vision，返回 `resolved=vision`，`judge.method` 为 `page_count_short` 且 `judge.skipped=true`。若有 PDFium 文本 MAY 附带 `text_layer`。
+
+#### Scenario: 4 页 PDF 直接 vision
+
+- **WHEN** Kimi K2.6 对 4 页 PDF 调用 `pdf_read`
+- **THEN** 返回 `resolved=vision`，`judge.method` 为 `page_count_short`，不触发代表页 Judge
+
+#### Scenario: 5 页 PDF 仍走 Judge
+
+- **WHEN** Kimi K2.6 对 5 页有文本层 PDF 调用 `pdf_read` 且 Judge 判定 TEXT_OK
+- **THEN** `judge.method` 为 `page_compare`，非 `page_count_short`
+
+### Requirement: vision 模型大页数仅文本
+
+当会话模型 `supports_vision=true` 且 PDF 页数 **大于 20** 时，系统 MUST 跳过 Judge 与全量 vision，直接返回 PDFium 全文，`resolved=text`，`judge.method` 为 `page_count_threshold` 且 `judge.skipped=true`，并 MUST 附带 `note` 字段提示可通过 `pages` 分段做 vision。若此时 PDFium 全文为空，MUST 返回明确错误并提示通过 `pages` 分段读取，MUST NOT 触发全量 vision。
+
+#### Scenario: 21 页文本书跳过 vision
+
+- **WHEN** Kimi K2.6 对 21 页有文本层 PDF 调用 `pdf_read`
+- **THEN** 返回 `resolved=text` 与 PDFium 全文，`judge.method` 为 `page_count_threshold`，含固定 `note` 提示可 `pages` 分段，不触发渲染或 vision 子调用
+
+#### Scenario: 大页数扫描件报错
+
+- **WHEN** vision 模型对超过 20 页且无文本层 PDF 调用 `pdf_read`
+- **THEN** 返回明确错误，提示 `pages` 分段读取，不触发全量 vision
+
 ### Requirement: vision 模型无文本层
 
-当会话模型 `supports_vision=true` 且 PDFium 全文为空时，MUST 跳过 Judge，直接全量渲染（可命中缓存）并分批 vision，返回 `resolved=vision`。
+当会话模型 `supports_vision=true`、PDF 页数 **在 5 至 20 之间（含）** 且 PDFium 全文为空时，MUST 跳过 Judge，直接全量渲染（可命中缓存）并分批 vision，返回 `resolved=vision`。
 
 #### Scenario: 扫描 PDF 直接 vision
 
@@ -51,7 +79,7 @@
 
 ### Requirement: 全文硬规则快判
 
-当 vision 模型且全文非空时，系统 MUST 对全文执行硬规则检测（如 `(cid:)` 密度、替换符占比、极短全文等）。命中时 MUST 跳过 Judge，直接全量 vision。
+当 vision 模型、PDF 页数 **在 5 至 20 之间（含）** 且全文非空时，系统 MUST 对全文执行硬规则检测（如 `(cid:)` 密度、替换符占比、极短全文等）。命中时 MUST 跳过 Judge，直接全量 vision。
 
 #### Scenario: cid-glyphs 触发硬规则
 
@@ -60,7 +88,7 @@
 
 ### Requirement: 代表页选取
 
-未命中全文硬规则时，系统 MUST 按以下优先级选取 Judge 样本页（1-based）：
+未命中全文硬规则且页数 **在 5 至 20 之间（含）** 时，系统 MUST 按以下优先级选取 Judge 样本页（1-based）：
 
 1. 仅 1 页 → 第 1 页
 2. 存在 suspicion 达阈值的页 → suspicion 最高页

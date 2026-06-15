@@ -7,6 +7,7 @@ mod tool_tests {
     use crate::tools::{ToolContext, ToolError, ToolRegistry};
     use serde_json::json;
     use std::fs;
+    use std::io::Read;
     use tempfile::tempdir;
     use zip::ZipArchive;
 
@@ -406,6 +407,80 @@ async function main() {{
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("ooxml_unpack"));
         assert!(content.contains("fs.readFileSync"));
+    }
+
+    #[test]
+    fn skill_read_docx_math_md() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_read",
+            json!({ "skill": "docx", "doc": "math.md" }),
+        )
+        .unwrap();
+        assert_eq!(out["skill"], "docx");
+        assert_eq!(out["doc"], "math.md");
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("MathFraction"));
+        assert!(content.contains("MathIntegral"));
+    }
+
+    #[test]
+    fn skill_run_math_docx_emits_valid_ooxml() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+async function main() {
+  const { Document, Packer, Paragraph, TextRun, Math, MathRun, MathFraction, MathIntegral } = docx;
+  function mr(t) { return new MathRun(t); }
+  function eq(c) { return new Math({ children: c }); }
+  const doc = new Document({
+    styles: { default: { document: { run: {
+      font: { ascii: "Times New Roman", eastAsia: "宋体", hAnsi: "Times New Roman" },
+      size: 24,
+    } } } },
+    sections: [{ children: [
+      new Paragraph({ children: [
+        new TextRun("1. "),
+        eq([new MathFraction({ numerator: [mr("x^2-4")], denominator: [mr("x-2")] })]),
+      ]}),
+      new Paragraph({ children: [
+        eq([new MathIntegral({ children: [mr("x dx")], subScript: [mr("0")], superScript: [mr("1")] })]),
+      ]}),
+    ]}],
+  });
+  const b64 = await Packer.toBase64String(doc);
+  doc_write("math.docx", b64);
+  return { ok: true };
+}
+"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
+        let path = dir.path().join("math.docx");
+        assert_valid_ooxml(&path);
+        let file = std::fs::File::open(&path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut doc_xml = String::new();
+        archive
+            .by_name("word/document.xml")
+            .unwrap()
+            .read_to_string(&mut doc_xml)
+            .unwrap();
+        assert!(
+            doc_xml.contains("m:oMath"),
+            "expected OMML math in document.xml"
+        );
     }
 
     #[test]
@@ -1600,7 +1675,8 @@ async function main() {
         let kimi_defs = registry.tools_for_model(ModelId::KimiK26, false);
         let pdf = kimi_defs.iter().find(|t| t.name == "pdf_read").unwrap();
         assert!(pdf.parameters["properties"]["mode"].is_null());
-        assert!(pdf.description.contains("judges"));
+        assert!(pdf.description.contains("20 pages"));
+        assert!(pdf.description.contains("4 pages"));
         assert!(pdf.parameters["required"]
             .as_array()
             .unwrap()
@@ -1825,6 +1901,146 @@ async function main() {
     }
 
     #[test]
+    fn pdf_read_vision_large_pdf_skips_vision() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "big.pdf", 21);
+
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "big.pdf" }),
+        );
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "text");
+                assert_eq!(out["page_count"], 21);
+                assert_eq!(out["judge"]["method"], "page_count_threshold");
+                assert_eq!(out["judge"]["skipped"], true);
+                assert!(out["note"].as_str().unwrap().contains("pages"));
+                assert!(out["markdown"].as_str().unwrap().contains("Page"));
+                assert!(out.get("cache_hit").is_none());
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_vision_short_pdf_direct_vision() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "short.pdf", 4);
+
+        set_test_vision_response(Some("OCR pages 1-4".into()));
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "short.pdf" }),
+        );
+        set_test_vision_response(None);
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "vision");
+                assert_eq!(out["page_count"], 4);
+                assert_eq!(out["judge"]["method"], "page_count_short");
+                assert_eq!(out["judge"]["skipped"], true);
+                assert!(out["markdown"].as_str().unwrap().contains("## Pages 1-4"));
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_vision_above_short_threshold_still_judges() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 5);
+
+        set_test_vision_response(Some("TEXT_OK".into()));
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "doc.pdf" }),
+        );
+        set_test_vision_response(None);
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "text");
+                assert_eq!(out["judge"]["method"], "page_compare");
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
+    fn pdf_read_vision_at_text_threshold_still_judges() {
+        use crate::tools::vision_subcall::set_test_vision_response;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 20);
+
+        set_test_vision_response(Some("TEXT_OK".into()));
+        let result = exec_tool_model(
+            &registry,
+            &ctx,
+            ModelId::KimiK26,
+            "pdf_read",
+            json!({ "path": "doc.pdf" }),
+        );
+        set_test_vision_response(None);
+
+        match result {
+            Ok(out) => {
+                assert_eq!(out["resolved"], "text");
+                assert_eq!(out["judge"]["method"], "page_compare");
+            }
+            Err(e) => {
+                if pdfium_unavailable(&e) {
+                    return;
+                }
+                panic!("unexpected error: {e}");
+            }
+        }
+    }
+
+    #[test]
     fn pdf_read_vision_judge_text_ok_returns_pdfium() {
         use crate::tools::vision_subcall::set_test_vision_response;
 
@@ -1832,7 +2048,7 @@ async function main() {
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 2);
+        make_multi_page_pdf(&ctx, &registry, "doc.pdf", 5);
 
         set_test_vision_response(Some("TEXT_OK".into()));
         let result = exec_tool_model(
@@ -1869,7 +2085,7 @@ async function main() {
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
-        make_multi_page_pdf(&ctx, &registry, "exam.pdf", 4);
+        make_multi_page_pdf(&ctx, &registry, "exam.pdf", 5);
 
         set_test_vision_response(Some("NEED_VISION".into()));
         let result = exec_tool_model(
@@ -1885,9 +2101,9 @@ async function main() {
             Ok(out) => {
                 assert_eq!(out["resolved"], "vision");
                 assert_eq!(out["judge"]["verdict"], "NEED_VISION");
-                assert_eq!(out["page_count"], 4);
+                assert_eq!(out["page_count"], 5);
                 let md = out["markdown"].as_str().unwrap();
-                assert!(md.contains("## Pages 1-4"));
+                assert!(md.contains("## Pages"));
             }
             Err(e) => {
                 if pdfium_unavailable(&e) {
@@ -1909,7 +2125,7 @@ async function main() {
         let code = r#"
 async function main() {
   const doc = await PDFLib.PDFDocument.create();
-  doc.addPage([300, 200]);
+  for (let i = 0; i < 5; i++) doc.addPage([300, 200]);
   const bytes = await doc.save();
   let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);

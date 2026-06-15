@@ -61,6 +61,78 @@ impl LlmProvider for MockProvider {
         let wants_clarify =
             user_text.contains("澄清") || user_text.to_lowercase().contains("clarify");
         let wants_list = user_text.contains("列出") || user_text.to_lowercase().contains("list");
+        let wants_clarify_first = user_text.contains("先澄清再列出");
+        let wants_pdf_clarify = user_text.contains("读取PDF并澄清");
+
+        if wants_clarify_first
+            && request.tools.iter().any(|t| t.name == "clarify_ask")
+            && request.tools.iter().any(|t| t.name == "fs_list")
+        {
+            let args = clarify_question_args();
+            return Ok(finish_turn(
+                &request.messages,
+                String::new(),
+                "先澄清，同时也返回后续目录读取调用。",
+                vec![
+                    ToolCall {
+                        id: "call_mock_clarify_1".into(),
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "clarify_ask".into(),
+                            arguments: args.to_string(),
+                        },
+                    },
+                    ToolCall {
+                        id: "call_mock_fs_1".into(),
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "fs_list".into(),
+                            arguments: json!({ "path": "." }).to_string(),
+                        },
+                    },
+                ],
+                None,
+            ));
+        }
+
+        if wants_pdf_clarify
+            && request.tools.iter().any(|t| t.name == "clarify_ask")
+            && request.tools.iter().any(|t| t.name == "pdf_read")
+        {
+            let args = clarify_question_args();
+            return Ok(finish_turn(
+                &request.messages,
+                String::new(),
+                "先读取两个 PDF，再澄清文档类型。",
+                vec![
+                    ToolCall {
+                        id: "call_mock_pdf_1".into(),
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "pdf_read".into(),
+                            arguments: json!({ "path": "a.pdf" }).to_string(),
+                        },
+                    },
+                    ToolCall {
+                        id: "call_mock_pdf_2".into(),
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "pdf_read".into(),
+                            arguments: json!({ "path": "b.pdf" }).to_string(),
+                        },
+                    },
+                    ToolCall {
+                        id: "call_mock_clarify_1".into(),
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "clarify_ask".into(),
+                            arguments: args.to_string(),
+                        },
+                    },
+                ],
+                None,
+            ));
+        }
 
         // 混合场景：同一轮返回普通工具 + clarify_ask，用于验证「先执行普通工具再暂停」
         if wants_clarify
@@ -107,6 +179,7 @@ impl LlmProvider for MockProvider {
                     name: "clarify_ask".into(),
                     args: args.clone(),
                     status: "running".into(),
+                    index: 0,
                 },
             );
             return Ok(finish_turn(
@@ -136,6 +209,7 @@ impl LlmProvider for MockProvider {
                     name: "fs_list".into(),
                     args: json!({ "path": "." }),
                     status: "running".into(),
+                    index: 0,
                 },
             );
             return Ok(finish_turn(

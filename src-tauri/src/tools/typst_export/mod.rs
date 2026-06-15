@@ -1,5 +1,5 @@
-mod bundled;
-mod compile;
+pub mod bundled;
+pub mod compile;
 
 use compile::{
     compile_to_temp_pdf, finalize_pdf, remove_temp_pdf, resolve_typst_entry, CompileInput,
@@ -13,7 +13,10 @@ const TIMEOUT_SECS: u64 = 60;
 pub fn typst_to_pdf_tool() -> ToolSpec {
     ToolSpec {
         name: "typst_to_pdf",
-        description: "Compile a Typst (.typ) file or directory with main.typ in the project sandbox to PDF. Before first use in a conversation: typst_read_template syntax/typst-guide. Import built-in modules via #import \"/doc-agent/typst/...\". Use typst_list_templates for scene templates.",
+        description: "Compile a Typst (.typ) file or directory with main.typ in the project sandbox to PDF. \
+            Prerequisite: typst_read_template syntax/typst-guide once per conversation. \
+            New or heavily rewritten documents: also typst_list_templates and typst_read_template (scene) before writing .typ. \
+            Recompile-only edits may skip list/scene. Import built-ins via #import \"/doc-agent/typst/...\".",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -35,7 +38,8 @@ pub fn typst_to_pdf_tool() -> ToolSpec {
 pub fn typst_list_templates_tool() -> ToolSpec {
     ToolSpec {
         name: "typst_list_templates",
-        description: "List built-in Typst syntax guide and scene templates. Always read syntax/typst-guide first via typst_read_template.",
+        description: "List built-in Typst syntax guide and scene templates (report/exam/paper/lecture × zh/en). \
+            New-document workflow step 2 (after syntax/typst-guide); pass ids to typst_read_template.",
         parameters: json!({
             "type": "object",
             "properties": {}
@@ -47,7 +51,8 @@ pub fn typst_list_templates_tool() -> ToolSpec {
 pub fn typst_read_template_tool() -> ToolSpec {
     ToolSpec {
         name: "typst_read_template",
-        description: "Read built-in Typst syntax guide (syntax/typst-guide) or scene template source (e.g. exam/exam-zh). MUST read syntax/typst-guide once per conversation before typst_to_pdf or writing .typ files.",
+        description: "Read built-in Typst syntax guide (syntax/typst-guide) or scene template source (e.g. report/report-zh). \
+            Workflow: step 1 = guide (once per conversation); step 3 = one scene template before writing a new .typ.",
         parameters: json!({
             "type": "object",
             "properties": {

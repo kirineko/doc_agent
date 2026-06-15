@@ -1,5 +1,7 @@
+// 中文讲义模板
 #import "/doc-agent/typst/common/fonts.typ": *
-#import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/page.typ": page-a4, footer-page-no
+#import "/doc-agent/typst/common/lecture.typ": definition-zh, example-zh
 
 #show: apply-zh-body
 #page-a4(margin: 2cm)
@@ -9,26 +11,6 @@
   [高等数学讲义 · 第一讲],
   [极限与连续 · 示例模板],
 )
-
-#let definition(title, body) = block(
-  fill: rgb("#f0f7ff"),
-  inset: 10pt,
-  radius: 4pt,
-  width: 100%,
-)[
-  #text(font: font-sans-zh, weight: "bold")[定义（#title）] #linebreak()
-  #body
-]
-
-#let example(title, body) = block(
-  fill: rgb("#fffaf0"),
-  inset: 10pt,
-  radius: 4pt,
-  width: 100%,
-)[
-  #text(font: font-sans-zh, weight: "bold")[例 #title] #linebreak()
-  #body
-]
 
 = 课程信息
 
@@ -43,13 +25,13 @@
 
 = 1. 数列极限
 
-#definition[数列极限][
+#definition-zh[数列极限][
   设 ${a_n}$ 为实数列。若存在常数 $A$，使得对任意 $epsilon > 0$，存在 $N in NN$，当 $n > N$ 时恒有
   $ abs(a_n - A) < epsilon $，
   则称 ${a_n}$ 收敛于 $A$，记作 $lim_(n->oo) a_n = A$。
 ]
 
-#example[1][
+#example-zh[1][
   证明 $lim_(n->oo) 1/n = 0$。
 
   *证*　任给 $epsilon > 0$，取 $N > 1/epsilon$，则当 $n > N$ 时有 $1/n < epsilon$。证毕。
@@ -69,12 +51,11 @@
 
 = 3. 课堂练习
 
-+ 计算 $lim_(x->0) (sin 3x) / x$。
-
++ 计算 $lim_(x->0) (sin 3x) / x$
 + 讨论 $f(x) = cases(
     x sin(1/x), & x != 0,
     0, & x = 0,
-  )$ 在 $x=0$ 处的连续性。
+  )$ 在 $x=0$ 处的连续性
 
 #v(1em)
 #align(right)[

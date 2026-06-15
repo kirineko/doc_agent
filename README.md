@@ -57,6 +57,7 @@ Agent 通过工具链操作项目内文件，主要包括：
 | Excel | 读取 / 写入；`excel_describe` / `excel_normalize` 清洗不规则表 |
 | PDF | 合并、拆分、旋转、删除页面 |
 | HTML 报告 | 项目内静态 HTML 报告；可选 `html_to_pdf` 导出 PDF |
+| Typst | `typst_to_pdf` 离线编译 `.typ` 为 PDF；内置中英 report/exam/paper/lecture 模板与语法手册；捆绑 Noto SC 字体保证中文无警告回退 |
 | OOXML | 解包 / 打包、批注、接受修订 |
 | 数据分析 | Word 表格提取、`polars-sql` 查询、IronCalc 重算公式 |
 | 联网（可选） | Tavily `web_search` / `web_extract` |
@@ -114,6 +115,8 @@ npm run bundle:js    # 打包 skill 运行时 JS 库（构建前必须执行）
 npm run tauri dev    # 开发模式
 ```
 
+首次 Rust 编译会通过 `build.rs` 自动下载 **PDFium** 与 **Noto SC 字体**（约 40 MB，缓存于 `src-tauri/fonts/`，已 gitignore）。需联网；离线复用需保留该目录。
+
 **测试**
 
 ```bash
@@ -132,7 +135,7 @@ npm run tauri build
 
 ## 发版说明（维护者）
 
-- **CI**：仅 `pull_request → main` 触发测试门禁；push main **不**触发构建
+- **CI**：仅 `pull_request → main` 触发测试门禁；push main **不**触发构建；缓存 `src-tauri/fonts/` 以减少 Noto 重复下载
 - **Release**：推送纯数字三段 tag 时触发 Windows（NSIS）/ macOS（DMG）安装包构建，产物上传 **阿里云 OSS** 并同步 **GitHub Release**（Windows 不产出 MSI：CalVer 与 WiX major ≤255 不兼容）
 - **版本格式（CalVer）**：**`YYYY.M.D`**（年.月.日），**禁止前导零** — 例：`2026.6.14`（✅）、`2026.06.14`（❌）
 - **取当日版本**：`npm run calver:today`

@@ -55,6 +55,7 @@ Desktop.ini
 # Tauri
 src-tauri/gen/
 src-tauri/pdfium/
+src-tauri/fonts/
 
 # Local app databases & runtime artifacts
 *.db

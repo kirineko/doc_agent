@@ -10,6 +10,12 @@ use serde_json::{json, Value};
 use std::path::Path;
 
 const VISION_BATCH: usize = 4;
+/// 不超过此页数的 PDF 在 vision 模型下直接全量 vision，跳过 Judge。
+const VISION_DIRECT_PAGE_THRESHOLD: u32 = 4;
+/// 超过此页数的 PDF 在 vision 模型下仅返回 PDFium 文本，跳过 Judge 与全量 vision 以节省 token。
+const VISION_TEXT_ONLY_PAGE_THRESHOLD: u32 = 20;
+const PAGE_COUNT_THRESHOLD_NOTE: &str =
+    "超过 20 页已返回 PDFium 文本；如需 vision 请用 pages 分段（如 \"1-20\"）。";
 const VISION_PAGE_PROMPT: &str =
     "按图片顺序逐页提取全部可见文字、公式与题号，保留数学符号，用 Markdown 输出。";
 
@@ -24,7 +30,7 @@ pub fn tool() -> ToolSpec {
 
 pub fn description_for_model(model_id: ModelId) -> &'static str {
     if model_id.supports_vision() {
-        "Read PDF intelligently. Pass path only — extracts text first, then judges whether full page vision is needed (formulas/scans). Plain-text PDFs return quickly without full vision. For PDFium-only without judging, use office_read_to_markdown."
+        "Read PDF intelligently. Pass path only — extracts text first. PDFs with ≤4 pages go directly to full vision (no judge). PDFs over 20 pages return PDFium text only (no vision) to save tokens. PDFs with 5–20 pages may judge whether full page vision is needed. For PDFium-only without judging, use office_read_to_markdown."
     } else {
         "Read PDF via PDFium text extraction. Pass path only. Scan PDFs with no text layer require a vision-capable model (e.g. Kimi K2.6)."
     }
@@ -81,6 +87,34 @@ pub async fn handler(
             "page_count": page_count,
             "markdown": full_text,
         }));
+    }
+
+    if page_count > VISION_TEXT_ONLY_PAGE_THRESHOLD {
+        if !has_text {
+            return Err(ToolError::Execution(format!(
+                "PDF 共 {page_count} 页且未提取到文本（可能为扫描件）；超过 {VISION_TEXT_ONLY_PAGE_THRESHOLD} 页时已跳过全量 vision 以节省 token。请通过 pages 参数分段读取（如 \"1-20\"），或缩小范围后重试"
+            )));
+        }
+        return Ok(text_response(
+            page_count,
+            &full_text,
+            judge_meta_skipped("page_count_threshold", None, None),
+            Some(PAGE_COUNT_THRESHOLD_NOTE),
+        ));
+    }
+
+    if page_count <= VISION_DIRECT_PAGE_THRESHOLD {
+        return read_full_vision(
+            ctx,
+            model_id,
+            &rel_path,
+            &abs_path,
+            dpi,
+            pages_spec_ref,
+            has_text.then_some(full_text.as_str()),
+            judge_meta_skipped("page_count_short", None, None),
+        )
+        .await;
     }
 
     if !has_text {
@@ -162,12 +196,12 @@ pub async fn handler(
         };
 
     if verdict == JudgeVerdict::TextOk {
-        return Ok(json!({
-            "resolved": "text",
-            "page_count": page_count,
-            "markdown": full_text,
-            "judge": judge_meta_compare(sample, &verdict, false),
-        }));
+        return Ok(text_response(
+            page_count,
+            &full_text,
+            judge_meta_compare(sample, &verdict, false),
+            None,
+        ));
     }
 
     read_full_vision(
@@ -181,6 +215,19 @@ pub async fn handler(
         judge_meta_compare(sample, &verdict, true),
     )
     .await
+}
+
+fn text_response(page_count: u32, markdown: &str, judge: Value, note: Option<&str>) -> Value {
+    let mut out = json!({
+        "resolved": "text",
+        "page_count": page_count,
+        "markdown": markdown,
+        "judge": judge,
+    });
+    if let Some(note) = note {
+        out["note"] = json!(note);
+    }
+    out
 }
 
 fn judge_meta_skipped(
@@ -292,6 +339,14 @@ mod tests {
         let params = parameters_schema();
         assert!(params["properties"]["path"].is_object());
         assert!(params["properties"]["mode"].is_null());
+    }
+
+    #[test]
+    fn vision_page_thresholds_are_exclusive() {
+        assert!(4 <= VISION_DIRECT_PAGE_THRESHOLD);
+        assert!(!(5 <= VISION_DIRECT_PAGE_THRESHOLD));
+        assert!(!(20 > VISION_TEXT_ONLY_PAGE_THRESHOLD));
+        assert!(21 > VISION_TEXT_ONLY_PAGE_THRESHOLD);
     }
 
     #[test]

@@ -3,9 +3,30 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const PDFIUM_RELEASE: &str = "7763";
+const NOTO_CJK_REPO: &str = "https://github.com/notofonts/noto-cjk/raw/refs/heads/main";
+
+const NOTO_FONTS: &[(&str, &str)] = &[
+    (
+        "NotoSansSC-Regular.otf",
+        "Sans/SubsetOTF/SC/NotoSansSC-Regular.otf",
+    ),
+    (
+        "NotoSansSC-Bold.otf",
+        "Sans/SubsetOTF/SC/NotoSansSC-Bold.otf",
+    ),
+    (
+        "NotoSerifSC-Regular.otf",
+        "Serif/SubsetOTF/SC/NotoSerifSC-Regular.otf",
+    ),
+    (
+        "NotoSerifSC-Bold.otf",
+        "Serif/SubsetOTF/SC/NotoSerifSC-Bold.otf",
+    ),
+];
 
 fn main() {
     ensure_pdfium();
+    ensure_noto_fonts();
     tauri_build::build();
 }
 
@@ -73,6 +94,42 @@ fn pdfium_asset(target: &str) -> Option<(&'static str, &'static str)> {
         ),
         _ => return None,
     })
+}
+
+fn ensure_noto_fonts() {
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let fonts_dir = manifest_dir.join("fonts");
+    fs::create_dir_all(&fonts_dir).ok();
+
+    for (file_name, rel_path) in NOTO_FONTS {
+        let dest = fonts_dir.join(file_name);
+        if dest.exists() {
+            continue;
+        }
+        let url = format!("{NOTO_CJK_REPO}/{rel_path}");
+        if let Err(err) = download_file(&url, &dest) {
+            println!("cargo:warning=failed to download Noto font {file_name}: {err}");
+        }
+    }
+
+    println!("cargo:rerun-if-changed=build.rs");
+}
+
+fn download_file(url: &str, dest: &Path) -> Result<(), String> {
+    let mut response = ureq::get(url)
+        .call()
+        .map_err(|e| format!("download request failed: {e}"))?;
+    let bytes = response
+        .body_mut()
+        .with_config()
+        .limit(50 * 1024 * 1024)
+        .read_to_vec()
+        .map_err(|e| format!("download read failed: {e}"))?;
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(dest, bytes).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn download_pdfium(url: &str, dest: &Path, lib_name: &str) -> Result<(), String> {

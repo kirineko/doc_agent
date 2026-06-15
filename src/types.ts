@@ -130,7 +130,7 @@ export type AgentEvent =
   | { kind: "reasoning_token"; session_id: string; turn_id: string; delta: string }
   | { kind: "content_token"; session_id: string; turn_id: string; delta: string }
   | { kind: "tool_call_stream"; session_id: string; turn_id: string; index: number; name: string; args_chars: number }
-  | { kind: "tool_call"; session_id: string; turn_id: string; id: string; name: string; args: unknown; status: string }
+  | { kind: "tool_call"; session_id: string; turn_id: string; id: string; name: string; args: unknown; status: string; index?: number }
   | {
       kind: "tool_result";
       session_id: string;

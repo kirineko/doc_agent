@@ -1,10 +1,11 @@
 use crate::core::cache_paths;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 use std::time::UNIX_EPOCH;
 
 pub use cache_paths::PDF_CACHE_ROOT as CACHE_ROOT;
@@ -50,7 +51,7 @@ pub struct SourceFingerprint {
 }
 
 pub fn cache_key(fingerprint: &SourceFingerprint) -> String {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
     fingerprint.rel_path.hash(&mut hasher);
     fingerprint.size.hash(&mut hasher);
     fingerprint.mtime_secs.hash(&mut hasher);
@@ -144,6 +145,29 @@ pub fn clear_cache_dir(cache_abs: &Path) -> Result<(), String> {
         fs::remove_dir_all(cache_abs).map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+static RENDER_LOCKS: LazyLock<StdMutex<HashMap<String, Arc<StdMutex<()>>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
+
+/// 同 `cache_key` 的 miss 渲染互斥，避免并行 `pdf_read` 损坏缓存目录。
+pub fn with_render_lock<T>(
+    cache_key: &str,
+    render: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let lock = {
+        let mut locks = RENDER_LOCKS
+            .lock()
+            .map_err(|_| "pdf render lock map poisoned".to_string())?;
+        locks
+            .entry(cache_key.to_string())
+            .or_insert_with(|| Arc::new(StdMutex::new(())))
+            .clone()
+    };
+    let _guard = lock
+        .lock()
+        .map_err(|_| "pdf render lock poisoned".to_string())?;
+    render()
 }
 
 /// Accept `pages` as string (`"1-4"`, `"1,3"`) or JSON array (`[1,3,5]`).

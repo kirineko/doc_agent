@@ -1,23 +1,5 @@
-// doc-agent 内置字体栈：优先 Windows/macOS 系统字体，回退 Typst 内嵌与 Noto CJK。
-// 不捆绑微软字体；在已安装环境下自动命中。
-
-#let font-serif-zh = (
-  "Times New Roman",
-  "SimSun",
-  "Songti SC",
-  "STSong",
-  "Noto Serif CJK SC",
-  "Libertinus Serif",
-)
-
-#let font-sans-zh = (
-  "Microsoft YaHei",
-  "PingFang SC",
-  "Heiti SC",
-  "SimHei",
-  "Noto Sans CJK SC",
-  "Arial",
-)
+// doc-agent 内置字体栈：平台系统字体优先，回退捆绑 Noto Sans/Serif SC。
+#import "/doc-agent/typst/common/fonts-stack.typ": *
 
 #let font-serif-en = (
   "Times New Roman",

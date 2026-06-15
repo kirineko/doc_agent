@@ -88,7 +88,7 @@
 
 **所有模型**：仅 `path`（可选 `pages`、`dpi`），勿传 `mode` 等已移除参数。
 
-**vision 模型（Kimi K2.6、MiMo v2.5）**：先 PDFium 按页提取，再经硬规则或代表页图文 Judge 决定是否全量 vision；纯文本书通常 `resolved=text`，无需全量 vision。
+**vision 模型（Kimi K2.6、MiMo v2.5）**：先 PDFium 按页提取。**≤4 页**直接全量 vision（`page_count_short`）；**超过 20 页**直接返回文本并附带 `note`（`page_count_threshold`）；**5–20 页**经硬规则或 Judge 决定。
 
 **非 vision 模型**：返回 PDFium 全文；扫描件（无文本层）报错并提示切换 vision 模型。
 
@@ -96,7 +96,7 @@
 
 可选：`pages`（如 `"1-4"` 或 `[1,3]`）、`dpi`（默认 150，72–300）。
 
-返回含 `resolved`（`text` | `vision`）与 `judge` 元数据（样本页、verdict 等）。
+返回含 `resolved`（`text` | `vision`）、`judge` 元数据；超过 20 页纯文本时附带固定 `note`（提示可 `pages` 分段 vision）。
 
 ## pdf_render_pages
 

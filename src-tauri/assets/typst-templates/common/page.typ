@@ -16,6 +16,10 @@
   set page(paper: "us-letter", margin: margin)
 }
 
+#let page-exam(margin: 1.8cm) = {
+  set page(paper: "a4", margin: margin)
+}
+
 #let footer-page-no() = {
   set page(footer: context {
     align(center)[#counter(page).display("1")]

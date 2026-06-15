@@ -29,6 +29,10 @@ function clearStreamingBuffers(
   };
 }
 
+function dropStreamingPlaceholders(liveTools: LiveToolCall[]): LiveToolCall[] {
+  return liveTools.filter((item) => !item.id.startsWith("streaming-"));
+}
+
 export function applyAgentEvent(
   state: AgentStreamState,
   event: AgentEvent,
@@ -67,15 +71,24 @@ export function applyAgentEvent(
       };
     }
     case "tool_call": {
-      // 真实调用开始后，移除参数流式占位条目
-      const liveTools = state.liveTools.filter(
-        (item) => !item.id.startsWith("streaming-"),
-      );
-      const existing = liveTools.find((item) => item.id === event.id);
+      const streamIndex = event.index ?? 0;
+      const streamId = `streaming-${streamIndex}`;
+      const streamPos = state.liveTools.findIndex((item) => item.id === streamId);
+      if (streamPos >= 0) {
+        const liveTools = [...state.liveTools];
+        liveTools[streamPos] = {
+          id: event.id,
+          name: event.name,
+          args: event.args,
+          status: event.status,
+        };
+        return { ...state, liveTools };
+      }
+      const existing = state.liveTools.find((item) => item.id === event.id);
       if (existing) {
         return {
           ...state,
-          liveTools: liveTools.map((item) =>
+          liveTools: state.liveTools.map((item) =>
             item.id === event.id
               ? { ...item, status: event.status, args: event.args }
               : item,
@@ -85,7 +98,7 @@ export function applyAgentEvent(
       return {
         ...state,
         liveTools: [
-          ...liveTools,
+          ...state.liveTools,
           {
             id: event.id,
             name: event.name,
@@ -108,9 +121,15 @@ export function applyAgentEvent(
         ),
       };
     case "turn_complete":
-      return clearStreamingBuffers(state, false);
+      return {
+        ...clearStreamingBuffers(state, false),
+        liveTools: dropStreamingPlaceholders(state.liveTools),
+      };
     case "turn_awaiting_user":
-      return clearStreamingBuffers(state, false);
+      return {
+        ...clearStreamingBuffers(state, false),
+        liveTools: dropStreamingPlaceholders(state.liveTools),
+      };
     case "assistant_step_done":
       return clearStreamingBuffers(state);
     case "context_usage":

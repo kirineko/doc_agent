@@ -1,3 +1,4 @@
+// 中文技术报告模板
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": *
 

@@ -128,12 +128,107 @@ describe("applyAgentEvent", () => {
         name: "skill_run",
         args: { code: "..." },
         status: "running",
+        index: 0,
       },
       sessionId,
     );
     expect(state.liveTools).toHaveLength(1);
     expect(state.liveTools[0].id).toBe("call_1");
     expect(state.liveTools[0].status).toBe("running");
+  });
+
+  it("keeps all streaming cards when three pdf_read start running", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    for (let index = 0; index < 3; index += 1) {
+      state = applyAgentEvent(
+        state,
+        {
+          kind: "tool_call_stream",
+          session_id: sessionId,
+          turn_id: "t1",
+          index,
+          name: "pdf_read",
+          args_chars: 12,
+        },
+        sessionId,
+      );
+    }
+    expect(state.liveTools).toHaveLength(3);
+
+    for (let index = 0; index < 3; index += 1) {
+      state = applyAgentEvent(
+        state,
+        {
+          kind: "tool_call",
+          session_id: sessionId,
+          turn_id: "t1",
+          id: `call_${index}`,
+          name: "pdf_read",
+          args: { path: `doc-${index}.pdf` },
+          status: "running",
+          index,
+        },
+        sessionId,
+      );
+    }
+
+    expect(state.liveTools).toHaveLength(3);
+    expect(state.liveTools.every((item) => item.status === "running")).toBe(true);
+    expect(state.liveTools.map((item) => item.id)).toEqual([
+      "call_0",
+      "call_1",
+      "call_2",
+    ]);
+  });
+
+  it("fallback tool_call without streaming placeholder keeps other streaming cards", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    for (let index = 0; index < 3; index += 1) {
+      state = applyAgentEvent(
+        state,
+        {
+          kind: "tool_call_stream",
+          session_id: sessionId,
+          turn_id: "t1",
+          index,
+          name: "pdf_read",
+          args_chars: 12,
+        },
+        sessionId,
+      );
+    }
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_0",
+        name: "pdf_read",
+        args: { path: "a.pdf" },
+        status: "running",
+        index: 0,
+      },
+      sessionId,
+    );
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_2",
+        name: "pdf_read",
+        args: { path: "c.pdf" },
+        status: "running",
+        index: 2,
+      },
+      sessionId,
+    );
+
+    expect(state.liveTools).toHaveLength(3);
+    expect(state.liveTools[1]?.id).toBe("streaming-1");
+    expect(state.liveTools[1]?.status).toBe("streaming");
   });
 
   it("clears streaming buffers on assistant_step_done", () => {

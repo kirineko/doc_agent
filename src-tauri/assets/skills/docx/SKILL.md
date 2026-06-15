@@ -20,6 +20,7 @@ A .docx file is a ZIP archive containing XML files.
 | Read/analyze content | `office_read_to_markdown {"path": "doc.docx"}` |
 | Raw XML access | `ooxml_unpack {"path": "doc.docx", "out_dir": "unpacked/"}` |
 | Create new document | `skill_run` + `docx` 库 — see Creating New Documents below |
+| **含数学公式** | 先 `skill_read {"skill":"docx","doc":"math.md"}`，再 `skill_run`（`Math` / `MathRun` / `MathFraction` 等） |
 | **Edit existing document** | 先 `skill_read {"skill":"docx","doc":"editing.md"}`，再 `ooxml_unpack` → edit XML → `ooxml_pack` |
 | Accept tracked changes | `docx_accept_changes {"path": "in.docx", "out_path": "clean.docx"}` |
 | Add comments | `docx_comment`（需先 unpack，见 editing.md） |

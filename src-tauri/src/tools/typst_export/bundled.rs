@@ -19,6 +19,17 @@ struct TemplateFile {
 }
 
 const VPATH_COMMON_FONTS: &str = "/doc-agent/typst/common/fonts.typ";
+const VPATH_COMMON_FONTS_STACK: &str = "/doc-agent/typst/common/fonts-stack.typ";
+
+#[cfg(target_os = "macos")]
+const FONTS_STACK_SOURCE: &str =
+    include_str!("../../../assets/typst-templates/common/fonts-stack-macos.typ");
+#[cfg(target_os = "windows")]
+const FONTS_STACK_SOURCE: &str =
+    include_str!("../../../assets/typst-templates/common/fonts-stack-windows.typ");
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+const FONTS_STACK_SOURCE: &str =
+    include_str!("../../../assets/typst-templates/common/fonts-stack-fallback.typ");
 const VPATH_COMMON_PAGE: &str = "/doc-agent/typst/common/page.typ";
 const VPATH_COMMON_EXAM: &str = "/doc-agent/typst/common/exam.typ";
 const VPATH_REPORT_ZH: &str = "/doc-agent/typst/report/report-zh.typ";
@@ -42,6 +53,10 @@ const FILES: &[TemplateFile] = &[
     TemplateFile {
         rel_path: "common/exam.typ",
         source: include_str!("../../../assets/typst-templates/common/exam.typ"),
+    },
+    TemplateFile {
+        rel_path: "common/lecture.typ",
+        source: include_str!("../../../assets/typst-templates/common/lecture.typ"),
     },
     TemplateFile {
         rel_path: "report/report-zh.typ",
@@ -111,7 +126,7 @@ pub const LISTABLE: &[TemplateMeta] = &[
         category: "exam",
         lang: "zh",
         title: "中文试卷",
-        description: "高等数学风格：填空、选择、计算证明",
+        description: "高等数学风格：填空横线、选择题、计算证明；见 common/exam.typ",
         rel_path: "exam/exam-zh.typ",
     },
     TemplateMeta {
@@ -162,6 +177,7 @@ pub fn vpath(rel_path: &str) -> String {
 
 pub fn static_sources() -> Vec<(&'static str, &'static str)> {
     vec![
+        (VPATH_COMMON_FONTS_STACK, FONTS_STACK_SOURCE),
         (VPATH_COMMON_FONTS, FILES[0].source),
         (VPATH_COMMON_PAGE, FILES[1].source),
         (VPATH_COMMON_EXAM, FILES[2].source),

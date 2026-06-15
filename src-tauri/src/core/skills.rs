@@ -20,6 +20,10 @@ static DOCX_DOCS: &[SkillDoc] = &[
         name: "editing.md",
         content: include_str!("../../assets/skills/docx/editing.md"),
     },
+    SkillDoc {
+        name: "math.md",
+        content: include_str!("../../assets/skills/docx/math.md"),
+    },
 ];
 
 static PDF_DOCS: &[SkillDoc] = &[
@@ -134,6 +138,7 @@ pub fn resolve_skill_doc(skill: &str, doc: Option<&str>) -> Result<(String, Stri
     match skill {
         "pptxgenjs" => Ok(("pptx".into(), "pptxgenjs.md".into())),
         "editing" => Ok(("docx".into(), "editing.md".into())),
+        "math" => Ok(("docx".into(), "math.md".into())),
         "reference" => Ok(("pdf".into(), "reference.md".into())),
         "forms" => Ok(("pdf".into(), "forms.md".into())),
         _ => Ok((skill.to_string(), "SKILL.md".into())),

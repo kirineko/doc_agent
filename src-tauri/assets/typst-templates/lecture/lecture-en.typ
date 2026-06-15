@@ -1,5 +1,7 @@
+// English lecture notes template
 #import "/doc-agent/typst/common/fonts.typ": *
-#import "/doc-agent/typst/common/page.typ": *
+#import "/doc-agent/typst/common/page.typ": page-a4, footer-page-no
+#import "/doc-agent/typst/common/lecture.typ": definition-en, example-en
 
 #show: apply-en-body
 #page-a4(margin: 2cm)
@@ -9,26 +11,6 @@
   [Calculus I — Lecture Notes],
   [Limits and Continuity · Sample template],
 )
-
-#let definition(title, body) = block(
-  fill: rgb("#f0f7ff"),
-  inset: 10pt,
-  radius: 4pt,
-  width: 100%,
-)[
-  #text(font: font-sans-en, weight: "bold")[Definition (#title)] #linebreak()
-  #body
-]
-
-#let example(title, body) = block(
-  fill: rgb("#fffaf0"),
-  inset: 10pt,
-  radius: 4pt,
-  width: 100%,
-)[
-  #text(font: font-sans-en, weight: "bold")[Example #title] #linebreak()
-  #body
-]
 
 = Course information
 
@@ -43,12 +25,12 @@
 
 = 1. Limits of sequences
 
-#definition[Sequence limit][
+#definition-en[Sequence limit][
   A sequence $(a_n)$ converges to $A$ if for every $epsilon > 0$ there exists $N in NN$ such that
   $abs(a_n - A) < epsilon$ whenever $n > N$. We write $lim_(n->oo) a_n = A$.
 ]
 
-#example[1][
+#example-en[1][
   Show that $lim_(n->oo) 1/n = 0$.
 
   *Proof.* Given $epsilon > 0$, choose $N > 1/epsilon$. Then $n > N$ implies $1/n < epsilon$.
@@ -68,13 +50,12 @@ Standard equivalents as $x -> 0$:
 
 = 3. In-class exercises
 
-+ Evaluate $lim_(x->0) (sin 3x) / x$.
-
++ Evaluate $lim_(x->0) (sin 3x) / x$
 + Discuss continuity of
   $ f(x) = cases(
       x sin(1/x), & x != 0,
       0, & x = 0,
-    ) $ at $x = 0$.
+    ) $ at $x = 0$
 
 #v(1em)
 #align(right)[

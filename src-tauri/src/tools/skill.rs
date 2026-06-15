@@ -12,7 +12,8 @@ pub fn read_tool() -> ToolSpec {
         description: "Read a built-in Document Skill guide. \
             skill MUST be one of: docx, pdf, pptx, xlsx, html-report, clarify. \
             doc is optional (default SKILL.md). \
-            docx template editing: doc=editing.md. pptx API: doc=pptxgenjs.md; pptx template: skill=pptx, doc=editing.md. \
+            docx template editing: doc=editing.md. docx with formulas: doc=math.md (after SKILL.md). \
+            pptx API: doc=pptxgenjs.md; pptx template: skill=pptx, doc=editing.md. \
             Filenames like pptxgenjs.md alone work only when unique; editing.md requires skill=docx or skill=pptx.",
         parameters: json!({
             "type": "object",
@@ -23,7 +24,7 @@ pub fn read_tool() -> ToolSpec {
                 },
                 "doc": {
                     "type": "string",
-                    "description": "Optional doc filename, e.g. pptxgenjs.md, editing.md, reference.md"
+                    "description": "Optional doc filename, e.g. editing.md, math.md, reference.md"
                 }
             },
             "required": ["skill"]
@@ -37,6 +38,7 @@ pub fn run_tool() -> ToolSpec {
         name: "skill_run",
         description: "Execute JavaScript in the embedded skill runtime. \
             Before generating any .docx/.pptx/.xlsx deliverable you MUST first call skill_read for that format. \
+            Formula-heavy .docx: after skill_read docx, also skill_read docx with doc=math.md before skill_run. \
             Provide exactly one of code (inline script) or path (project-relative .js file). \
             Long scripts: failed inline runs are saved to .cache/skill-run/script.js; repair with fs_patch (not fs_write) and rerun with path. \
             After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned automatically when the turn ends. \

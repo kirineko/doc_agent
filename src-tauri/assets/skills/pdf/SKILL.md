@@ -12,7 +12,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 | Task | Tool |
 |------|------|
-| **读取 PDF（推荐，所有模型）** | `pdf_read {"path": "doc.pdf"}` — 仅 path；vision 模型自动 Judge，纯文本书快速返回 |
+| **读取 PDF（推荐，所有模型）** | `pdf_read {"path": "doc.pdf"}` — 仅 path；vision 模型 ≤4 页直接 vision，>20 页直接文本+note，5–20 页 Judge |
 | 仅 PDFium 纯文本（跳过 Judge） | `office_read_to_markdown {"path": "doc.pdf"}` |
 | 手动渲染页图（高级） | `pdf_render_pages {"path": "doc.pdf"}` → `.cache/pdf/`（`pdf_read` 内部会自动渲染） |
 | 读取 1–4 张图片 | `image_read {"paths": ["a.png","b.png"]}`（vision 模型） |

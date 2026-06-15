@@ -1,3 +1,4 @@
+// 中文学术论文模板
 #import "/doc-agent/typst/common/fonts.typ": *
 #import "/doc-agent/typst/common/page.typ": *
 

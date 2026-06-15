@@ -50,9 +50,9 @@ pub(crate) fn build_working_messages(
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
                      html_to_pdf 可单独使用，不要求先生成报告；\
-                     Typst PDF：调用 typst_to_pdf、typst_list_templates、typst_read_template（场景模板），或 fs_write/fs_patch 编写 .typ 前，\
-                     同一会话 MUST 先 typst_read_template syntax/typst-guide；不得凭记忆臆造 Typst/LaTeX 语法。\
+                     Typst PDF（新建或大改 .typ）：guide → list → 场景模板 → 写 .typ → typst_to_pdf（完整步骤见 clarify skill 与 typst 工具说明）。不得跳过 guide 或凭记忆臆造 Typst 语法。\
                      公式密集文档优先 typst_to_pdf；图文 HTML 报告可用 html_to_pdf。\
+                     澄清确认后按创作简报中的「交付格式」分支执行（见 clarify skill）。\
                      读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
                      仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",

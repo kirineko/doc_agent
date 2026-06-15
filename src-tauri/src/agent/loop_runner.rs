@@ -3,19 +3,16 @@ use crate::agent::compaction::{
     estimate_chat_messages_tokens, MAX_TOOL_STEPS,
 };
 use crate::agent::loop_support::*;
+use crate::agent::loop_tool_batch::run_tool_batch;
 use crate::agent::provider::openai_compat::{
     effort_from_str, model_from_str, validate_attachments,
 };
 use crate::agent::provider::provider_for;
-use crate::agent::tool_args::{parse_tool_arguments, truncation_error};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig,
 };
 use crate::core::sandbox::Sandbox;
 use crate::state::AppState;
-use crate::tools::ToolContext;
-use serde_json::{json, Value};
-use std::time::Instant;
 use tauri::{AppHandle, Runtime};
 use uuid::Uuid;
 
@@ -319,6 +316,12 @@ async fn continue_loop<R: Runtime>(
             .map_err(|e| e.to_string())?;
 
         let mut tool_calls = turn.tool_calls;
+        let stream_indices: Vec<usize> = tool_calls
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.function.name.is_empty())
+            .map(|(index, _)| index)
+            .collect();
         tool_calls.retain(|c| !c.function.name.is_empty());
         {
             let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -414,154 +417,22 @@ async fn continue_loop<R: Runtime>(
             pending_estimate += estimate_chat_message_tokens(working_messages.last().unwrap());
         }
 
-        let mut has_pending_clarify = false;
-        for call in &tool_calls {
-            let ctx = ToolContext::with_secrets(&sandbox, &state.secrets);
-            let truncated = turn.finish_reason.as_deref() == Some("length");
-            let args_result =
-                match parse_tool_arguments(&call.function.name, &call.function.arguments) {
-                    Ok(args) => Ok(args),
-                    Err(_) if truncated => Err(truncation_error(
-                        &call.function.name,
-                        &call.function.arguments,
-                    )),
-                    Err(err) => Err(err),
-                };
+        let outcome = run_tool_batch(
+            &app,
+            &state,
+            &sandbox,
+            &session_id,
+            &turn_id,
+            model_id,
+            &tool_calls,
+            &stream_indices,
+            turn.finish_reason.as_deref() == Some("length"),
+            working_messages,
+            &mut pending_estimate,
+        )
+        .await?;
 
-            let (args, prebuilt_error) = match args_result {
-                Ok(args) => (args, None),
-                Err(err) => (Value::Object(Default::default()), Some(err)),
-            };
-
-            if call.function.name == "clarify_ask" && prebuilt_error.is_none() {
-                match crate::tools::clarify::parse_question(args.clone()) {
-                    Ok(question) if !has_pending_clarify => {
-                        has_pending_clarify = true;
-                        let normalized_args =
-                            serde_json::to_value(&question).map_err(|e| e.to_string())?;
-                        let question_json =
-                            serde_json::to_string(&normalized_args).map_err(|e| e.to_string())?;
-                        persist_clarify_pending(
-                            &state,
-                            &session_id,
-                            &turn_id,
-                            &call.id,
-                            &question_json,
-                        )?;
-                        emit(
-                            &app,
-                            AgentEvent::ToolCall {
-                                session_id: session_id.clone(),
-                                turn_id: turn_id.clone(),
-                                id: call.id.clone(),
-                                name: call.function.name.clone(),
-                                args: normalized_args,
-                                status: "awaiting_user".into(),
-                            },
-                        );
-                        emit(
-                            &app,
-                            AgentEvent::ClarifyQuestion {
-                                session_id: session_id.clone(),
-                                turn_id: turn_id.clone(),
-                                tool_call_id: call.id.clone(),
-                                question,
-                            },
-                        );
-                        continue;
-                    }
-                    Ok(_) => {
-                        let value = json!({ "error": "一次只允许一个澄清问题" });
-                        persist_tool_result(
-                            &state,
-                            &app,
-                            &session_id,
-                            &turn_id,
-                            call,
-                            false,
-                            value.to_string(),
-                            0,
-                            Vec::new(),
-                            working_messages,
-                        )?;
-                        bump_pending_estimate(working_messages, &mut pending_estimate);
-                        continue;
-                    }
-                    Err(err) => {
-                        let value = err.to_json_value();
-                        persist_tool_result(
-                            &state,
-                            &app,
-                            &session_id,
-                            &turn_id,
-                            call,
-                            false,
-                            value.to_string(),
-                            0,
-                            Vec::new(),
-                            working_messages,
-                        )?;
-                        bump_pending_estimate(working_messages, &mut pending_estimate);
-                        continue;
-                    }
-                }
-            }
-
-            emit(
-                &app,
-                AgentEvent::ToolCall {
-                    session_id: session_id.clone(),
-                    turn_id: turn_id.clone(),
-                    id: call.id.clone(),
-                    name: call.function.name.clone(),
-                    args: args.clone(),
-                    status: "running".into(),
-                },
-            );
-
-            let started = Instant::now();
-            let (ok, summary, changed_paths) = if let Some(err) = prebuilt_error {
-                let result_json = err.to_string();
-                (false, result_json, Vec::new())
-            } else {
-                match state
-                    .tools
-                    .execute(&ctx, &app, model_id, &call.function.name, args.clone())
-                    .await
-                {
-                    Ok(value) => {
-                        let paths = crate::tools::changed_paths::extract_changed_paths(
-                            &call.function.name,
-                            &args,
-                            &value,
-                        );
-                        (true, value.to_string(), paths)
-                    }
-                    Err(err) => {
-                        let value = err.to_json_value();
-                        let text = value.to_string();
-                        (false, text, Vec::new())
-                    }
-                }
-            };
-            let duration_ms = started.elapsed().as_millis() as i64;
-
-            persist_tool_result(
-                &state,
-                &app,
-                &session_id,
-                &turn_id,
-                call,
-                ok,
-                summary,
-                duration_ms,
-                changed_paths,
-                working_messages,
-            )?;
-            bump_pending_estimate(working_messages, &mut pending_estimate);
-        }
-
-        if has_pending_clarify {
+        if outcome.has_pending_clarify {
             emit(
                 &app,
                 AgentEvent::TurnAwaitingUser {
@@ -583,12 +454,6 @@ async fn continue_loop<R: Runtime>(
         },
     );
     Ok(())
-}
-
-fn bump_pending_estimate(working_messages: &[ChatMessage], pending_estimate: &mut u32) {
-    if let Some(last) = working_messages.last() {
-        *pending_estimate += estimate_chat_message_tokens(last);
-    }
 }
 
 #[cfg(test)]

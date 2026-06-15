@@ -114,11 +114,46 @@ fn temp_pdf_path(out_path: &Path) -> PathBuf {
 
 fn build_engine(sandbox_root: &Path) -> TypstEngine<TypstTemplateCollection> {
     let sources = bundled::static_sources();
+    let font_dirs = font_search_paths();
+    let font_options = if font_dirs.is_empty() {
+        TypstKitFontOptions::default()
+    } else {
+        TypstKitFontOptions::default().include_dirs(font_dirs)
+    };
     TypstEngine::builder()
-        .search_fonts_with(TypstKitFontOptions::default())
+        .search_fonts_with(font_options)
         .with_static_source_file_resolver(sources)
         .with_file_system_resolver(sandbox_root)
         .build()
+}
+
+pub fn configure_font_dir(path: PathBuf) {
+    std::env::set_var("DOC_AGENT_FONTS_DIR", path);
+}
+
+fn font_search_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    if let Ok(dir) = std::env::var("DOC_AGENT_FONTS_DIR") {
+        paths.push(PathBuf::from(dir));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(parent) = exe.parent() {
+            paths.push(parent.join("fonts"));
+            if let Some(contents) = parent.parent().and_then(|p| p.parent()) {
+                if contents.file_name().is_some_and(|name| name == "Contents") {
+                    paths.push(contents.join("Resources").join("fonts"));
+                }
+            }
+        }
+    }
+
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        paths.push(PathBuf::from(manifest_dir).join("fonts"));
+    }
+
+    paths.into_iter().filter(|path| path.is_dir()).collect()
 }
 
 fn to_forward_slashes(path: &Path) -> String {
@@ -155,4 +190,33 @@ fn format_warnings(warnings: &[SourceDiagnostic]) -> String {
         .map(|d| format!("{d:?}"))
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn bundled_exam_zh_compiles_without_font_warnings() {
+        let font_dirs = font_search_paths();
+        assert!(
+            !font_dirs.is_empty(),
+            "Noto fonts dir missing; run `cargo build` to download bundled fonts"
+        );
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let exam = bundled::find_source("exam/exam-zh").expect("exam-zh template");
+        fs::write(dir.path().join("exam.typ"), exam).expect("write exam.typ");
+
+        let engine = build_engine(dir.path());
+        let Warned { output, warnings } = engine.compile("exam.typ");
+        let doc = output.expect("exam-zh should compile");
+        typst_pdf::pdf(&doc, &PdfOptions::default()).expect("pdf export");
+        assert!(
+            warnings.is_empty(),
+            "unexpected font warnings:\n{}",
+            format_warnings(&warnings)
+        );
+    }
 }

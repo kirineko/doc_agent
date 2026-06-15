@@ -20,6 +20,7 @@ pub fn run() {
         .setup(|app| {
             if let Ok(resource_dir) = app.path().resource_dir() {
                 crate::tools::pdf::configure_resource_dir(resource_dir.join("pdfium"));
+                crate::tools::typst_export::compile::configure_font_dir(resource_dir.join("fonts"));
             }
             let data_dir = app
                 .path()

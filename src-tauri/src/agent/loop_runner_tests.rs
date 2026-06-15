@@ -276,6 +276,109 @@ fn mock_mixed_tools_run_before_clarify_pause() {
 }
 
 #[test]
+fn mock_clarify_first_still_runs_non_clarify_before_pause() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap()
+                .id
+        };
+
+        run_turn(
+            handle,
+            state.clone(),
+            session_id.clone(),
+            "先澄清再列出".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let store = state.store.lock().unwrap();
+        let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+        let fs_call = calls.iter().find(|c| c.name == "fs_list").unwrap();
+        assert_eq!(fs_call.status, "done");
+        assert!(fs_call.result_json.is_some());
+        let clarify_call = calls.iter().find(|c| c.name == "clarify_ask").unwrap();
+        assert_eq!(clarify_call.status, "awaiting_user");
+        assert!(clarify_call.result_json.is_none());
+        let pending = store.get_clarify_pending(&session_id).unwrap().unwrap();
+        assert_eq!(pending.tool_call_id, clarify_call.id);
+    });
+}
+
+#[test]
+fn mock_pdf_reads_finish_before_clarify_pause() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        // The files are intentionally invalid PDFs: this test asserts ordering and
+        // result persistence before clarify pause, not PDF extraction success.
+        std::fs::write(project_root.join("a.pdf"), b"not-a-pdf").unwrap();
+        std::fs::write(project_root.join("b.pdf"), b"not-a-pdf").unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap()
+                .id
+        };
+
+        run_turn(
+            handle,
+            state.clone(),
+            session_id.clone(),
+            "读取PDF并澄清".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let store = state.store.lock().unwrap();
+        let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+        let pdf_calls: Vec<_> = calls.iter().filter(|c| c.name == "pdf_read").collect();
+        assert_eq!(pdf_calls.len(), 2);
+        assert!(pdf_calls
+            .iter()
+            .all(|c| c.status == "done" || c.status == "error"));
+        assert!(pdf_calls.iter().all(|c| c.result_json.is_some()));
+        let clarify_call = calls.iter().find(|c| c.name == "clarify_ask").unwrap();
+        assert_eq!(clarify_call.status, "awaiting_user");
+        assert!(clarify_call.result_json.is_none());
+        let pending = store.get_clarify_pending(&session_id).unwrap().unwrap();
+        assert_eq!(pending.tool_call_id, clarify_call.id);
+    });
+}
+
+#[test]
 fn mock_turn_compacts_near_context_limit_before_llm() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

@@ -8,92 +8,83 @@
 
 ## 0. doc-agent 工作流
 
-1. `typst_read_template` → `syntax/typst-guide`（本文件，**每次会话首次使用 Typst 前必读**）
-2. 按需 `typst_read_template` → 场景模板（`report/report-zh`、`exam/exam-zh`、`paper/paper-zh`、`lecture/lecture-zh` 等）
-3. `fs_write` / `fs_patch` 写入或修改项目内 `.typ`
-4. `typst_to_pdf` 编译为 PDF
+### 0.1 标准流程（新建文档）
 
-内置模块虚拟路径（`#import` 可用）：
+1. `typst_read_template` → `syntax/typst-guide`（**每会话首次使用 Typst 前必读**）
+2. `typst_list_templates` → 选择场景模板 id
+3. `typst_read_template` → 读取该场景模板（如 `exam/exam-zh`）作为起点
+4. `fs_write` / `fs_patch` → 写入项目内 `.typ`（可复制模板后改）
+5. `typst_to_pdf` → 编译 PDF
 
-| 路径 | 内容 |
+**仅重编译**已有 `.typ`、做小改动时：可跳过步骤 2–3，但仍须本会话已读过 `syntax/typst-guide`。
+
+### 0.2 内置模块（`#import "/doc-agent/typst/..."`）
+
+| 路径 | 导出 |
 |------|------|
-| `/doc-agent/typst/common/fonts.typ` | 中英字体栈、`apply-zh-body` / `apply-en-body` |
-| `/doc-agent/typst/common/page.typ` | `page-a4`、`footer-page-no` 等 |
-| `/doc-agent/typst/common/exam.typ` | 试卷 `calc-item` 等辅助函数 |
+| `common/fonts.typ` | `apply-zh-body`、`apply-en-body`、`apply-zh-title`、`font-*` |
+| `common/page.typ` | `page-a4`、`page-a4-compact`、`page-exam`、`footer-page-no` |
+| `common/exam.typ` | `fill-blank`、`calc-item`、`calc-counter-reset`、`exam-header-zh/en`、`mc-options`、`field-line` |
+| `common/lecture.typ` | `definition-zh/en`、`example-zh/en` |
+
+### 0.3 场景模板索引
+
+| id | 用途 | 复制后优先改什么 |
+|----|------|------------------|
+| `exam/exam-zh` | 中文试卷 | `#exam-header-zh` 元信息、各大题题干 |
+| `exam/exam-en` | 英文试卷 | `#exam-header-en`；计算题加 `lang: "en"` |
+| `report/report-zh` | 中文报告 | 标题、摘要、表格数据 |
+| `report/report-en` | 英文报告 | 同上 |
+| `paper/paper-zh` | 中文学术论文 | 题名、作者、摘要、正文 |
+| `paper/paper-en` | 英文学术论文 | 同上 |
+| `lecture/lecture-zh` | 中文讲义 | 定义/例题块、章节标题 |
+| `lecture/lecture-en` | 英文讲义 | 同上 |
 
 ---
 
 ## 1. 文件结构与标记模式
 
-Typst 源文件为 `.typ` 纯文本。三种嵌入模式：
-
 | 模式 | 语法 | 示例 |
 |------|------|------|
 | 标记（默认） | 直接书写 | `Hello *world*` |
-| 代码 | `#函数(...)` `[内容块]` | `#align(center)[标题]` |
+| 代码 | `#函数(...)`、`[内容块]` | `#align(center)[标题]` |
 | 数学 | `$ ... $` | `$E = m c^2$` |
-
-最小文档：
 
 ```typst
 #set page(paper: "a4", margin: 2cm)
 #set text(size: 11pt)
 
 = 标题
-
-正文段落。行内公式 $a^2 + b^2 = c^2$。
-
+正文。行内公式 $a^2 + b^2 = c^2$。
 $ display(integral_0^1 x dif x = 1/2) $
 ```
 
 ---
 
-## 2. 导入与模块化
+## 2. 导入
 
 ```typst
-// 导入整个模块
 #import "/doc-agent/typst/common/fonts.typ": *
+#import "/doc-agent/typst/common/page.typ": page-exam, footer-page-no
+#import "/doc-agent/typst/common/exam.typ": *
+#import "/doc-agent/typst/common/lecture.typ": definition-zh, example-zh
 
-// 导入指定符号
-#import "/doc-agent/typst/common/page.typ": page-a4, footer-page-no
-#import "/doc-agent/typst/common/exam.typ": calc-item, calc-counter-reset
-
-// 相对路径（同项目目录内）
-#import "chapter1.typ": intro
+#import "chapter.typ": section-a   // 项目内相对路径
 ```
 
-项目内多文件目录：入口为 `main.typ`，`typst_to_pdf` 的 `path` 可指向该目录。
+多文件目录以 `main.typ` 为入口；`typst_to_pdf` 的 `path` 可指向该目录。
 
 ---
 
 ## 3. `#set` 与 `#show`
 
-`#set` 修改后续默认值；`#show` 定义样式规则。
-
 ```typst
 #set text(font: "Times New Roman", size: 12pt, lang: "zh")
 #set par(justify: true, leading: 0.65em, first-line-indent: 2em)
 #set heading(numbering: "1.1")
-
-#show heading.where(level: 1): it => {
-  pagebreak(weak: true)
-  block(above: 1.5em, below: 1em)[
-    #text(size: 16pt, weight: "bold")[#it.body]
-  ]
-}
-
-#show: doc => {
-  set par(justify: true)
-  doc
-}
-```
-
-常用 `#set`：
-
-```typst
 #set page(paper: "a4", margin: (x: 2.5cm, y: 2cm))
-#set enum(numbering: "1.")
-#set list(marker: [•])
+
+#show: apply-zh-body   // 推荐：用内置字体栈
 ```
 
 ---
@@ -101,219 +92,105 @@ $ display(integral_0^1 x dif x = 1/2) $
 ## 4. 文本与段落
 
 ```typst
-*粗体* _斜体_ #underline[下划线] #strike[删除线]
-#text(size: 14pt, fill: blue)[彩色文字]
-#text(font: "Arial")[指定字体]
-
-换行用空行分段。强制换行：`linebreak()` 或 `\`
-
-#align(left|center|right|justify)[对齐内容]
-
-#pad(left: 2em)[左侧缩进]
-#h(1cm)  // 水平空白
-#v(1cm)  // 垂直空白
+*粗体* _斜体_ #underline[下划线]
+#align(left|center|right|justify)[…]
+#pad(left: 2em)[缩进]
+#v(1cm)    // 垂直空白
+#h(1cm)    // 水平空白（不画线！选择题选项间距可用）
 ```
 
-链接：
-
-```typst
-#link("https://typst.app")[Typst 官网]
-```
+**填空答题线**用 `#fill-blank()`，**不要**用 `#h()` 或句号 `。` 代替（见 §18、§19）。
 
 ---
 
-## 5. 标题
+## 5. 标题与目录
 
 ```typst
 = 一级标题
 == 二级标题
-=== 三级标题
-
-// 无编号标题
-#heading(outlined: false)[附录]
-
-// 目录
 #outline(title: [目录], indent: auto)
+#pagebreak()
 ```
 
 ---
 
 ## 6. 列表
 
-### 无序列表
+### 无序 `-`
 
 ```typst
 - 第一项
-- 第二项
-  - 嵌套项
+  - 嵌套
 ```
 
-### 有序列表（`+`）
+### 有序 `+`（试卷填空/选择常用）
 
 ```typst
-+ 第一步
-+ 第二步
-+ 第三步
++ 第一题 …
++ 第二题 …
 ```
 
-编号列表项之间可换行续写，**同一项内**可插入 `#v()`：
+**同一 `+` 项内**可换行、`#pad`、`#mc-options`；**不要在两个 `+` 之间**单独写 `#v(3.5cm)`，否则下一题编号会从 1 重新开始。
 
-```typst
-+ 题目一
-  续写说明
-  #v(1cm)
-+ 题目二
-```
-
-两个 `+` 之间插入**独立**的 `#v(3cm)` 块会打断列表，编号会重新从 1 开始。
-
-### 定义列表
-
-```typst
-/ Term: 定义内容
-/ API: 应用程序接口
-```
-
-### 枚举环境
-
-```typst
-#set enum(numbering: "(1)")
-
-+ 条目 A
-+ 条目 B
-```
+计算/证明大题改用 `#calc-item`，不要用 `+` 列表。
 
 ---
 
 ## 7. 数学公式
 
-行内：`$x^2$`。独立显示：`$ ... $` 单独成段，或 `display(...)`。
+行内：`$x^2$`。独立一行：整段 `$ ... $` 或 `display(...)`。
 
 ### 基础
 
 ```typst
-$x_i^2$                    // 上下标
-$sqrt(x)$ $root(3, x)$     // 根号
-$a / b$ $frac(a, b)$       // 分数
-$bar(x)$ $hat(x)$ $vec(x)$ // 修饰
-$abs(x)$ $norm(v)$          // 绝对值、范数
+$frac(a,b)$  $sqrt(x)$  $x_i^2$  $bar(x)$  $abs(x)$
+$sum_(i=1)^n i$  $integral_a^b f(x) dif x$  $lim_(x->0) f(x)$
+$ mat(1,2;3,4) $    // 矩阵
 ```
 
-### 大型运算符
-
-```typst
-$sum_(i=1)^n i$
-$product_(k=1)^n a_k$
-$integral_a^b f(x) dif x$
-$lim_(x -> 0) sin(x)/x$
-$union_(i in cal(I)) A_i$
-```
-
-### 矩阵
-
-```typst
-$ mat(
-    1, 2, 3;
-    4, 5, 6;
-  ) $
-
-$ det mat(1, 2; 3, 4) $
-```
-
-### 分段函数 `cases`
-
-分支之间用**逗号**分隔：
+### 分段函数：用 `cases`，勿用 `mat(delim: "{", …)`
 
 ```typst
 $ f(x) = cases(
     x^2, & x >= 0,
     -x, & x < 0,
   ) $
-
-$ f(x) = cases(
-    (2 x^3) / (1 + x^2), & x <= 1,
-    1, & x > 1,
-  ) $
-```
-
-### 对齐多行公式
-
-```typst
-$ f(x) &= x^2 + 1 \\
-       &= (x+i)(x-i) + 1 $
 ```
 
 ### 常用符号
 
 ```typst
-$ alpha, beta, gamma, delta, epsilon, theta, lambda, mu, pi, sigma, omega $
-$ RR, NN, ZZ, QQ, CC $       // 数集
-$ in, subset, union, intersect $
-$ <=, >=, !=, approx, equiv $
-$ oo, pm, times, div, cdot $
-$ dif$                       // 微分 d
+$ alpha, beta, pi, epsilon, theta, oo, pm, in, subset $
+$ RR, NN, ZZ, QQ, CC $    // 数集
+$ dif $                    // 微分 d
 ```
 
 ### 公式编号
 
 ```typst
-$ E = m c^2 $ <eq:e=mc2>
-
-如 @eq:e=mc2 所示。
+$ E = m c^2 $ <eq:emc2>
+见 @eq:emc2。
 ```
 
 ---
 
-## 8. 函数、变量与块
+## 8. 函数与变量
 
 ```typst
 #let name = "Typst"
-#let x = 3.14
 #let add(a, b) = a + b
-
-#let block-title(title, body) = block(
-  fill: luma(240),
-  inset: 10pt,
-  radius: 4pt,
-  width: 100%,
-)[
-  *#title* #linebreak()
-  #body
-]
-
-#block-title[提示][这是一个可复用块。]
-
-#let greeting(name) = [Hello, #name!]
-#greeting("World")
-```
-
-带默认参数：
-
-```typst
 #let frame(content, fill: white) = box(fill: fill, inset: 8pt)[#content]
 ```
+
+带名参数调用：`#fill-blank(width: 2.5cm)`（**勿**写 `#fill-blank(2.5cm)`）。
 
 ---
 
 ## 9. 布局
 
 ```typst
-#grid(
-  columns: (1fr, 1fr, 1fr),
-  gutter: 12pt,
-  [A], [B], [C],
-  [1], [2], [3],
-)
-
-#stack(dir: ltr, spacing: 1em)[左][中][右]
-
-#columns(2)[
-  第一栏内容…
-  #colbreak()
-  第二栏内容…
-]
-
-#box(width: 100%, inset: 8pt, stroke: 0.5pt)[边框内容]
+#grid(columns: (1fr, 1fr, 1fr), gutter: 12pt, [A], [B], [C])
+#box(width: 100%, inset: 8pt, stroke: 0.5pt)[边框]
 ```
 
 ---
@@ -323,103 +200,54 @@ $ E = m c^2 $ <eq:e=mc2>
 ```typst
 #table(
   columns: (auto, 1fr, 1fr),
-  align: (left, center, right),
   inset: 8pt,
   stroke: 0.5pt,
-  table.header([*列1*], [*列2*], [*列3*]),
-  [A], [1], [2],
-  [B], [3], [4],
+  table.header([*列1*], [*列2*]),
+  [A], [1],
 )
 ```
 
-`table` 与 `grid` 单元格均用 `[...]` 包裹内容。表头可用 `table.header(...)`。
-
 ---
 
-## 11. 图片与图形
+## 11. 图片
 
 ```typst
-// 项目内相对路径
 #image("figures/chart.png", width: 80%)
-
-#figure(
-  image("photo.jpg", width: 60%),
-  caption: [示例图片],
-) <fig:demo>
-
-见 @fig:demo。
+#figure(image("photo.jpg", width: 60%), caption: [图注]) <fig:demo>
 ```
 
 ---
 
-## 12. 页面与页眉页脚
+## 12. 页面
 
 ```typst
-#set page(
-  paper: "a4",
-  margin: (left: 2.5cm, right: 2.5cm, top: 2cm, bottom: 2cm),
-  numbering: "1",
-)
+#import "/doc-agent/typst/common/page.typ": page-a4, page-exam, footer-page-no
 
-#set page(header: align(right)[章节标题])
-#set page(footer: context {
-  align(center)[#counter(page).display("1")]
-})
-
-#pagebreak()
-#pagebreak(weak: true)  // 尽量分页
-```
-
-doc-agent 内置：
-
-```typst
-#import "/doc-agent/typst/common/page.typ": page-a4, footer-page-no
-#page-a4()
+#page-a4()        // 报告、论文
+#page-exam()      // 试卷（紧凑边距）
 #footer-page-no()
 ```
-
-页码、计数器显示需在 `context { }` 内（内置 `footer-page-no` 已处理）。
 
 ---
 
 ## 13. 计数器
 
 ```typst
-#let fig-counter = counter("figure")
-#fig-counter.step()
-#context fig-counter.display("Fig. 1")
-
-#counter(page).display("I")  // 需在 context 中
+#let c = counter("fig")
+#c.step()
+#context c.display("1.1")
 ```
 
-试卷计算题（内置）：
-
-```typst
-#import "/doc-agent/typst/common/exam.typ": calc-item, calc-counter-reset
-
-#calc-counter-reset()
-#calc-item(8)[求 $f'(x)$，其中 $f(x)=x^3$。]
-#calc-item(10)[计算 $integral_0^1 x^2 dif x$。]
-```
+试卷题号由 `calc-item` 内置计数器处理，大题开始前调用 `#calc-counter-reset()`。
 
 ---
 
-## 14. 引用、标签与参考文献
+## 14. 引用与文献
 
 ```typst
 = 引言 <sec:intro>
-
-见 @sec:intro。见图 @fig:demo 与式 @eq:e=mc2。
-
+见 @sec:intro。
 #bibliography("refs.bib", style: "ieee")
-```
-
-无 `.bib` 文件时可手写：
-
-```typst
-#pad(left: 2em)[
-  [1] Author. *Title*. Publisher, 2024.
-]
 ```
 
 ---
@@ -427,39 +255,19 @@ doc-agent 内置：
 ## 15. 条件与循环
 
 ```typst
-#if x > 0 [
-  正数
-] else [
-  非正数
-]
-
-#for i in range(1, 4) [
-  第 #i 项 #linebreak()
-]
-
-#for (k, v) in (a: 1, b: 2).pairs() [
-  #k = #v
-]
+#if x > 0 [正] else [非正]
+#for i in range(1, 4) [第 #i 项 #linebreak()]
 ```
 
 ---
 
-## 16. 代码与原始文本
-
-展示代码块（围栏代码）：
+## 16. 代码块
 
 ````typst
 ```python
-def hello():
-    print("hi")
+def f(): pass
 ```
 ````
-
-读取外部文件原文：
-
-```typst
-#raw("data/sample.txt", lang: "text")
-```
 
 ---
 
@@ -467,46 +275,104 @@ def hello():
 
 ```typst
 #import "/doc-agent/typst/common/fonts.typ": *
-
 #show: apply-zh-body
-#apply-zh-title([文档标题], [副标题])
-
-中文正文 $mixed text$ 与公式混排。
+#apply-zh-title([标题], [副标题])
+中文正文与 $x^2$ 混排。
 ```
 
-英文文档：
+英文：`#show: apply-en-body`、`#apply-en-title([...])`。
+
+---
+
+## 18. 试卷排版（`common/exam.typ`）
+
+### 页眉与版心
 
 ```typst
-#show: apply-en-body
-#apply-en-title([Document Title], [Subtitle])
+#import "/doc-agent/typst/common/exam.typ": *
+#import "/doc-agent/typst/common/page.typ": page-exam, footer-page-no
+
+#show: apply-zh-body
+#page-exam()
+#footer-page-no()
+
+#exam-header-zh(
+  [高等数学期中考试],
+  [2025–2026 学年第一学期],
+  [120 分钟],
+  [100],
+)
 ```
 
+### 填空题
+
+```typst
++ $lim_(x->0) (sin x)/x = $ #fill-blank()
++ 导数 $f'(1) = $ #fill-blank(width: 2.5cm)
+```
+
+### 选择题
+
+```typst
++ 题目题干 … \
+  #mc-options(
+    [选项 A 文字或 $公式$],
+    [选项 B],
+    [选项 C],
+    [选项 D],
+  )
+```
+
+### 计算/证明题
+
+```typst
+#calc-counter-reset()
+#calc-item(10)[求 $f(x)=x^3$ 的极值点]
+#calc-item(15, lang: "en")[Evaluate the integral $integral x dif x$]
+```
+
+- 题干**句末不必加句号**；答题区由 `calc-item` 的 `below: 3.5cm` 预留。
+- 英文卷：`lang: "en"` → 显示 `(10 pts)`。
+
 ---
 
-## 18. 场景模板索引
+## 19. 讲义排版（`common/lecture.typ`）
 
-| id | 用途 |
-|----|------|
-| `syntax/typst-guide` | 本手册 |
-| `report/report-zh` | 中文报告 |
-| `report/report-en` | 英文报告 |
-| `exam/exam-zh` | 中文试卷 |
-| `exam/exam-en` | 英文试卷 |
-| `paper/paper-zh` | 中文学术论文 |
-| `paper/paper-en` | 英文学术论文 |
-| `lecture/lecture-zh` | 中文讲义 |
-| `lecture/lecture-en` | 英文讲义 |
+```typst
+#import "/doc-agent/typst/common/lecture.typ": definition-zh, example-zh
+
+#definition-zh[数列极限][
+  设 ${a_n}$ … $lim_(n->oo) a_n = A$。
+]
+
+#example-zh[1][
+  证明 $lim_(n->oo) 1/n = 0$。
+]
+```
+
+英文用 `definition-en`、`example-en`。
 
 ---
 
-## 19. 官方文档索引
+## 20. 常见错误
+
+| 错误写法 | 后果 | 正确做法 |
+|----------|------|----------|
+| 填空用 `#h(3cm)` | 只有空白，**无横线** | `#fill-blank()` |
+| 填空用句号 `。` | 显示句号而非答题区 | `#fill-blank()` |
+| `#fill-blank(2.5cm)` | 编译报错 unexpected argument | `#fill-blank(width: 2.5cm)` |
+| `+` 项间插入 `#v(3.5cm)` | 下一题号变 1 | 用 `#calc-item` 或同一 `+` 项内排版 |
+| `mat(delim: "{", …)` 做分段 | 版式错误 | `cases(..., & cond,)` |
+| 计算题题干末尾加 `。` | 与答题空白叠在一起难看 | 省略句号 |
+| 凭记忆写 Typst | 编译失败 | 先读本手册与场景模板 |
+
+---
+
+## 21. 官方文档索引
 
 | 主题 | URL |
-|------|-----|
+|------|------|
 | 总览 | <https://typst.app/docs/reference/> |
-| 语法 | <https://typst.app/docs/reference/syntax/> |
-| 函数 | <https://typst.app/docs/reference/foundations/function/> |
 | 数学 | <https://typst.app/docs/reference/math/> |
 | 页面 | <https://typst.app/docs/reference/layout/page/> |
 | 表格 | <https://typst.app/docs/reference/model/table/> |
-| 引用 | <https://typst.app/docs/reference/model/bibliography/> |

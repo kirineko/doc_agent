@@ -232,6 +232,8 @@ pub enum AgentEvent {
         name: String,
         args: Value,
         status: String,
+        #[serde(default)]
+        index: usize,
     },
     ToolResult {
         session_id: String,
