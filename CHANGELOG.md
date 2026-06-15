@@ -8,6 +8,24 @@
 
 ## [Unreleased]
 
+### 多模态与模型
+
+- **图片输入**：vision 模型（Kimi K2.6、MiMo v2.5）支持粘贴图片发送；可仅发图无文字；附件写入项目 `.uploads/` 并持久化，历史消息展示缩略图
+- **image_read 工具**：vision 模型可调用 `image_read` 读取项目内图片并返回文本描述（MiMo / DeepSeek 非 vision 模型不暴露该工具）
+- **MiMo Provider**：新增小米 MiMo v2.5、MiMo v2.5 Pro、MiMo v2.5 Pro Ultraspeed（1M 上下文）；侧栏「模型与密钥」Drawer 统一配置三 Provider 的 API Key
+- **模型目录 IPC**：`list_models` 暴露 vision / effort / 上下文上限；新建会话默认沿用上次模型配置
+
+### 界面
+
+- **模型与密钥 Drawer**：模型选择、思考配置、API Key 从侧栏迁入右侧 Drawer；侧栏仅保留摘要与视觉能力标识
+- **附件预览**：输入区 chip 与消息缩略图支持点击放大；IPC 读取附件避免裂图
+- **上下文占用**：切换会话、空会话、历史会话均显示占用比例（无历史为 0%）；流式 `context_usage` 实时更新
+- **非 vision 粘贴提示**：DeepSeek / MiMo Pro 等模型粘贴图片时 toast 引导切换 vision 模型
+
+### 上下文与压缩
+
+- **多模态压缩策略**：pending 估算与压缩摘要仅统计文本，不展开图片 base64；保留 tail 的 `attachments_json` 原样；`image_read` 子调用 usage 不计入会话 token
+
 ---
 
 ## [2026.6.14] — 2026-06-14
