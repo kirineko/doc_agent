@@ -45,6 +45,8 @@
 ### Agent 稳定性
 
 - **tool call id 规范化**：流式 tool call 预生成 `call_{uuid}`；持久化前规范化空 id、批内重复及与 DB 冲突，修复 Kimi 等 Provider 返回空/重复 id 导致的 `UNIQUE constraint` 错误
+- **同轮 pdf_read 并行**：单轮最多 3 个 `pdf_read` 并发执行，tool result 按原序写入；其他工具仍串行
+- **工具链 UI**：`ToolCall` 事件携带 `index`；执行前 broadcast 全部 `running`，streaming 占位按 index 就地升级，避免多 `pdf_read` 时工具栏闪空
 
 ### 多模态与模型
 
