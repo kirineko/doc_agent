@@ -12,7 +12,7 @@ pub fn read_markdown_tool() -> ToolSpec {
     ToolSpec {
         name: "office_read_to_markdown",
         description:
-            "Read an Office document (docx/xlsx/pptx/doc/xls/ppt) or PDF as plain PDFium Markdown without vision judging. For intelligent PDF reading (formulas/scans), use pdf_read on vision models.",
+            "Read Office documents (docx/xlsx/pptx/doc/xls/ppt) or PDF as plain PDFium Markdown without vision judging. For PDF content, default to pdf_read; use this only when you explicitly need PDFium text without judge/vision overhead.",
         parameters: json!({
             "type": "object",
             "properties": {

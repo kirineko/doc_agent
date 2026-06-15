@@ -75,7 +75,7 @@ pub static SKILLS: &[Skill] = &[
     },
     Skill {
         name: "pdf",
-        description: "PDF 读取、表格提取、合并拆分与表单处理",
+        description: "PDF 智能读取（pdf_read）、页面操作、表格提取与表单处理",
         docs: PDF_DOCS,
     },
     Skill {

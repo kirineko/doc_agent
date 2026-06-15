@@ -1597,11 +1597,17 @@ async function main() {
         let kimi_defs = registry.tools_for_model(ModelId::KimiK26, false);
         let pdf = kimi_defs.iter().find(|t| t.name == "pdf_read").unwrap();
         assert!(pdf.parameters["properties"]["mode"].is_null());
+        assert!(pdf.description.contains("judges"));
         assert!(pdf.parameters["required"]
             .as_array()
             .unwrap()
             .iter()
             .any(|v| v.as_str() == Some("path")));
+
+        let deepseek_defs = registry.tools_for_model(ModelId::DeepSeekV4Flash, false);
+        let pdf_ds = deepseek_defs.iter().find(|t| t.name == "pdf_read").unwrap();
+        assert!(pdf_ds.description.contains("PDFium"));
+        assert!(pdf_ds.description.contains("vision-capable"));
     }
 
     #[test]
@@ -2037,6 +2043,10 @@ async function main() {
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("pdf_merge"));
         assert!(content.contains("pdf_read"));
+        assert!(content.contains("Judge"));
+        assert!(!content.contains("mode=auto"));
+        assert!(!content.contains("mode=text"));
+        assert!(!content.contains("mode=vision"));
         assert!(content.contains("1-based"));
         assert!(!content.contains("qpdf"));
     }

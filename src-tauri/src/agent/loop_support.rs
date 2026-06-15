@@ -50,7 +50,8 @@ pub(crate) fn build_working_messages(
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
                      html_to_pdf 可单独使用，不要求先生成报告。\
-                     读取 PDF 时：调用 pdf_read 只传 path（无 mode）；vision 模型会自动 Judge 是否需图片理解；只要 PDFium 纯文本用 office_read_to_markdown。\
+                     读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
+                     仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
                      不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),

@@ -23,8 +23,12 @@ pub fn tool() -> ToolSpec {
     }
 }
 
-pub fn description_for_model(_model_id: ModelId) -> &'static str {
-    "Read PDF. Pass path only — system extracts text and (on vision models) judges if page images are needed for formulas/layout. For PDFium-only without judging, use office_read_to_markdown."
+pub fn description_for_model(model_id: ModelId) -> &'static str {
+    if model_id.supports_vision() {
+        "Read PDF intelligently. Pass path only — extracts text first, then judges whether full page vision is needed (formulas/scans). Plain-text PDFs return quickly without full vision. For PDFium-only without judging, use office_read_to_markdown."
+    } else {
+        "Read PDF via PDFium text extraction. Pass path only. Scan PDFs with no text layer require a vision-capable model (e.g. Kimi K2.6)."
+    }
 }
 
 pub fn parameters_schema() -> Value {

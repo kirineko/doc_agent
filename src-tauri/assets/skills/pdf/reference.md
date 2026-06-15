@@ -6,9 +6,9 @@
 
 | 任务 | 工具 | 说明 |
 |---|---|---|
-| **读取 PDF（推荐）** | `pdf_read` | 只传 path；vision 模型先 PDFium 再 Judge/vision |
-| 读取纯文本（无 Judge） | `office_read_to_markdown` | PDFium 文本；公式可能失真 |
-| 渲染页图 | `pdf_render_pages` | PNG 写入 `.cache/pdf/`，支持缓存命中 |
+| **读取 PDF（推荐，所有模型）** | `pdf_read` | 仅 path；vision 模型先 PDFium 再 Judge/vision |
+| 仅 PDFium 纯文本（跳过 Judge） | `office_read_to_markdown` | PDFium 文本；公式可能失真 |
+| 手动渲染页图（高级） | `pdf_render_pages` | PNG 写入 `.cache/pdf/`；`pdf_read` 内部会自动渲染 |
 | 理解 1–4 张图 | `image_read` | `paths` 数组；可读 `.cache/pdf/` 页图 |
 | 合并 PDF | `pdf_merge` | 按顺序拼接多个文件 |
 | 拆分 PDF | `pdf_split` | 按范围或 burst 每页一个文件 |
@@ -86,11 +86,13 @@
 { "path": "exam.pdf" }
 ```
 
-**vision 模型（Kimi K2.6、MiMo v2.5）**：只传 `path`。系统先 PDFium 按页提取，再经硬规则或代表页图文 Judge 决定是否全量 vision。
+**所有模型**：仅 `path`（可选 `pages`、`dpi`），勿传 `mode` 等已移除参数。
 
-**非 vision 模型**：只传 `path`，返回 PDFium 全文；扫描件（无文本层）会报错并提示切换 vision 模型。
+**vision 模型（Kimi K2.6、MiMo v2.5）**：先 PDFium 按页提取，再经硬规则或代表页图文 Judge 决定是否全量 vision；纯文本书通常 `resolved=text`，无需全量 vision。
 
-需要纯 PDFium、不要 Judge 时用 `office_read_to_markdown`。
+**非 vision 模型**：返回 PDFium 全文；扫描件（无文本层）报错并提示切换 vision 模型。
+
+仅当明确不要 Judge、只要 PDFium 时用 `office_read_to_markdown`。
 
 可选：`pages`（如 `"1-4"` 或 `[1,3]`）、`dpi`（默认 150，72–300）。
 
@@ -101,6 +103,8 @@
 ```json
 { "path": "exam.pdf", "pages": "all", "dpi": 150 }
 ```
+
+通常无需手动调用——`pdf_read` 在需要 vision 时会自动渲染。用于高级流程：先渲染再 `image_read` 指定页。
 
 返回 `cache_hit`、`pages`（PNG 相对路径）、`manifest_path`。相同源文件与参数再次调用时 `cache_hit: true`，跳过渲染。
 
@@ -117,12 +121,12 @@
 
 ## 典型流程
 
-1. 含公式或扫描件：`pdf_read` 只传 `path`（vision 会话）
-2. 纯文本试探：`office_read_to_markdown`
-2. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
-3. `pdf_merge` 合并交付物
-4. 需表格数据时：先用 `office_read_to_markdown` 提取文本，再 `data_query` 或 `skill_run`+exceljs
-5. 需新建或重绘：`skill_run`（pdf-lib 已内置）
+1. **读取内容（默认）**：`pdf_read` 仅 `path`
+2. **明确只要 PDFium**：`office_read_to_markdown`
+3. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
+4. `pdf_merge` 合并交付物
+5. 需表格数据时：先用 `office_read_to_markdown` 提取文本，再 `data_query` 或 `skill_run`+exceljs
+6. 需新建或重绘：`skill_run`（pdf-lib 已内置）
 
 ## 限制
 

@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 pub fn tool() -> ToolSpec {
     ToolSpec {
         name: "pdf_render_pages",
-        description: "Render PDF pages to PNG images in .cache/pdf/ with manifest-based cache. Reuses cache when source file and render params are unchanged.",
+        description: "Render PDF pages to PNG in .cache/pdf/ (cached). Usually unnecessary — pdf_read renders internally when vision is needed. Use for manual image_read workflows.",
         parameters: json!({
             "type": "object",
             "properties": {

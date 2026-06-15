@@ -12,9 +12,9 @@ license: Proprietary. LICENSE.txt has complete terms
 
 | Task | Tool |
 |------|------|
-| **读取 PDF（推荐）** | `pdf_read {"path": "doc.pdf"}` — **只传 path**；vision 模型自动判断是否需图片理解 |
-| 读取正文/纯文本（无 Judge） | `office_read_to_markdown {"path": "doc.pdf"}` |
-| 仅渲染页图为 PNG | `pdf_render_pages {"path": "doc.pdf"}` → `.cache/pdf/`（可缓存命中） |
+| **读取 PDF（推荐，所有模型）** | `pdf_read {"path": "doc.pdf"}` — 仅 path；vision 模型自动 Judge，纯文本书快速返回 |
+| 仅 PDFium 纯文本（跳过 Judge） | `office_read_to_markdown {"path": "doc.pdf"}` |
+| 手动渲染页图（高级） | `pdf_render_pages {"path": "doc.pdf"}` → `.cache/pdf/`（`pdf_read` 内部会自动渲染） |
 | 读取 1–4 张图片 | `image_read {"paths": ["a.png","b.png"]}`（vision 模型） |
 | 合并 | `pdf_merge {"inputs": ["a.pdf", "b.pdf"], "out_path": "merged.pdf"}` |
 | 拆分（按范围/逐页） | `pdf_split`（详见 reference.md） |
@@ -75,7 +75,7 @@ async function main() {
 
 | 操作 | 说明 |
 |---|---|
-| OCR 扫描件 | 无独立 OCR；扫描件用 **vision 模型** `pdf_read`（只传 path）；非 vision 模型会报错 |
+| OCR / 扫描件 | 无独立 OCR 引擎；扫描件用 **vision 模型** `pdf_read`（仅 path）；非 vision 模型会报错 |
 | 加密/解密 | 加密 PDF 不支持操作；提示用户先在外部工具解密 |
 | 提取内嵌图片 | 无工具 |
 | 自动填 AcroForm 表单 | 见 forms.md 的降级方案 |
@@ -83,8 +83,8 @@ async function main() {
 
 ## 典型流程
 
-1. **含公式 / 扫描件 / 一般阅读**：`pdf_read` 只传 `path`（vision 会话）
-2. **纯文本快速试探（跳过 Judge）**：`office_read_to_markdown`
+1. **读取内容（默认）**：`pdf_read` 仅 `path`（含公式、扫描件、纯文本；vision 模型自动 Judge）
+2. **明确只要 PDFium、跳过 Judge**：`office_read_to_markdown`
 3. `pdf_split` / `pdf_delete_pages` / `pdf_rotate` 调整结构
 4. `pdf_merge` 合并交付物
 5. 需要新建/重绘 → `skill_run` + PDFLib（注意中文限制）
@@ -95,4 +95,4 @@ async function main() {
 
 - **页码 1-based**；越界返回明确错误。
 - **合并**不保证保留书签/表单/注释，仅保证页面内容与顺序。
-- **扫描 PDF**：无 OCR 能力。
+- **扫描 PDF**：无独立 OCR；vision 模型 `pdf_read` 可走图片理解路径。
