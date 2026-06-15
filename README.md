@@ -139,7 +139,21 @@ npm run tauri build
 - **Release**：推送纯数字三段 tag 时触发 Windows（NSIS）/ macOS（DMG）安装包构建，产物上传 **阿里云 OSS** 并同步 **GitHub Release**（Windows 不产出 MSI：CalVer 与 WiX major ≤255 不兼容）
 - **版本格式（CalVer）**：**`YYYY.M.D`**（年.月.日），**禁止前导零** — 例：`2026.6.14`（✅）、`2026.06.14`（❌）
 - **取当日版本**：`npm run calver:today`
-- **发版前**：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的 `version` 与 tag 完全一致；更新 `CHANGELOG.md`（`[Unreleased]` → 正式版本节）
+- **发版前**：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 的 `version` 与 tag 完全一致；更新 `CHANGELOG.md`（`[Unreleased]` → 正式版本节）；**打 tag 前必须跑通发版自检**（与 Release CI `check` job 一致，含 `cargo fmt --check`）：
+
+  ```bash
+  npm run release:check
+  ```
+
+  等价于：
+
+  ```bash
+  npm run bundle:js
+  cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test
+  cd .. && npm run typecheck && npm test && npm run build
+  ```
+
+  打 tag 与推送：
 
   ```bash
   VERSION=$(npm run -s calver:today)

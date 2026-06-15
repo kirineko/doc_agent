@@ -5,8 +5,8 @@ mod tool_tests {
     use crate::tools::ooxml::style_lint::lint_docx;
     use crate::tools::ooxml::validate;
     use crate::tools::{ToolContext, ToolError, ToolRegistry};
-    use serial_test::serial;
     use serde_json::json;
+    use serial_test::serial;
     use std::fs;
     use std::io::Read;
     use tempfile::tempdir;

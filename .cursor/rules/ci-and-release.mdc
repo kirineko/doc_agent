@@ -50,7 +50,7 @@ build 已成功但 publish 失败时，在 Actions 手动触发 `Release` workfl
 
 1. `npm run calver:today` 确认当日 tag
 2. 同步三处 `version` 与 `CHANGELOG.md`（将 `[Unreleased]` 改为 `## [YYYY.M.D] — YYYY-MM-DD`）
-3. 本地自检（见下）
+3. **`npm run release:check`**（含 `cargo fmt --check`，与 Release CI `check` job 对齐）
 4. `git tag <YYYY.M.D>` → `git push origin <YYYY.M.D>`
 5. 等 Release CI 完成后验证 OSS `latest.json` 与 `releases/<version>/`
 
