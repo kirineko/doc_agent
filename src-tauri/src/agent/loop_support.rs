@@ -1,12 +1,15 @@
-use crate::agent::provider::openai_compat::messages_from_store;
+use crate::agent::provider::openai_compat::{
+    encode_attachment_data_url, messages_from_store, messages_from_store_text,
+};
 use crate::agent::session_title::{
     is_autotitle_eligible_user_count, is_default_session_title, summarize_session_title,
 };
-use crate::agent::types::{AgentEvent, ChatMessage, ToolCall};
+use crate::agent::types::{AgentEvent, ChatMessage, MessageAttachment, ToolCall};
 use crate::core::sandbox::Sandbox;
 use crate::core::store::Message;
 use crate::state::AppState;
 use crate::tools::ToolContext;
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
 
 pub(super) fn cleanup_skill_run_tmp(sandbox: &Sandbox) {
@@ -18,9 +21,15 @@ pub(crate) fn build_working_messages(
     history: &[Message],
     tool_calls: &[crate::core::store::ToolCallRecord],
     user_text: Option<&str>,
+    user_attachments: &[MessageAttachment],
     web_enabled: bool,
-) -> Vec<ChatMessage> {
-    let mut messages = messages_from_store(history, tool_calls);
+    sandbox: Option<&Sandbox>,
+) -> Result<Vec<ChatMessage>, String> {
+    let mut messages = if let Some(sandbox) = sandbox {
+        messages_from_store(history, tool_calls, Some(sandbox))?
+    } else {
+        messages_from_store_text(history, tool_calls)
+    };
     if !messages.iter().any(|m| m.role == "system") {
         let web_hint = if web_enabled {
             "\nWeb 搜索已启用：需要项目外实时信息时用 web_search(query)；已知 URL 需读正文时用 web_extract(urls)。\n"
@@ -42,6 +51,7 @@ pub(crate) fn build_working_messages(
                      不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -49,22 +59,38 @@ pub(crate) fn build_working_messages(
         );
     }
     let Some(user_text) = user_text else {
-        return messages;
+        return Ok(messages);
+    };
+    let image_urls = if user_attachments.is_empty() {
+        Vec::new()
+    } else {
+        let sandbox = sandbox.ok_or_else(|| "attachments require project sandbox".to_string())?;
+        user_attachments
+            .iter()
+            .map(|attachment| {
+                encode_attachment_data_url(sandbox, attachment).map(Arc::<str>::from)
+            })
+            .collect::<Result<Vec<_>, _>>()?
     };
     if !messages
         .last()
-        .map(|m| m.role.as_str() == "user" && m.content.as_deref() == Some(user_text))
+        .map(|m| {
+            m.role.as_str() == "user"
+                && m.content.as_deref() == Some(user_text)
+                && m.image_urls == image_urls
+        })
         .unwrap_or(false)
     {
         messages.push(ChatMessage {
             role: "user".into(),
             content: Some(user_text.to_string()),
+            image_urls,
             reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
         });
     }
-    messages
+    Ok(messages)
 }
 
 pub(super) fn persist_assistant(
@@ -76,7 +102,7 @@ pub(super) fn persist_assistant(
 ) -> Result<Message, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let msg = store
-        .add_message(session_id, "assistant", content, reasoning_content, None)
+        .add_message(session_id, "assistant", content, reasoning_content, None, None)
         .map_err(|e| e.to_string())?;
     if let Some(calls) = tool_calls {
         for call in calls {
@@ -133,7 +159,7 @@ pub(super) fn persist_tool_result<R: Runtime>(
             .finish_tool_call(&call.id, &summary, status, duration_ms)
             .map_err(|e| e.to_string())?;
         store
-            .add_message(session_id, "tool", Some(&summary), None, Some(&call.id))
+            .add_message(session_id, "tool", Some(&summary), None, Some(&call.id), None)
             .map_err(|e| e.to_string())?;
     }
 
@@ -153,6 +179,7 @@ pub(super) fn persist_tool_result<R: Runtime>(
     working_messages.push(ChatMessage {
         role: "tool".into(),
         content: Some(summary),
+        image_urls: vec![],
         reasoning_content: None,
         tool_calls: None,
         tool_call_id: Some(call.id.clone()),

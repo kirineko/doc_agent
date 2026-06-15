@@ -74,6 +74,11 @@ export interface SubmitClarifyAnswerRequest {
   custom?: string | null;
 }
 
+export interface MessageAttachment {
+  path: string;
+  mime: string;
+}
+
 export interface Message {
   id: string;
   session_id: string;
@@ -83,6 +88,17 @@ export interface Message {
   tool_call_id?: string | null;
   seq: number;
   created_at: string;
+  attachments_json?: string | null;
+}
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  provider: string;
+  api_model: string;
+  supports_vision: boolean;
+  supports_effort: boolean;
+  max_context: number;
 }
 
 export interface ToolCallRecord {
@@ -150,9 +166,12 @@ export type AgentEvent =
   | { kind: "error"; session_id: string; turn_id: string; message: string };
 
 export const MODEL_OPTIONS = [
-  { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", provider: "deepseek", supportsEffort: true },
-  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", provider: "deepseek", supportsEffort: true },
-  { id: "kimi-k2.6", label: "Kimi K2.6", provider: "kimi", supportsEffort: false },
+  { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", provider: "deepseek", supportsEffort: true, supportsVision: false },
+  { id: "deepseek-v4-pro", label: "DeepSeek V4 Pro", provider: "deepseek", supportsEffort: true, supportsVision: false },
+  { id: "kimi-k2.6", label: "Kimi K2.6", provider: "kimi", supportsEffort: false, supportsVision: true },
+  { id: "mimo-v2.5", label: "MiMo v2.5", provider: "mimo", supportsEffort: false, supportsVision: true },
+  { id: "mimo-v2.5-pro", label: "MiMo v2.5 Pro", provider: "mimo", supportsEffort: false, supportsVision: false },
+  { id: "mimo-v2.5-pro-ultraspeed", label: "MiMo v2.5 Pro Ultraspeed", provider: "mimo", supportsEffort: false, supportsVision: false },
 ] as const;
 
 export const API_PROVIDERS: string[] = [...new Set(MODEL_OPTIONS.map((m) => m.provider))];
@@ -163,6 +182,8 @@ export function providerLabel(provider: string): string {
       return "DeepSeek";
     case "kimi":
       return "Kimi";
+    case "mimo":
+      return "MiMo";
     default:
       return provider;
   }

@@ -45,6 +45,8 @@ pub struct Message {
     pub created_at: String,
     #[serde(default)]
     pub archived: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachments_json: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,7 +156,26 @@ impl Store {
             "ALTER TABLE sessions ADD COLUMN last_token_count INTEGER",
             [],
         );
+        let _ = self.conn.execute(
+            "ALTER TABLE messages ADD COLUMN attachments_json TEXT",
+            [],
+        );
         Ok(())
+    }
+
+    fn map_message_row(row: &rusqlite::Row<'_>) -> Result<Message, rusqlite::Error> {
+        Ok(Message {
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            role: row.get(2)?,
+            content: row.get(3)?,
+            reasoning_content: row.get(4)?,
+            tool_call_id: row.get(5)?,
+            seq: row.get(6)?,
+            created_at: row.get(7)?,
+            archived: row.get::<_, i32>(8)? != 0,
+            attachments_json: row.get(9).ok(),
+        })
     }
 
     pub fn create_project(&self, name: &str, root_path: &str) -> Result<Project, StoreError> {
@@ -426,6 +447,7 @@ impl Store {
             seq: insert_before_seq,
             created_at,
             archived: false,
+            attachments_json: None,
         })
     }
 
@@ -436,13 +458,14 @@ impl Store {
         content: Option<&str>,
         reasoning_content: Option<&str>,
         tool_call_id: Option<&str>,
+        attachments_json: Option<&str>,
     ) -> Result<Message, StoreError> {
         let id = Uuid::new_v4().to_string();
         let seq = self.next_seq(session_id)?;
         let created_at = now();
         self.conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, attachments_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 id,
                 session_id,
@@ -451,7 +474,8 @@ impl Store {
                 reasoning_content,
                 tool_call_id,
                 seq,
-                created_at
+                created_at,
+                attachments_json
             ],
         )?;
         self.conn.execute(
@@ -467,28 +491,17 @@ impl Store {
             tool_call_id: tool_call_id.map(str::to_string),
             seq,
             created_at,
+            attachments_json: attachments_json.map(str::to_string),
             archived: false,
         })
     }
 
     pub fn list_active_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json
              FROM messages WHERE session_id = ?1 AND archived = 0 ORDER BY seq ASC",
         )?;
-        let rows = stmt.query_map(params![session_id], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                role: row.get(2)?,
-                content: row.get(3)?,
-                reasoning_content: row.get(4)?,
-                tool_call_id: row.get(5)?,
-                seq: row.get(6)?,
-                created_at: row.get(7)?,
-                archived: row.get::<_, i32>(8)? != 0,
-            })
-        })?;
+        let rows = stmt.query_map(params![session_id], Self::map_message_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -536,22 +549,10 @@ impl Store {
 
     pub fn list_all_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json
              FROM messages WHERE session_id = ?1 ORDER BY seq ASC",
         )?;
-        let rows = stmt.query_map(params![session_id], |row| {
-            Ok(Message {
-                id: row.get(0)?,
-                session_id: row.get(1)?,
-                role: row.get(2)?,
-                content: row.get(3)?,
-                reasoning_content: row.get(4)?,
-                tool_call_id: row.get(5)?,
-                seq: row.get(6)?,
-                created_at: row.get(7)?,
-                archived: row.get::<_, i32>(8)? != 0,
-            })
-        })?;
+        let rows = stmt.query_map(params![session_id], Self::map_message_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
@@ -738,10 +739,10 @@ mod tests {
             .unwrap();
 
         store
-            .add_message(&session.id, "user", Some("hello"), None, None)
+            .add_message(&session.id, "user", Some("hello"), None, None, None)
             .unwrap();
         let assistant = store
-            .add_message(&session.id, "assistant", Some("hi"), Some("thinking"), None)
+            .add_message(&session.id, "assistant", Some("hi"), Some("thinking"), None, None)
             .unwrap();
 
         let messages = store.list_messages(&session.id).unwrap();
@@ -811,7 +812,7 @@ mod tests {
             .create_session(&project.id, "s1", "mock", true, "high")
             .unwrap();
         let assistant = store
-            .add_message(&session.id, "assistant", None, Some("thinking"), None)
+            .add_message(&session.id, "assistant", None, Some("thinking"), None, None)
             .unwrap();
         store
             .add_tool_call(
@@ -885,10 +886,10 @@ mod tests {
             .create_session(&project.id, "s1", "mock", true, "high")
             .unwrap();
         let old = store
-            .add_message(&session.id, "user", Some("old"), None, None)
+            .add_message(&session.id, "user", Some("old"), None, None, None)
             .unwrap();
         store
-            .add_message(&session.id, "user", Some("new"), None, None)
+            .add_message(&session.id, "user", Some("new"), None, None, None)
             .unwrap();
         store.mark_messages_archived(&[old.id]).unwrap();
         let active = store.list_active_messages(&session.id).unwrap();
@@ -920,10 +921,10 @@ mod tests {
             .create_session(&project.id, "s1", "mock", true, "high")
             .unwrap();
         let old = store
-            .add_message(&session.id, "user", Some("old"), None, None)
+            .add_message(&session.id, "user", Some("old"), None, None, None)
             .unwrap();
         let preserved = store
-            .add_message(&session.id, "user", Some("recent"), None, None)
+            .add_message(&session.id, "user", Some("recent"), None, None, None)
             .unwrap();
         store.mark_messages_archived(&[old.id]).unwrap();
         store

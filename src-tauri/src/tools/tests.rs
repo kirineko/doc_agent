@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tool_tests {
+    use crate::agent::types::ModelId;
     use crate::core::sandbox::Sandbox;
     use crate::tools::ooxml::style_lint::lint_docx;
     use crate::tools::ooxml::validate;
@@ -31,7 +32,7 @@ mod tool_tests {
             .enable_all()
             .build()
             .unwrap()
-            .block_on(registry.execute(ctx, &handle, name, args))
+            .block_on(registry.execute(ctx, &handle, ModelId::Mock, name, args))
     }
 
     fn create_docx_via_skill_run(

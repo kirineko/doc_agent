@@ -3,10 +3,14 @@ use crate::agent::compaction::{
     estimate_chat_messages_tokens, MAX_TOOL_STEPS,
 };
 use crate::agent::loop_support::*;
-use crate::agent::provider::openai_compat::{effort_from_str, model_from_str};
+use crate::agent::provider::openai_compat::{
+    effort_from_str, model_from_str, validate_attachments,
+};
 use crate::agent::provider::provider_for;
 use crate::agent::tool_args::{parse_tool_arguments, truncation_error};
-use crate::agent::types::{AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig};
+use crate::agent::types::{
+    AgentEvent, ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig,
+};
 use crate::core::sandbox::Sandbox;
 use crate::state::AppState;
 use crate::tools::ToolContext;
@@ -20,6 +24,7 @@ pub async fn run_turn<R: Runtime>(
     state: AppState,
     session_id: String,
     user_text: String,
+    attachments: Vec<MessageAttachment>,
 ) -> Result<(), String> {
     let turn_id = Uuid::new_v4().to_string();
     let (
@@ -57,6 +62,23 @@ pub async fn run_turn<R: Runtime>(
         )
     };
 
+    if user_text.trim().is_empty() && attachments.is_empty() {
+        return Err("消息不能为空".into());
+    }
+
+    let model_id = model_from_str(&model);
+    validate_attachments(&attachments).map_err(|e| e.to_string())?;
+    if !attachments.is_empty() && !model_id.supports_vision() {
+        return Err("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5".into());
+    }
+
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let attachments_json = if attachments.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&attachments).map_err(|e| e.to_string())?)
+    };
+
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         if store
@@ -66,9 +88,6 @@ pub async fn run_turn<R: Runtime>(
         {
             return Err("请先回答当前澄清问题，再发送新消息。".into());
         }
-        store
-            .add_message(&session_id, "user", Some(&user_text), None, None)
-            .map_err(|e| e.to_string())?;
     }
 
     let user_count = history.iter().filter(|m| m.role == "user").count() + 1;
@@ -76,8 +95,28 @@ pub async fn run_turn<R: Runtime>(
         .secrets
         .has_api_key("tavily")
         .map_err(|e| e.to_string())?;
-    let mut working_messages =
-        build_working_messages(&history, &tool_call_history, Some(&user_text), web_enabled);
+    let mut working_messages = build_working_messages(
+        &history,
+        &tool_call_history,
+        Some(&user_text),
+        &attachments,
+        web_enabled,
+        Some(&sandbox),
+    )?;
+
+    {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .add_message(
+                &session_id,
+                "user",
+                Some(&user_text),
+                None,
+                None,
+                attachments_json.as_deref(),
+            )
+            .map_err(|e| e.to_string())?;
+    }
 
     continue_loop(
         app,
@@ -149,8 +188,15 @@ pub async fn resume_turn<R: Runtime>(
         .secrets
         .has_api_key("tavily")
         .map_err(|e| e.to_string())?;
-    let mut working_messages =
-        build_working_messages(&history, &tool_call_history, None, web_enabled);
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let mut working_messages = build_working_messages(
+        &history,
+        &tool_call_history,
+        None,
+        &[],
+        web_enabled,
+        Some(&sandbox),
+    )?;
 
     continue_loop(
         app,
@@ -198,7 +244,7 @@ async fn continue_loop<R: Runtime>(
     };
 
     let provider = provider_for(model_id);
-    let tool_defs = state.tools.definitions(web_enabled);
+    let tool_defs = state.tools.tools_for_model(model_id, web_enabled);
 
     let mut token_count = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -299,6 +345,7 @@ async fn continue_loop<R: Runtime>(
                 estimated_messages.push(ChatMessage {
                     role: "assistant".into(),
                     content: Some(turn.content.clone()),
+                    image_urls: vec![],
                     reasoning_content: Some(turn.reasoning_content.clone()),
                     tool_calls: None,
                     tool_call_id: None,
@@ -349,6 +396,7 @@ async fn continue_loop<R: Runtime>(
             } else {
                 Some(turn.content.clone())
             },
+            image_urls: vec![],
             reasoning_content: Some(turn.reasoning_content.clone()),
             tool_calls: Some(turn.tool_calls.clone()),
             tool_call_id: None,
@@ -469,7 +517,7 @@ async fn continue_loop<R: Runtime>(
             } else {
                 match state
                     .tools
-                    .execute(&ctx, &app, &call.function.name, args.clone())
+                    .execute(&ctx, &app, model_id, &call.function.name, args.clone())
                     .await
                 {
                     Ok(value) => {

@@ -65,6 +65,7 @@ pub async fn submit_clarify_answer<R: Runtime>(
                 Some(&result_json),
                 None,
                 Some(&pending.tool_call_id),
+                None,
             )
             .map_err(|e| e.to_string())?;
         (pending, result_json)
@@ -109,6 +110,7 @@ pub async fn cancel_clarify<R: Runtime>(
                 Some(&result_json),
                 None,
                 Some(&pending.tool_call_id),
+                None,
             )
             .map_err(|e| e.to_string())?;
         pending

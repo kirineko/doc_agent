@@ -1,18 +1,16 @@
 interface ContextUsageIndicatorProps {
   ratio?: number;
+  hidden?: boolean;
 }
 
-function toneClass(ratio: number | undefined): string {
-  if (ratio == null) return "text-fg-secondary";
+function toneClass(ratio: number): string {
   if (ratio >= 0.85) return "text-red-500";
   if (ratio >= 0.7) return "text-amber-600";
   return "text-fg-secondary";
 }
 
-export function ContextUsageIndicator({ ratio }: ContextUsageIndicatorProps) {
-  if (ratio == null) {
-    return null;
-  }
+export function ContextUsageIndicator({ ratio = 0, hidden }: ContextUsageIndicatorProps) {
+  if (hidden) return null;
 
   const percent = Math.min(100, Math.max(0, Math.round(ratio * 100)));
 

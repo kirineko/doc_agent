@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ChatPanel } from "./components/ChatPanel";
 import { Logo } from "./components/Logo";
+import { ModelSettingsDrawer } from "./components/ModelSettingsDrawer";
 import { RightPanel } from "./components/RightPanel";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -28,6 +29,17 @@ function App() {
         </div>
       </header>
       <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <ModelSettingsDrawer
+        open={ws.modelSettingsOpen}
+        models={ws.models}
+        config={ws.effectiveSessionConfig}
+        locked={ws.modelLocked}
+        apiKeyStatus={ws.apiKeyStatus}
+        highlightApiKeyProvider={ws.highlightApiKeyProvider}
+        onClose={() => ws.setModelSettingsOpen(false)}
+        onChange={(patch) => void ws.updateSessionConfig(patch)}
+        onApiKeyStatusChange={ws.handleApiKeyStatusChange}
+      />
       <main className="flex min-h-0 flex-1 gap-2.5 p-2.5">
         <Sidebar
           projects={ws.projects}
@@ -50,6 +62,8 @@ function App() {
           onApiKeyStatusChange={ws.handleApiKeyStatusChange}
           tavilyEnabled={ws.tavilyEnabled}
           onTavilyStatusChange={ws.handleTavilyStatusChange}
+          onOpenModelSettings={() => ws.setModelSettingsOpen(true)}
+          modelSummary={ws.modelSummary}
         />
         <ChatPanel
           sessionId={ws.activeSessionId}
@@ -66,11 +80,17 @@ function App() {
           filePaths={ws.filePaths}
           input={ws.input}
           busy={ws.stream.busy}
-          contextRatio={ws.stream.contextRatio}
+          contextRatio={ws.contextRatio}
           compactionNotice={ws.stream.compactionNotice}
           sendHint={ws.sendHint}
+          pendingAttachments={ws.pendingAttachments}
+          visionToast={ws.visionToast}
+          projectId={ws.activeProjectId}
           onInputChange={ws.setInput}
           onSend={ws.sendMessage}
+          onPasteImage={ws.addPastedImage}
+          onRemoveAttachment={ws.removePendingAttachment}
+          onDismissVisionToast={ws.dismissVisionToast}
           onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
           onInitStarter={() => void ws.handleInitStarter()}
           onDismissSendHint={ws.dismissSendHint}

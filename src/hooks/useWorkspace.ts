@@ -23,8 +23,11 @@ import {
 } from "../lib/sessionOrder";
 import {
   buildCreateSessionRequest,
-  DEFAULT_SESSION_CONFIG,
   isSessionModelLocked,
+  readStoredSessionConfig,
+  resolveSessionConfig,
+  sessionConfigFromSession,
+  writeStoredSessionConfig,
   type SessionConfig,
 } from "../lib/sessionConfig";
 import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
@@ -36,11 +39,22 @@ import {
   messageBundleState,
   parseClarifyQuestion,
 } from "../lib/clarifyBrief";
+import { loadModels, modelSupportsVision } from "../lib/models";
+import {
+  blobToBase64,
+  extensionForMime,
+  MAX_ATTACHMENTS_PER_MESSAGE,
+  type PendingAttachment,
+  revokePendingAttachments,
+  userMessageWasPersisted,
+} from "../lib/attachments";
 import {
   API_PROVIDERS,
   type AgentEvent,
   type Message,
   type MessageBundle,
+  type MessageAttachment,
+  type ModelInfo,
   type Project,
   type Session,
   type ToolCallRecord,
@@ -63,11 +77,16 @@ export function useWorkspace() {
   const [messagesLoaded, setMessagesLoaded] = useState(true);
   const [activeProjectId, setActiveProjectId] = useState<string>();
   const [activeSessionId, setActiveSessionId] = useState<string>();
-  const [pendingSessionConfig, setPendingSessionConfig] =
-    useState<SessionConfig>(DEFAULT_SESSION_CONFIG);
+  const [pendingSessionConfig, setPendingSessionConfig] = useState<SessionConfig>(() =>
+    readStoredSessionConfig(),
+  );
   const [input, setInput] = useState("");
+  const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
+  const [visionToast, setVisionToast] = useState<string | null>(null);
+  const [contextRatio, setContextRatio] = useState(0);
   const [stream, dispatchStream] = useReducer(streamReducer, initialAgentStreamState);
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const [tavilyEnabled, setTavilyEnabled] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>([]);
@@ -76,6 +95,7 @@ export function useWorkspace() {
   const [sendHint, setSendHint] = useState<SendBlocker | null>(null);
   const [highlightProject, setHighlightProject] = useState(false);
   const [highlightApiKeyProvider, setHighlightApiKeyProvider] = useState<string>();
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
   const sendingRef = useRef(false);
   const initStarterInFlightRef = useRef(false);
   const ensureSessionInFlightRef = useRef<Promise<string | null> | null>(null);
@@ -87,6 +107,7 @@ export function useWorkspace() {
   const pendingSessionConfigRef = useRef(pendingSessionConfig);
   const starterStartedRef = useRef<string | undefined>(undefined);
   const skipNextLoadRef = useRef(false);
+  const pendingAttachmentsRef = useRef(pendingAttachments);
   const onProjectFilesAgentEventRef = useRef(projectFiles.onAgentEvent);
   onProjectFilesAgentEventRef.current = projectFiles.onAgentEvent;
 
@@ -95,6 +116,7 @@ export function useWorkspace() {
   messagesRef.current = messages;
   sessionsRef.current = sessions;
   pendingSessionConfigRef.current = pendingSessionConfig;
+  pendingAttachmentsRef.current = pendingAttachments;
 
   function applyBundle(bundle: MessageBundle) {
     const next = messageBundleState(bundle);
@@ -116,6 +138,7 @@ export function useWorkspace() {
 
   useEffect(() => {
     invoke<Project[]>("list_projects").then(setProjects).catch(console.error);
+    loadModels().then(setModels).catch(console.error);
     API_PROVIDERS.forEach(async (provider) => {
       const has = await invoke<boolean>("has_api_key", { provider });
       setApiKeyStatus((prev) => ({ ...prev, [provider]: has }));
@@ -124,6 +147,16 @@ export function useWorkspace() {
       .then(setTavilyEnabled)
       .catch(console.error);
   }, []);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    setPendingSessionConfig((prev) =>
+      resolveSessionConfig(
+        prev,
+        models.map((model) => model.id),
+      ),
+    );
+  }, [models]);
 
   const selectProject = useCallback(async (projectId: string | undefined) => {
     if (projectId && projectId === activeProjectRef.current) return;
@@ -154,6 +187,7 @@ export function useWorkspace() {
     dispatchStream({ type: "reset" });
 
     if (!activeSessionId) {
+      setContextRatio(0);
       setMessages([]);
       setToolCalls([]);
       setActiveClarify(undefined);
@@ -164,13 +198,24 @@ export function useWorkspace() {
       starterStartedRef.current = undefined;
       return;
     }
+
+    let cancelled = false;
+    invoke<{ ratio: number }>("get_session_context_usage", { sessionId: activeSessionId })
+      .then((usage) => {
+        if (!cancelled) setContextRatio(usage.ratio);
+      })
+      .catch(() => {
+        if (!cancelled) setContextRatio(0);
+      });
+
     if (skipNextLoadRef.current) {
       skipNextLoadRef.current = false;
       setMessagesLoaded(true);
-      return;
+      return () => {
+        cancelled = true;
+      };
     }
 
-    let cancelled = false;
     setMessages([]);
     setToolCalls([]);
     setActiveClarify(undefined);
@@ -196,6 +241,14 @@ export function useWorkspace() {
     };
   }, [activeSessionId]);
 
+  useEffect(() => {
+    setPendingAttachments((prev) => {
+      revokePendingAttachments(prev);
+      return [];
+    });
+    setVisionToast(null);
+  }, [activeSessionId, activeProjectId]);
+
   const activeSession = useMemo(
     () => sessions.find((s) => s.id === activeSessionId),
     [sessions, activeSessionId],
@@ -206,6 +259,22 @@ export function useWorkspace() {
   const modelLocked =
     isSessionModelLocked(chatMessageCount) ||
     (Boolean(activeSessionId) && !messagesLoaded);
+
+  const effectiveSessionConfig: SessionConfig = activeSession
+    ? {
+        model: activeSession.model,
+        thinking_enabled: activeSession.thinking_enabled,
+        thinking_effort: activeSession.thinking_effort,
+      }
+    : pendingSessionConfig;
+
+  const modelSummary = useMemo(() => {
+    const model = models.find((m) => m.id === effectiveSessionConfig.model);
+    const name = model?.label ?? effectiveSessionConfig.model;
+    if (!effectiveSessionConfig.thinking_enabled) return `${name} · 思考关闭`;
+    if (model?.supports_effort) return `${name} · ${effectiveSessionConfig.thinking_effort}`;
+    return name;
+  }, [models, effectiveSessionConfig]);
 
   const runStarter = useCallback(async (sessionId: string) => {
     if (!apiKeyStatus.deepseek) return;
@@ -249,6 +318,9 @@ export function useWorkspace() {
     const unlisten = listen<AgentEvent>("agent-event", (event) => {
       const payload = event.payload;
       dispatchStream({ type: "event", event: payload, sessionId: activeSessionRef.current });
+      if (payload.kind === "context_usage" && payload.session_id === activeSessionRef.current) {
+        setContextRatio(payload.ratio);
+      }
       onProjectFilesAgentEventRef.current(payload);
       if (payload.kind === "assistant_step_done") {
         setMessages((prev) =>
@@ -276,6 +348,9 @@ export function useWorkspace() {
       if (payload.kind === "context_compacted" && activeSessionRef.current) {
         const sessionId = activeSessionRef.current;
         if (isStaleSessionResult(payload.session_id, sessionId)) return;
+        invoke<{ ratio: number }>("get_session_context_usage", { sessionId })
+          .then((usage) => setContextRatio(usage.ratio))
+          .catch(console.error);
         invoke<MessageBundle>("list_messages", { sessionId })
           .then((bundle) => applyBundle(bundle))
           .catch(console.error);
@@ -315,6 +390,16 @@ export function useWorkspace() {
   const activeProjectName = useMemo(
     () => projects.find((p) => p.id === activeProjectId)?.name,
     [projects, activeProjectId],
+  );
+
+  const activeProjectRoot = useMemo(
+    () => projects.find((p) => p.id === activeProjectId)?.root_path,
+    [projects, activeProjectId],
+  );
+
+  const supportsVision = useMemo(
+    () => modelSupportsVision(models, effectiveSessionConfig.model),
+    [models, effectiveSessionConfig.model],
   );
 
   const activity = useMemo(() => {
@@ -384,6 +469,16 @@ export function useWorkspace() {
     }
   }
 
+  const clearPendingAttachmentsForModel = useCallback((modelId: string) => {
+    if (modelSupportsVision(models, modelId)) return;
+    if (pendingAttachmentsRef.current.length === 0) return;
+    setPendingAttachments((prev) => {
+      revokePendingAttachments(prev);
+      return [];
+    });
+    setVisionToast("当前模型不支持图片输入，已移除待发送图片");
+  }, [models]);
+
   function showSendBlocker(blocker: SendBlocker) {
     setSendHint(blocker);
     if (blocker.kind === "no_project") {
@@ -392,21 +487,28 @@ export function useWorkspace() {
       return;
     }
     setHighlightApiKeyProvider(blocker.provider);
-    requestAnimationFrame(() => {
-      document.getElementById("sidebar-api-keys")?.scrollIntoView({ block: "nearest" });
-    });
+    setModelSettingsOpen(true);
   }
 
   async function sendMessageContent(content: string) {
     const trimmed = content.trim();
-    if (!trimmed || stream.busy || sendingRef.current) return;
+    const attachments: MessageAttachment[] = pendingAttachments.map(({ path, mime }) => ({
+      path,
+      mime,
+    }));
+    if ((!trimmed && attachments.length === 0) || stream.busy || sendingRef.current) return;
     if (activeClarify) return;
 
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
+    if (attachments.length > 0 && !modelSupportsVision(models, model)) {
+      setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
+      return;
+    }
     const blocker = getSendBlocker({
       activeProjectId: activeProjectRef.current,
       model,
       apiKeyStatus,
+      models,
     });
     if (blocker) {
       showSendBlocker(blocker);
@@ -428,13 +530,32 @@ export function useWorkspace() {
       setFollowupSuggestions([]);
       starterStartedRef.current = undefined;
       dispatchStream({ type: "busy" });
-      setMessages((prev) => [...prev, createOptimisticUserMessage(sessionId, trimmed)]);
+      setMessages((prev) => [
+        ...prev,
+        createOptimisticUserMessage(sessionId, trimmed, attachments),
+      ]);
 
-      await invoke("send_message", { req: { session_id: sessionId, content: trimmed } });
+      await invoke("send_message", {
+        req: { session_id: sessionId, content: trimmed, attachments },
+      });
+      setPendingAttachments((prev) => {
+        revokePendingAttachments(prev);
+        return [];
+      });
     } catch (error) {
       console.error(error);
       const sessionId = activeSessionRef.current;
       if (sessionId) {
+        const bundle = await invoke<MessageBundle>("list_messages", { sessionId }).catch(() => null);
+        if (
+          bundle &&
+          userMessageWasPersisted(bundle.messages, trimmed, attachments)
+        ) {
+          setPendingAttachments((prev) => {
+            revokePendingAttachments(prev);
+            return [];
+          });
+        }
         await reloadMessages(sessionId).catch(console.error);
         dispatchStream({
           type: "event",
@@ -455,6 +576,55 @@ export function useWorkspace() {
   async function sendMessage() {
     await sendMessageContent(input);
   }
+
+  const addPastedImage = useCallback(
+    async (file: File, mime: string) => {
+      if (!modelSupportsVision(models, effectiveSessionConfig.model)) {
+        setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
+        return;
+      }
+      if (!activeProjectRef.current) {
+        showSendBlocker({ kind: "no_project" });
+        return;
+      }
+      if (pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
+        setVisionToast(`单条消息最多 ${MAX_ATTACHMENTS_PER_MESSAGE} 张图片`);
+        return;
+      }
+      try {
+        const data_base64 = await blobToBase64(file);
+        const saved = await invoke<{ path: string; mime: string }>("save_upload", {
+          req: {
+            project_id: activeProjectRef.current,
+            filename: `paste.${extensionForMime(mime)}`,
+            mime,
+            data_base64,
+          },
+        });
+        const previewUrl = URL.createObjectURL(file);
+        setPendingAttachments((prev) => [
+          ...prev,
+          { path: saved.path, mime: saved.mime, previewUrl },
+        ]);
+      } catch (error) {
+        console.error(error);
+        setVisionToast(String(error));
+      }
+    },
+    [effectiveSessionConfig.model, models, pendingAttachments.length],
+  );
+
+  const removePendingAttachment = useCallback((path: string) => {
+    setPendingAttachments((prev) => {
+      const target = prev.find((item) => item.path === path);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((item) => item.path !== path);
+    });
+  }, []);
+
+  const dismissVisionToast = useCallback(() => {
+    setVisionToast(null);
+  }, []);
 
   async function submitClarifyAnswer(payload: { selected: string[]; custom?: string | null }) {
     if (!activeSessionRef.current || !activeClarify) return;
@@ -524,9 +694,19 @@ export function useWorkspace() {
     setTavilyEnabled(has);
   }, []);
 
-  const handlePendingSessionConfigChange = useCallback((patch: Partial<SessionConfig>) => {
-    setPendingSessionConfig((prev) => ({ ...prev, ...patch }));
-  }, []);
+  const handlePendingSessionConfigChange = useCallback(
+    (patch: Partial<SessionConfig>) => {
+      if (patch.model) {
+        clearPendingAttachmentsForModel(patch.model);
+      }
+      setPendingSessionConfig((prev) => {
+        const next = { ...prev, ...patch };
+        writeStoredSessionConfig(next);
+        return next;
+      });
+    },
+    [clearPendingAttachmentsForModel],
+  );
 
   const dismissSendHint = useCallback(() => {
     setSendHint(null);
@@ -538,8 +718,42 @@ export function useWorkspace() {
   }, []);
 
   const handleSessionUpdated = useCallback((session: Session) => {
-    setSessions((prev) => prev.map((item) => (item.id === session.id ? session : item)));
+    setSessions((prev) => {
+      const next = prev.map((item) => (item.id === session.id ? session : item));
+      sessionsRef.current = next;
+      return next;
+    });
   }, []);
+
+  const updateSessionConfig = useCallback(
+    async (patch: Partial<SessionConfig>) => {
+      if (modelLocked) return;
+      if (patch.model) {
+        clearPendingAttachmentsForModel(patch.model);
+      }
+      if (activeSession) {
+        try {
+          const updated = await invoke<Session>("update_session", {
+            req: {
+              session_id: activeSession.id,
+              model: patch.model,
+              thinking_enabled: patch.thinking_enabled,
+              thinking_effort: patch.thinking_effort,
+            },
+          });
+          handleSessionUpdated(updated);
+          const next = sessionConfigFromSession(updated);
+          setPendingSessionConfig(next);
+          writeStoredSessionConfig(next);
+        } catch (error) {
+          console.error(error);
+        }
+        return;
+      }
+      handlePendingSessionConfigChange(patch);
+    },
+    [activeSession, clearPendingAttachmentsForModel, handlePendingSessionConfigChange, handleSessionUpdated, modelLocked],
+  );
 
   const reorderSessions = useCallback((activeId: string, overId: string) => {
     const projectId = activeProjectRef.current;
@@ -606,7 +820,15 @@ export function useWorkspace() {
     pendingSessionConfig,
     input,
     setInput,
+    pendingAttachments,
+    visionToast,
+    supportsVision,
+    activeProjectRoot,
+    addPastedImage,
+    removePendingAttachment,
+    dismissVisionToast,
     stream,
+    contextRatio,
     apiKeyStatus,
     tavilyEnabled,
     initializing,
@@ -617,7 +839,13 @@ export function useWorkspace() {
     sendHint,
     highlightProject,
     highlightApiKeyProvider,
+    modelSettingsOpen,
+    setModelSettingsOpen,
     modelLocked,
+    models,
+    effectiveSessionConfig,
+    modelSummary,
+    updateSessionConfig,
     sessionContextReady,
     activeProjectName,
     activity,

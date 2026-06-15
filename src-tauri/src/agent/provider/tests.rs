@@ -14,6 +14,7 @@ mod provider_tests {
             messages: vec![ChatMessage {
                 role: "user".into(),
                 content: Some(user_text.into()),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,

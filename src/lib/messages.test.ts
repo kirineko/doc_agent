@@ -51,6 +51,19 @@ describe("messages helpers", () => {
     ).toBe(messages);
   });
 
+  it("isVisibleMessage shows user messages with attachments but no text", () => {
+    expect(
+      isVisibleMessage(
+        makeUserMessage({
+          id: "u3",
+          session_id: "s1",
+          content: "",
+          attachments_json: JSON.stringify([{ path: ".uploads/a.png", mime: "image/png" }]),
+        }),
+      ),
+    ).toBe(true);
+  });
+
   it("isVisibleMessage hides tool messages and empty assistants", () => {
     expect(isVisibleMessage(makeUserMessage({ id: "u1", session_id: "s1" }))).toBe(true);
     expect(

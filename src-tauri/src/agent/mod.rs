@@ -2,6 +2,7 @@ pub mod clarify_interaction;
 pub mod compaction;
 pub mod loop_runner;
 pub mod loop_support;
+pub mod model_catalog;
 pub mod provider;
 pub mod session_title;
 pub mod suggest;

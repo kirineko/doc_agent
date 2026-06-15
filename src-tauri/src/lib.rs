@@ -25,6 +25,14 @@ pub fn run() {
                 .app_data_dir()
                 .expect("failed to resolve app data dir");
             let state = AppState::new(data_dir).expect("failed to initialize app state");
+            if let Ok(store) = state.store.lock() {
+                if let Ok(projects) = store.list_projects() {
+                    crate::core::asset_scope::allow_project_roots(
+                        app.handle(),
+                        projects.iter().map(|p| p.root_path.as_str()),
+                    );
+                }
+            }
             app.manage(state);
             Ok(())
         })
@@ -40,6 +48,10 @@ pub fn run() {
             ipc::create_session,
             ipc::update_session,
             ipc::delete_session,
+            ipc::list_models,
+            ipc::read_attachment_preview,
+            ipc::get_session_context_usage,
+            ipc::save_upload,
             ipc::list_messages,
             ipc::send_message,
             ipc::submit_clarify_answer,

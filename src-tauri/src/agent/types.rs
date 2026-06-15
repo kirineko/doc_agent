@@ -1,5 +1,7 @@
+use crate::agent::model_catalog::{ModelCatalog, ProviderKind};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThinkingConfig {
@@ -29,37 +31,64 @@ pub enum ModelId {
     DeepSeekV4Flash,
     DeepSeekV4Pro,
     KimiK26,
+    MimoV25,
+    MimoV25Pro,
+    MimoV25ProUltraspeed,
     Mock,
 }
 
 impl ModelId {
     pub fn provider_key(self) -> &'static str {
-        match self {
-            Self::DeepSeekV4Flash | Self::DeepSeekV4Pro => "deepseek",
-            Self::KimiK26 => "kimi",
-            Self::Mock => "mock",
-        }
+        self.provider_kind().secrets_key()
     }
 
     pub fn api_model(self) -> &'static str {
+        self.info().api_model
+    }
+
+    pub fn supports_effort(self) -> bool {
+        self.info().supports_effort
+    }
+
+    pub fn supports_vision(self) -> bool {
+        self.info().supports_vision
+    }
+
+    pub fn max_context_size(self) -> u32 {
+        self.info().max_context
+    }
+
+    pub fn provider_kind(self) -> ProviderKind {
+        self.info().provider
+    }
+
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::DeepSeekV4Flash => "deepseek-v4-flash",
             Self::DeepSeekV4Pro => "deepseek-v4-pro",
             Self::KimiK26 => "kimi-k2.6",
+            Self::MimoV25 => "mimo-v2.5",
+            Self::MimoV25Pro => "mimo-v2.5-pro",
+            Self::MimoV25ProUltraspeed => "mimo-v2.5-pro-ultraspeed",
             Self::Mock => "mock",
         }
     }
 
-    pub fn supports_effort(self) -> bool {
-        matches!(self, Self::DeepSeekV4Flash | Self::DeepSeekV4Pro)
-    }
-
-    pub fn max_context_size(self) -> u32 {
-        match self {
-            Self::DeepSeekV4Flash | Self::DeepSeekV4Pro => 1_000_000,
-            Self::KimiK26 => 256_000,
-            Self::Mock => 100_000,
+    fn info(self) -> &'static crate::agent::model_catalog::ModelInfo {
+        if self == Self::Mock {
+            static MOCK: crate::agent::model_catalog::ModelInfo =
+                crate::agent::model_catalog::ModelInfo {
+                    id: "mock",
+                    label: "Mock",
+                    provider: ProviderKind::Mock,
+                    api_model: "mock",
+                    supports_vision: false,
+                    supports_effort: false,
+                    max_context: 100_000,
+                };
+            return &MOCK;
         }
+        ModelCatalog::find(self.as_str()).expect("catalog entry for model id")
     }
 }
 
@@ -78,6 +107,9 @@ impl std::str::FromStr for ModelId {
             "deepseek-v4-flash" => Ok(Self::DeepSeekV4Flash),
             "deepseek-v4-pro" => Ok(Self::DeepSeekV4Pro),
             "kimi-k2.6" => Ok(Self::KimiK26),
+            "mimo-v2.5" => Ok(Self::MimoV25),
+            "mimo-v2.5-pro" => Ok(Self::MimoV25Pro),
+            "mimo-v2.5-pro-ultraspeed" => Ok(Self::MimoV25ProUltraspeed),
             "mock" => Ok(Self::Mock),
             other => Err(format!("unknown model: {other}")),
         }
@@ -85,9 +117,18 @@ impl std::str::FromStr for ModelId {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageAttachment {
+    pub path: String,
+    pub mime: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
+    #[serde(skip)]
+    pub image_urls: Vec<Arc<str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -258,4 +299,93 @@ pub struct AssistantTurn {
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
     pub usage: Option<TokenUsage>,
+}
+
+/// API-only placeholder when the user sends images without text.
+/// Persisted message content stays empty; injected only at LLM request serialization.
+pub const IMAGE_ONLY_USER_API_TEXT: &str = "请描述用户发送的图片。";
+
+impl ChatMessage {
+    pub fn text_content(&self) -> Option<&str> {
+        self.content.as_deref()
+    }
+
+    fn user_multimodal_api_text(&self) -> &str {
+        self.content
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .unwrap_or(IMAGE_ONLY_USER_API_TEXT)
+    }
+}
+
+impl Serialize for ChatMessage {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ChatMessage", 6)?;
+        state.serialize_field("role", &self.role)?;
+        if self.role == "user" && !self.image_urls.is_empty() {
+            let mut parts = Vec::new();
+            parts.push(json!({
+                "type": "text",
+                "text": self.user_multimodal_api_text(),
+            }));
+            for url in &self.image_urls {
+                parts.push(json!({ "type": "image_url", "image_url": { "url": url } }));
+            }
+            state.serialize_field("content", &parts)?;
+        } else if let Some(content) = &self.content {
+            state.serialize_field("content", content)?;
+        } else {
+            state.serialize_field("content", &Value::Null)?;
+        }
+        if let Some(reasoning) = &self.reasoning_content {
+            state.serialize_field("reasoning_content", reasoning)?;
+        }
+        if let Some(tool_calls) = &self.tool_calls {
+            state.serialize_field("tool_calls", tool_calls)?;
+        }
+        if let Some(tool_call_id) = &self.tool_call_id {
+            state.serialize_field("tool_call_id", tool_call_id)?;
+        }
+        state.end()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChatMessage;
+    use super::IMAGE_ONLY_USER_API_TEXT;
+
+    fn image_user_message(content: Option<&str>) -> ChatMessage {
+        ChatMessage {
+            role: "user".into(),
+            content: content.map(str::to_string),
+            image_urls: vec!["data:image/png;base64,abc".into()],
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn image_only_user_message_serializes_with_placeholder_text() {
+        let msg = image_user_message(Some(""));
+        let value = serde_json::to_value(&msg).expect("serialize");
+        let parts = value["content"].as_array().expect("content array");
+        assert_eq!(parts[0]["type"], "text");
+        assert_eq!(parts[0]["text"], IMAGE_ONLY_USER_API_TEXT);
+        assert_eq!(parts[1]["type"], "image_url");
+    }
+
+    #[test]
+    fn image_user_message_with_text_keeps_user_text() {
+        let msg = image_user_message(Some("  看图  "));
+        let value = serde_json::to_value(&msg).expect("serialize");
+        let parts = value["content"].as_array().expect("content array");
+        assert_eq!(parts[0]["text"], "看图");
+    }
 }

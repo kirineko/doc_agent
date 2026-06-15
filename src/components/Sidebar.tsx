@@ -3,8 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { pathBasename } from "../lib/pathUtils";
 import { type SessionConfig } from "../lib/sessionConfig";
 import { Project, Session } from "../types";
-import { ApiKeySection } from "./ApiKeySection";
-import { ModelConfigSection } from "./ModelConfigSection";
 import { SessionList } from "./SessionList";
 import { WebSearchSection } from "./WebSearchSection";
 
@@ -29,6 +27,8 @@ interface SidebarProps {
   onSessionUpdated: (session: Session) => void;
   onApiKeyStatusChange: (provider: string, has: boolean) => void;
   onTavilyStatusChange: (has: boolean) => void;
+  onOpenModelSettings: () => void;
+  modelSummary: string;
 }
 
 export function Sidebar({
@@ -36,11 +36,8 @@ export function Sidebar({
   sessions,
   activeProjectId,
   activeSessionId,
-  apiKeyStatus,
-  pendingSessionConfig,
   modelLocked,
   highlightProject,
-  highlightApiKeyProvider,
   tavilyEnabled,
   onProjectsChange,
   onSelectProject,
@@ -48,20 +45,10 @@ export function Sidebar({
   onCreateSession,
   onDeleteSession,
   onReorderSessions,
-  onPendingSessionConfigChange,
-  onSessionUpdated,
-  onApiKeyStatusChange,
   onTavilyStatusChange,
+  onOpenModelSettings,
+  modelSummary,
 }: SidebarProps) {
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const effectiveConfig: SessionConfig = activeSession
-    ? {
-        model: activeSession.model,
-        thinking_enabled: activeSession.thinking_enabled,
-        thinking_effort: activeSession.thinking_effort,
-      }
-    : pendingSessionConfig;
-
   async function pickProject() {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
@@ -71,27 +58,6 @@ export function Sidebar({
     });
     onProjectsChange([project, ...projects]);
     await onSelectProject(project.id);
-  }
-
-  async function updateSessionConfig(patch: Partial<SessionConfig>) {
-    if (modelLocked) return;
-    if (activeSession) {
-      try {
-        const updated = await invoke<Session>("update_session", {
-          req: {
-            session_id: activeSession.id,
-            model: patch.model,
-            thinking_enabled: patch.thinking_enabled,
-            thinking_effort: patch.thinking_effort,
-          },
-        });
-        onSessionUpdated(updated);
-      } catch (error) {
-        console.error(error);
-      }
-      return;
-    }
-    onPendingSessionConfigChange(patch);
   }
 
   async function hideProject(projectId: string) {
@@ -169,20 +135,23 @@ export function Sidebar({
       </div>
 
       {activeProjectId && (
-        <ModelConfigSection
-          config={effectiveConfig}
-          locked={modelLocked}
-          onChange={(patch) => void updateSessionConfig(patch)}
-        />
+        <div className="shrink-0 space-y-1 border-t border-border pt-2.5">
+          <div className="text-[11px] uppercase tracking-[0.16em] text-fg-secondary">模型</div>
+          <button
+            type="button"
+            className="config-surface w-full rounded-md px-2.5 py-2 text-left text-xs text-fg hover:border-border-hover"
+            onClick={onOpenModelSettings}
+          >
+            <div>{modelSummary}</div>
+            <div className="mt-0.5 text-[10px] text-fg-muted">
+              {modelLocked ? "已锁定 · 点击查看密钥" : "点击配置模型与密钥"}
+            </div>
+          </button>
+        </div>
       )}
 
       <div className="mt-auto shrink-0 space-y-1.5">
         <WebSearchSection enabled={tavilyEnabled} onStatusChange={onTavilyStatusChange} />
-        <ApiKeySection
-          apiKeyStatus={apiKeyStatus}
-          highlightProvider={highlightApiKeyProvider}
-          onApiKeyStatusChange={onApiKeyStatusChange}
-        />
       </div>
     </aside>
   );

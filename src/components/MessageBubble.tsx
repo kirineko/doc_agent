@@ -1,4 +1,6 @@
 import { MarkdownView } from "./MarkdownView";
+import { MessageAttachments } from "./MessageAttachments";
+import type { MessageAttachment } from "../types";
 
 interface MessageBubbleProps {
   role: "user" | "assistant";
@@ -6,6 +8,9 @@ interface MessageBubbleProps {
   reasoning?: string | null;
   variant: "persisted" | "streaming";
   pending?: boolean;
+  attachments?: MessageAttachment[];
+  projectId?: string;
+  onPreviewImage?: (src: string) => void;
 }
 
 export function MessageBubble({
@@ -14,6 +19,9 @@ export function MessageBubble({
   reasoning,
   variant,
   pending,
+  attachments = [],
+  projectId,
+  onPreviewImage,
 }: MessageBubbleProps) {
   const isUser = role === "user";
   const reasoningLabel = variant === "streaming" ? "思考中…" : "思考过程";
@@ -35,6 +43,13 @@ export function MessageBubble({
           <summary className="cursor-pointer text-[11px]">{reasoningLabel}</summary>
           <div className="reasoning-body mt-2 whitespace-pre-wrap text-sm">{reasoning}</div>
         </details>
+      )}
+      {isUser && attachments.length > 0 && (
+        <MessageAttachments
+          attachments={attachments}
+          projectId={projectId}
+          onPreview={onPreviewImage}
+        />
       )}
       {content && <MarkdownView content={content} />}
     </div>

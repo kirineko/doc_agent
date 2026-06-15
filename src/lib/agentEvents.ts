@@ -6,7 +6,6 @@ export interface AgentStreamState {
   streamingContent: string;
   liveTools: LiveToolCall[];
   busy: boolean;
-  contextRatio?: number;
   compactionNotice?: string | null;
 }
 
@@ -15,7 +14,6 @@ export const initialAgentStreamState: AgentStreamState = {
   streamingContent: "",
   liveTools: [],
   busy: false,
-  contextRatio: undefined,
   compactionNotice: null,
 };
 
@@ -116,10 +114,7 @@ export function applyAgentEvent(
     case "assistant_step_done":
       return clearStreamingBuffers(state);
     case "context_usage":
-      return {
-        ...state,
-        contextRatio: event.ratio,
-      };
+      return state;
     case "context_compacted":
       return {
         ...state,

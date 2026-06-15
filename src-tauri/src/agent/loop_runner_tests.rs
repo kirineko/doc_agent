@@ -14,6 +14,7 @@ fn seed_bulky_history(store: &Store, session_id: &str, pairs: usize) {
                 Some(&format!("old user {index} {}", "a".repeat(8_000))),
                 None,
                 None,
+                None,
             )
             .unwrap();
         store
@@ -21,6 +22,7 @@ fn seed_bulky_history(store: &Store, session_id: &str, pairs: usize) {
                 session_id,
                 "assistant",
                 Some(&format!("old assistant {index} {}", "b".repeat(8_000))),
+                None,
                 None,
                 None,
             )
@@ -48,6 +50,7 @@ fn assistant_step_done_event_serializes() {
             seq: 1,
             created_at: "2026-01-01".into(),
             archived: false,
+            attachments_json: None,
         },
     };
     let value = serde_json::to_value(&event).unwrap();
@@ -72,6 +75,7 @@ fn reasoning_content_is_persisted_with_assistant() {
             Some("answer"),
             Some("thought"),
             None,
+            None,
         )
         .unwrap();
     let messages = store.list_messages(&session.id).unwrap();
@@ -80,8 +84,15 @@ fn reasoning_content_is_persisted_with_assistant() {
 
 #[test]
 fn system_prompt_includes_clarify_trigger() {
-    let messages =
-        crate::agent::loop_support::build_working_messages(&[], &[], Some("帮我做一份 PPT"), false);
+    let messages = crate::agent::loop_support::build_working_messages(
+        &[],
+        &[],
+        Some("帮我做一份 PPT"),
+        &[],
+        false,
+        None,
+    )
+    .unwrap();
     let system = messages[0].content.as_ref().unwrap();
     assert!(system.contains("skill_read clarify"));
     assert!(system.contains("clarify_ask"));
@@ -117,6 +128,7 @@ fn mock_clarify_pause_submit_and_resume() {
             state.clone(),
             session_id.clone(),
             "请澄清需求".into(),
+            vec![],
         )
         .await
         .unwrap();
@@ -133,6 +145,7 @@ fn mock_clarify_pause_submit_and_resume() {
             state.clone(),
             session_id.clone(),
             "新消息".into(),
+            vec![],
         )
         .await
         .unwrap_err();
@@ -216,6 +229,7 @@ fn mock_mixed_tools_run_before_clarify_pause() {
             state.clone(),
             session_id.clone(),
             "列出目录并澄清需求".into(),
+            vec![],
         )
         .await
         .unwrap();
@@ -293,6 +307,7 @@ fn mock_turn_compacts_near_context_limit_before_llm() {
             state.clone(),
             session_id.clone(),
             "继续写文档".into(),
+            vec![],
         )
         .await
         .unwrap();

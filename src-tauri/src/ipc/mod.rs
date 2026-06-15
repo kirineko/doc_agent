@@ -1,5 +1,12 @@
+use crate::agent::model_catalog::ModelCatalog;
 use crate::agent::suggest;
 use crate::agent::{clarify_interaction, loop_runner};
+use crate::agent::types::MessageAttachment;
+use crate::agent::provider::openai_compat::{
+    encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path,
+    model_from_str, validate_attachments, MAX_ATTACHMENT_BYTES,
+};
+use base64::Engine;
 use crate::core::project_files::{
     list_project_dir, list_project_files, ProjectDirListing, ProjectFileList,
 };
@@ -38,9 +45,17 @@ pub struct UpdateSessionRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct MessageAttachmentInput {
+    pub path: String,
+    pub mime: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SendMessageRequest {
     pub session_id: String,
     pub content: String,
+    #[serde(default)]
+    pub attachments: Vec<MessageAttachmentInput>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,15 +160,18 @@ pub async fn generate_suggestions(
 
 #[tauri::command]
 pub fn create_project(
+    app: AppHandle,
     state: State<AppState>,
     req: CreateProjectRequest,
 ) -> Result<Project, String> {
-    state
+    let project = state
         .store
         .lock()
         .map_err(|e| e.to_string())?
         .create_project(&req.name, &req.root_path)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    crate::core::asset_scope::allow_project_root(&app, &project.root_path);
+    Ok(project)
 }
 
 #[tauri::command]
@@ -237,6 +255,121 @@ pub fn list_messages(state: State<AppState>, session_id: String) -> Result<Messa
     })
 }
 
+#[derive(Debug, Deserialize)]
+pub struct SaveUploadRequest {
+    pub project_id: String,
+    pub filename: String,
+    pub mime: String,
+    pub data_base64: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SaveUploadResponse {
+    pub path: String,
+    pub mime: String,
+}
+
+#[tauri::command]
+pub fn list_models() -> Vec<crate::agent::model_catalog::ModelInfo> {
+    ModelCatalog::list_public().cloned().collect()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ReadAttachmentPreviewRequest {
+    pub project_id: String,
+    pub path: String,
+    pub mime: String,
+}
+
+#[tauri::command]
+pub fn read_attachment_preview(
+    state: State<AppState>,
+    req: ReadAttachmentPreviewRequest,
+) -> Result<String, String> {
+    if !is_upload_attachment_path(&req.path) {
+        return Err("attachment path must be under .uploads/".into());
+    }
+    let attachment = MessageAttachment {
+        path: req.path,
+        mime: req.mime,
+    };
+    validate_attachments(std::slice::from_ref(&attachment)).map_err(|e| e.to_string())?;
+    let project = project_by_id(&state, &req.project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    encode_attachment_data_url(&sandbox, &attachment)
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionContextUsage {
+    pub used_tokens: u32,
+    pub max_tokens: u32,
+    pub ratio: f64,
+}
+
+#[tauri::command]
+pub fn get_session_context_usage(
+    state: State<AppState>,
+    session_id: String,
+) -> Result<SessionContextUsage, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let session = store
+        .get_session(&session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "session not found".to_string())?;
+    let used = store
+        .get_session_token_count(&session_id)
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0);
+    let max = model_from_str(&session.model).max_context_size();
+    let ratio = if max == 0 {
+        0.0
+    } else {
+        used as f64 / max as f64
+    };
+    Ok(SessionContextUsage {
+        used_tokens: used,
+        max_tokens: max,
+        ratio,
+    })
+}
+
+#[tauri::command]
+pub fn save_upload(state: State<AppState>, req: SaveUploadRequest) -> Result<SaveUploadResponse, String> {
+    if !is_allowed_image_mime(&req.mime) {
+        return Err(format!("unsupported image mime: {}", req.mime));
+    }
+    let project = project_by_id(&state, &req.project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let uploads_dir = sandbox.resolve_for_write(".uploads").map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&uploads_dir).map_err(|e| e.to_string())?;
+
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(req.data_base64.as_bytes())
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    if bytes.len() as u64 > MAX_ATTACHMENT_BYTES {
+        return Err(format!(
+            "attachment exceeds {}MB limit",
+            MAX_ATTACHMENT_BYTES / 1024 / 1024
+        ));
+    }
+
+    let ext = std::path::Path::new(&req.filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("png");
+    let stored_name = format!("{}.{}", uuid::Uuid::new_v4(), ext);
+    let relative_path = format!(".uploads/{stored_name}");
+    let target = sandbox
+        .resolve_for_write(&relative_path)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&target, bytes).map_err(|e| e.to_string())?;
+
+    Ok(SaveUploadResponse {
+        path: relative_path,
+        mime: req.mime,
+    })
+}
+
 #[tauri::command]
 pub async fn send_message(
     app: AppHandle,
@@ -248,7 +381,15 @@ pub async fn send_message(
         secrets: state.secrets.clone(),
         tools: state.tools.clone(),
     };
-    loop_runner::run_turn(app, shared, req.session_id, req.content).await
+    let attachments: Vec<MessageAttachment> = req
+        .attachments
+        .into_iter()
+        .map(|item| MessageAttachment {
+            path: item.path,
+            mime: item.mime,
+        })
+        .collect();
+    loop_runner::run_turn(app, shared, req.session_id, req.content, attachments).await
 }
 
 #[tauri::command]

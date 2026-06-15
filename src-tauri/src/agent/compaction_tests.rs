@@ -116,7 +116,7 @@ fn compacted_token_estimate_includes_summary_prefix() {
 #[test]
 fn working_messages_after_compaction_include_system_tokens() {
     let history = vec![msg("m1", "user", "recent")];
-    let working = crate::agent::loop_support::build_working_messages(&history, &[], None, false);
+    let working = crate::agent::loop_support::build_working_messages(&history, &[], None, &[], false, None).unwrap();
     let compact_only = super::estimate_compacted_tokens(
         &super::build_summary_message_content("summary"),
         &[],
@@ -145,6 +145,7 @@ fn msg(id: &str, role: &str, content: &str) -> Message {
         seq: 0,
         created_at: "now".into(),
         archived: false,
+        attachments_json: None,
     }
 }
 

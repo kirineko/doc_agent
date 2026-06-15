@@ -1,4 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  readClipboardImageFile,
+  type PendingAttachment,
+} from "../lib/attachments";
 import { fuzzyMatch } from "../lib/fuzzy";
 import { applyMention, deleteMentionBeforeCursor, detectMention } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
@@ -7,7 +11,9 @@ import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { InitCapsule, InitLoadingCapsule } from "./InitCapsule";
+import { ImagePreviewOverlay } from "./ImagePreviewOverlay";
 import { MessageList } from "./MessageList";
+import { PendingAttachmentChips } from "./PendingAttachmentChips";
 import { SendHintBanner } from "./SendHintBanner";
 import { SuggestionCards } from "./SuggestionCards";
 import type { SendBlocker } from "../lib/sendReadiness";
@@ -30,8 +36,14 @@ interface ChatPanelProps {
   contextRatio?: number;
   compactionNotice?: string | null;
   sendHint?: SendBlocker | null;
+  pendingAttachments: PendingAttachment[];
+  visionToast?: string | null;
+  projectId?: string;
   onInputChange: (value: string) => void;
   onSend: () => void;
+  onPasteImage: (file: File, mime: string) => void | Promise<void>;
+  onRemoveAttachment: (path: string) => void;
+  onDismissVisionToast?: () => void;
   onSubmitClarify?: (payload: { selected: string[]; custom?: string | null }) => void;
   onInitStarter?: () => void;
   onDismissSendHint?: () => void;
@@ -56,8 +68,14 @@ export function ChatPanel({
   contextRatio,
   compactionNotice,
   sendHint,
+  pendingAttachments,
+  visionToast,
+  projectId,
   onInputChange,
   onSend,
+  onPasteImage,
+  onRemoveAttachment,
+  onDismissVisionToast,
   onSubmitClarify,
   onInitStarter,
   onDismissSendHint,
@@ -69,11 +87,13 @@ export function ChatPanel({
   const stickToBottomRef = useRef(true);
   const [mentionIndex, setMentionIndex] = useState(0);
   const [cursor, setCursor] = useState(0);
+  const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
 
   const visibleMessages = useMemo(() => messages.filter(isVisibleMessage), [messages]);
   const lastMessageId = visibleMessages.at(-1)?.id;
   const hasActiveClarify = Boolean(activeClarify);
   const inputDisabled = busy || initializing || hasActiveClarify;
+  const canSend = Boolean(input.trim() || pendingAttachments.length > 0);
   const mention = detectMention(input, cursor);
   const mentionMatches = useMemo(() => {
     if (!mention || filePaths.length === 0) return [];
@@ -122,11 +142,28 @@ export function ChatPanel({
     busy,
     initializing,
     suggestionItems.length,
+    pendingAttachments.length,
   ]);
 
   useEffect(() => {
     setMentionIndex(0);
   }, [mention?.query]);
+
+  useEffect(() => {
+    if (!compactionNotice) return;
+    const timer = window.setTimeout(() => {
+      onDismissCompactionNotice?.();
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [compactionNotice, onDismissCompactionNotice]);
+
+  useEffect(() => {
+    if (!visionToast) return;
+    const timer = window.setTimeout(() => {
+      onDismissVisionToast?.();
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [visionToast, onDismissVisionToast]);
 
   function focusTextareaAt(pos: number) {
     requestAnimationFrame(() => {
@@ -149,19 +186,18 @@ export function ChatPanel({
     focusTextareaAt(text.length);
   }
 
-  useEffect(() => {
-    if (!compactionNotice) return;
-    const timer = window.setTimeout(() => {
-      onDismissCompactionNotice?.();
-    }, 5000);
-    return () => window.clearTimeout(timer);
-  }, [compactionNotice, onDismissCompactionNotice]);
+  async function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const image = readClipboardImageFile(event.clipboardData);
+    if (!image) return;
+    event.preventDefault();
+    await onPasteImage(image.file, image.mime);
+  }
 
   return (
     <section className="panel flex min-w-0 flex-1 flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-xs font-medium text-fg-heading">会话</div>
-        <ContextUsageIndicator ratio={contextRatio} />
+        <ContextUsageIndicator ratio={contextRatio ?? 0} hidden={!projectId} />
       </div>
       <div
         ref={scrollRef}
@@ -175,6 +211,8 @@ export function ChatPanel({
           streamingContent={streamingContent}
           activity={activity}
           busy={busy}
+          projectId={projectId}
+          onPreviewImage={setPreviewImageSrc}
         />
 
         <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
@@ -196,6 +234,21 @@ export function ChatPanel({
           <SendHintBanner blocker={sendHint} onDismiss={onDismissSendHint} />
         )}
 
+        {visionToast && (
+          <div className="flex items-start justify-between gap-2 rounded-lg border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+            <span>{visionToast}</span>
+            {onDismissVisionToast && (
+              <button
+                type="button"
+                className="shrink-0 text-fg-muted hover:text-fg"
+                onClick={onDismissVisionToast}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+
         {compactionNotice && (
           <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-fg-secondary">
             {compactionNotice}
@@ -211,6 +264,13 @@ export function ChatPanel({
             )}
           </div>
         )}
+
+        <PendingAttachmentChips
+          items={pendingAttachments}
+          disabled={inputDisabled}
+          onRemove={onRemoveAttachment}
+          onPreview={setPreviewImageSrc}
+        />
 
         <div className="relative flex gap-2">
           {mention && filePaths.length > 0 && (
@@ -230,10 +290,11 @@ export function ChatPanel({
                   ? "请先回答上方澄清问题"
                   : busy
                   ? "等待回复中…"
-                  : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件"
+                  : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件，可粘贴图片"
             }
             value={input}
             disabled={inputDisabled}
+            onPaste={(e) => void handlePaste(e)}
             onChange={(e) => {
               onInputChange(e.target.value);
               setCursor(e.target.selectionStart);
@@ -268,7 +329,7 @@ export function ChatPanel({
                   return;
                 }
               }
-              if (e.key === "Enter" && !e.shiftKey && !inputDisabled && input.trim()) {
+              if (e.key === "Enter" && !e.shiftKey && !inputDisabled && canSend) {
                 e.preventDefault();
                 onSend();
               }
@@ -276,13 +337,14 @@ export function ChatPanel({
           />
           <button
             className="btn-primary min-w-16 rounded-lg px-4 py-2 text-sm font-medium"
-            disabled={inputDisabled || !input.trim()}
+            disabled={inputDisabled || !canSend}
             onClick={onSend}
           >
             {busy ? "发送中" : "发送"}
           </button>
         </div>
       </div>
+      <ImagePreviewOverlay src={previewImageSrc} onClose={() => setPreviewImageSrc(null)} />
     </section>
   );
 }

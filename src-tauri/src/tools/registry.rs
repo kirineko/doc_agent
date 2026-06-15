@@ -1,3 +1,4 @@
+use crate::agent::types::ModelId;
 use crate::core::sandbox::Sandbox;
 use crate::core::secrets::Secrets;
 use serde_json::Value;
@@ -99,14 +100,16 @@ impl ToolRegistry {
                 crate::tools::html_export::tool(),
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
+                crate::tools::image_read::tool(),
             ],
         }
     }
 
-    pub fn definitions(&self, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
+    pub fn tools_for_model(&self, model: ModelId, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
         self.tools
             .iter()
             .filter(|t| include_web || !is_web_tool(t.name))
+            .filter(|t| t.name != "image_read" || model.supports_vision())
             .map(|t| crate::agent::types::ToolDefinition {
                 name: t.name.to_string(),
                 description: t.description.to_string(),
@@ -120,10 +123,15 @@ impl ToolRegistry {
             .collect()
     }
 
+    pub fn definitions(&self, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
+        self.tools_for_model(ModelId::KimiK26, include_web)
+    }
+
     pub async fn execute<R: Runtime>(
         &self,
         ctx: &ToolContext<'_>,
         app: &AppHandle<R>,
+        model_id: ModelId,
         name: &str,
         args: Value,
     ) -> Result<Value, ToolError> {
@@ -131,6 +139,7 @@ impl ToolRegistry {
             "web_search" => crate::tools::web::search_handler(ctx, args).await,
             "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
             "html_to_pdf" => crate::tools::html_export::handler(ctx, app, args).await,
+            "image_read" => crate::tools::image_read::handler(ctx, args, model_id).await,
             _ => {
                 let tool = self
                     .tools

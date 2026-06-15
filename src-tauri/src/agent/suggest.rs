@@ -67,6 +67,7 @@ pub async fn generate_suggestions(
                      不要输出除 JSON 对象以外的任何文字。"
                         .into(),
                 ),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -74,6 +75,7 @@ pub async fn generate_suggestions(
             ChatMessage {
                 role: "user".into(),
                 content: Some(user_prompt),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,

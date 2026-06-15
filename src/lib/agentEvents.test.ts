@@ -257,14 +257,13 @@ describe("applyAgentEvent", () => {
       liveTools: [
         { id: "call_1", name: "fs_list", args: {}, status: "done" },
       ],
-      contextRatio: 0.42,
       compactionNotice: "notice",
     };
     expect(resetAgentStream()).toEqual(initialAgentStreamState);
     expect(resetAgentStream()).not.toEqual(dirty);
   });
 
-  it("updates context ratio from context_usage", () => {
+  it("ignores context_usage in stream state", () => {
     const next = applyAgentEvent(
       initialAgentStreamState,
       {
@@ -276,7 +275,7 @@ describe("applyAgentEvent", () => {
       },
       sessionId,
     );
-    expect(next.contextRatio).toBe(0.42);
+    expect(next).toEqual(initialAgentStreamState);
   });
 
   it("shows compaction notice from context_compacted", () => {

@@ -3,6 +3,7 @@ use crate::agent::provider::provider_for;
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort,
 };
+use crate::core::sandbox::Sandbox;
 use crate::core::store::{Message, ToolCallRecord};
 use crate::state::AppState;
 use tauri::{AppHandle, Emitter, Runtime};
@@ -67,7 +68,8 @@ pub fn estimate_store_message_tokens(message: &Message, tool_calls: &[ToolCallRe
 }
 
 pub fn estimate_store_messages_tokens(messages: &[Message], tool_calls: &[ToolCallRecord]) -> u32 {
-    let chat = crate::agent::provider::openai_compat::messages_from_store(messages, tool_calls);
+    let chat =
+        crate::agent::provider::openai_compat::messages_from_store_text(messages, tool_calls);
     estimate_chat_messages_tokens(&chat)
 }
 
@@ -181,7 +183,8 @@ fn expand_preserve_start_for_tool_group(
 }
 
 fn build_compact_input(to_compact: &[Message], tool_calls: &[ToolCallRecord]) -> String {
-    let chat = crate::agent::provider::openai_compat::messages_from_store(to_compact, tool_calls);
+    let chat =
+        crate::agent::provider::openai_compat::messages_from_store_text(to_compact, tool_calls);
     let mut body = String::new();
     for (index, message) in chat.iter().enumerate() {
         body.push_str(&format!(
@@ -376,19 +379,33 @@ fn rebuild_working_messages(
     session_id: &str,
     web_enabled: bool,
 ) -> Result<Vec<ChatMessage>, String> {
-    let store = state.store.lock().map_err(|e| e.to_string())?;
-    let history = store
-        .list_active_messages(session_id)
-        .map_err(|e| e.to_string())?;
-    let tool_call_history = store
-        .list_tool_calls_for_session(session_id)
-        .map_err(|e| e.to_string())?;
-    Ok(build_working_messages(
+    let (history, tool_call_history, project_root) = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        let session = store
+            .get_session(session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
+        let project = store
+            .get_project(&session.project_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "project not found".to_string())?;
+        let history = store
+            .list_active_messages(session_id)
+            .map_err(|e| e.to_string())?;
+        let tool_call_history = store
+            .list_tool_calls_for_session(session_id)
+            .map_err(|e| e.to_string())?;
+        (history, tool_call_history, project.root_path)
+    };
+    let sandbox = Sandbox::new(&project_root).map_err(|e| e.to_string())?;
+    build_working_messages(
         &history,
         &tool_call_history,
         None,
+        &[],
         web_enabled,
-    ))
+        Some(&sandbox),
+    )
 }
 
 fn fallback_preserve_start(messages: &[Message], tool_calls: &[ToolCallRecord]) -> usize {
@@ -427,6 +444,7 @@ async fn run_compaction_llm(
                     "You are a helpful assistant that compacts conversation context. Do not call tools."
                         .into(),
                 ),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -434,6 +452,7 @@ async fn run_compaction_llm(
             ChatMessage {
                 role: "user".into(),
                 content: Some(compact_input.to_string()),
+                image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,

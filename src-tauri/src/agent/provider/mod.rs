@@ -1,5 +1,6 @@
 pub mod deepseek;
 pub mod kimi;
+pub mod mimo;
 pub mod mock;
 pub mod openai_compat;
 pub mod sse;
@@ -37,6 +38,9 @@ pub fn provider_for(model: ModelId) -> Box<dyn LlmProvider> {
             Box::new(deepseek::DeepSeekProvider::default())
         }
         ModelId::KimiK26 => Box::new(kimi::KimiProvider::default()),
+        ModelId::MimoV25 | ModelId::MimoV25Pro | ModelId::MimoV25ProUltraspeed => {
+            Box::new(mimo::MimoProvider::default())
+        }
         ModelId::Mock => Box::new(mock::MockProvider),
     }
 }

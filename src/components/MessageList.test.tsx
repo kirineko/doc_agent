@@ -1,7 +1,16 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeAssistantMessage, makeUserMessage } from "../test/fixtures/messages";
 import { MessageList } from "./MessageList";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(async (command: string) => {
+    if (command === "read_attachment_preview") {
+      return "data:image/png;base64,abc";
+    }
+    throw new Error(`unexpected invoke: ${command}`);
+  }),
+}));
 
 const userMessage = makeUserMessage({ id: "u1", session_id: "s1", content: "hello" });
 
@@ -41,6 +50,27 @@ describe("MessageList smoke scenarios", () => {
     expect(screen.getByText("思考过程")).toBeInTheDocument();
     expect(screen.queryByText("思考中…")).not.toBeInTheDocument();
     expect(screen.getByText("final answer")).toBeInTheDocument();
+  });
+
+  it("renders user message attachments when project root is provided", async () => {
+    const withImage = makeUserMessage({
+      id: "u2",
+      session_id: "s1",
+      content: "看图",
+      attachments_json: JSON.stringify([
+        { path: ".uploads/a.png", mime: "image/png" },
+      ]),
+    });
+    render(
+      <MessageList
+        messages={[withImage]}
+        streamingReasoning=""
+        streamingContent=""
+        busy={false}
+        projectId="project-1"
+      />,
+    );
+    expect(await screen.findByRole("button", { name: /消息图片附件/ })).toBeInTheDocument();
   });
 
   it("renders answered clarify cards from tool call records", () => {

@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { parseMessageAttachments } from "../lib/attachments";
 import { parseAnsweredClarifyCall } from "../lib/clarifyBrief";
 import { Message, ToolCallRecord } from "../types";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
@@ -11,6 +12,8 @@ interface MessageListProps {
   streamingContent: string;
   activity?: string;
   busy: boolean;
+  projectId?: string;
+  onPreviewImage?: (src: string) => void;
 }
 
 export function MessageList({
@@ -20,6 +23,8 @@ export function MessageList({
   streamingContent,
   activity,
   busy,
+  projectId,
+  onPreviewImage,
 }: MessageListProps) {
   const showStreaming = Boolean(streamingReasoning || streamingContent);
 
@@ -46,6 +51,11 @@ export function MessageList({
               reasoning={message.role === "assistant" ? message.reasoning_content : undefined}
               variant="persisted"
               pending={message.role === "user" && message.id.startsWith("pending-")}
+              attachments={
+                message.role === "user" ? parseMessageAttachments(message) : undefined
+              }
+              projectId={projectId}
+              onPreviewImage={onPreviewImage}
             />
             {clarifyCalls.map(({ callId, question, answer }) => (
               <div key={callId} className="ml-4">
