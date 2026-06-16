@@ -5,13 +5,14 @@ import {
 } from "../lib/attachments";
 import type { MentionFileEntry } from "../lib/projectFiles";
 import { orderMentionFileMatchesForDisplay, searchMentionFiles } from "../lib/mentionFiles";
-import { applyMention, deleteMentionBeforeCursor, detectMention, expandMentionDirectory } from "../lib/mention";
+import { applyMention, detectMention, expandMentionDirectory } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
-import { applySlash, detectSlash } from "../lib/slash";
-import { deletePlaceholderAtCursor, deletePlaceholderBeforeCursor } from "../lib/promptPlaceholder";
+import { detectSlash, insertSlashPrompt } from "../lib/slash";
+import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
+import { ChatInputToolbar } from "./ChatInputToolbar";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { FileMentionPopup } from "./FileMentionPopup";
@@ -21,8 +22,10 @@ import { MessageList } from "./MessageList";
 import { PendingAttachmentChips } from "./PendingAttachmentChips";
 import { SendHintBanner } from "./SendHintBanner";
 import { SlashCommandPopup } from "./SlashCommandPopup";
+import { SlashMenuFlyout } from "./SlashMenuFlyout";
 import { SuggestionCards } from "./SuggestionCards";
 import type { SendBlocker } from "../lib/sendReadiness";
+import { useProjectImport } from "../hooks/useProjectImport";
 
 interface ChatPanelProps {
   sessionId?: string;
@@ -54,6 +57,11 @@ interface ChatPanelProps {
   onInitStarter?: () => void;
   onDismissSendHint?: () => void;
   onDismissCompactionNotice?: () => void;
+  mergeImportedPaths?: (paths: string[]) => void;
+  showSendBlocker?: (blocker: SendBlocker) => void;
+  ensureActiveSession?: () => Promise<string | null>;
+  supportsVision?: boolean;
+  onInvalidImagePick?: () => void;
 }
 
 export function ChatPanel({
@@ -86,6 +94,11 @@ export function ChatPanel({
   onInitStarter,
   onDismissSendHint,
   onDismissCompactionNotice,
+  mergeImportedPaths,
+  showSendBlocker,
+  ensureActiveSession,
+  supportsVision = false,
+  onInvalidImagePick,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -95,6 +108,7 @@ export function ChatPanel({
   const [mentionDismissed, setMentionDismissed] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
+  const [slashMenuOpen, setSlashMenuOpen] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
 
@@ -118,8 +132,7 @@ export function ChatPanel({
     [slash?.query],
   );
   const slashMatches = useMemo(() => flattenSlashGroups(slashGroups), [slashGroups]);
-  const showSlashPopup = Boolean(slash && !slashDismissed && !inputDisabled);
-  const showMentionPopup = Boolean(mention && !mentionDismissed && fileEntries.length > 0 && !inputDisabled);
+
   const suggestionItems = useMemo(() => {
     if (initializing) return [];
     if (hasActiveClarify) return [];
@@ -202,6 +215,37 @@ export function ChatPanel({
     });
   }
 
+  const { importProjectFiles, importing } = useProjectImport({
+    projectId,
+    input,
+    cursor,
+    setInput: onInputChange,
+    setCursor,
+    onFocusInput: focusTextareaAt,
+    mergeImportedPaths: mergeImportedPaths ?? (() => undefined),
+    showSendBlocker: showSendBlocker ?? (() => undefined),
+    ensureActiveSession,
+    disabled: inputDisabled,
+  });
+
+  const composerDisabled = inputDisabled || importing;
+  const showSlashPopup = Boolean(slash && !slashDismissed && !composerDisabled && !slashMenuOpen);
+  const showMentionPopup = Boolean(mention && !mentionDismissed && fileEntries.length > 0 && !composerDisabled);
+
+  async function pickSlashCommand(commandId: string) {
+    const command = SLASH_COMMANDS.find((item) => item.id === commandId);
+    if (!command) return;
+    if (projectId && ensureActiveSession) {
+      await ensureActiveSession();
+    }
+    const result = insertSlashPrompt(input, cursor, command.prompt);
+    onInputChange(result.text);
+    setCursor(result.selectionEnd);
+    setSlashDismissed(false);
+    setSlashMenuOpen(false);
+    focusTextareaAt(result.cursor, result.selectionEnd);
+  }
+
   function pickMention(path: string) {
     if (!mention) return;
     const result = applyMention(input, mention, path);
@@ -220,14 +264,7 @@ export function ChatPanel({
   }
 
   function pickSlash(commandId: string) {
-    if (!slash) return;
-    const command = SLASH_COMMANDS.find((item) => item.id === commandId);
-    if (!command) return;
-    const result = applySlash(input, slash, command.prompt);
-    onInputChange(result.text);
-    setCursor(result.selectionEnd);
-    setSlashDismissed(false);
-    focusTextareaAt(result.cursor, result.selectionEnd);
+    pickSlashCommand(commandId);
   }
 
   function pickSuggestion(text: string) {
@@ -235,6 +272,14 @@ export function ChatPanel({
     setCursor(text.length);
     focusTextareaAt(text.length);
   }
+
+  useEffect(() => {
+    if (showMentionPopup) setSlashMenuOpen(false);
+  }, [showMentionPopup]);
+
+  useEffect(() => {
+    if (inputDisabled || importing) setSlashMenuOpen(false);
+  }, [inputDisabled, importing]);
 
   async function handlePaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
     const image = readClipboardImageFile(event.clipboardData);
@@ -317,159 +362,97 @@ export function ChatPanel({
 
         <PendingAttachmentChips
           items={pendingAttachments}
-          disabled={inputDisabled}
+          disabled={composerDisabled}
           onRemove={onRemoveAttachment}
           onPreview={setPreviewImageSrc}
         />
 
-        <div className="relative flex gap-2">
+        <div className="relative min-w-0">
           {showMentionPopup && mention && (
-            <FileMentionPopup
-              query={mention.query}
-              matches={mentionMatches}
-              selectedIndex={mentionIndex}
-              onPick={pickMention}
+              <FileMentionPopup
+                query={mention.query}
+                matches={mentionMatches}
+                selectedIndex={mentionIndex}
+                onPick={pickMention}
+              />
+            )}
+            {showSlashPopup && (
+              <SlashCommandPopup
+                groups={slashGroups}
+                selectedIndex={slashIndex}
+                onPick={pickSlash}
+              />
+            )}
+            <SlashMenuFlyout
+              open={slashMenuOpen && !composerDisabled && !showMentionPopup}
+              onClose={() => setSlashMenuOpen(false)}
+              onPick={pickSlashCommand}
             />
-          )}
-          {showSlashPopup && (
-            <SlashCommandPopup
-              groups={slashGroups}
-              selectedIndex={slashIndex}
-              onPick={pickSlash}
-            />
-          )}
-          <textarea
-            ref={textareaRef}
-            className="input-field min-h-20 flex-1 resize-none rounded-lg px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
-            placeholder={
-              initializing
-                ? "正在分析文档…"
-                : hasActiveClarify
-                  ? "请先回答上方澄清问题"
-                  : busy
-                  ? "等待回复中…"
-                  : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择任务，可粘贴图片"
-            }
-            value={input}
-            disabled={inputDisabled}
-            onPaste={(e) => void handlePaste(e)}
-            onChange={(e) => {
-              onInputChange(e.target.value);
-              setCursor(e.target.selectionStart);
-            }}
-            onSelect={(e) => setCursor(e.currentTarget.selectionStart)}
-            onKeyDown={(e) => {
-              if (e.key === "Backspace" && !e.shiftKey) {
-                const deletedPh = deletePlaceholderBeforeCursor(input, cursor);
-                if (deletedPh) {
-                  e.preventDefault();
-                  onInputChange(deletedPh.text);
-                  setCursor(deletedPh.cursor);
-                  focusTextareaAt(deletedPh.cursor);
-                  return;
+            <div className="input-field flex min-h-[7.5rem] flex-col overflow-hidden rounded-lg">
+              <textarea
+                ref={textareaRef}
+                className="min-h-0 flex-1 resize-none border-0 bg-transparent px-3 pt-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                placeholder={
+                  initializing
+                    ? "正在分析文档…"
+                    : importing
+                      ? "正在导入文件…"
+                    : hasActiveClarify
+                      ? "请先回答上方澄清问题"
+                      : busy
+                        ? "等待回复中…"
+                        : "Enter 发送，Shift+Enter 换行，@ 引用，/ 任务模板，+ 上传文件，可粘贴或选图片"
                 }
-                const deleted = deleteMentionBeforeCursor(input, cursor);
-                if (deleted) {
-                  e.preventDefault();
-                  onInputChange(deleted.text);
-                  setCursor(deleted.cursor);
-                  focusTextareaAt(deleted.cursor);
-                  return;
+                value={input}
+                disabled={composerDisabled}
+                onPaste={(e) => void handlePaste(e)}
+                onChange={(e) => {
+                  onInputChange(e.target.value);
+                  setCursor(e.target.selectionStart);
+                }}
+                onSelect={(e) => setCursor(e.currentTarget.selectionStart)}
+                onKeyDown={(event) =>
+                  handleChatInputKeyDown(event, {
+                    input,
+                    cursor,
+                    inputDisabled: composerDisabled,
+                    canSend,
+                    mention,
+                    mentionDismissed,
+                    mentionDisplayMatches,
+                    mentionIndex,
+                    showSlashPopup,
+                    slashMatches,
+                    slashIndex,
+                    onInputChange,
+                    setCursor,
+                    focusTextareaAt,
+                    setMentionDismissed,
+                    setMentionIndex,
+                    pickMention,
+                    browseMentionDirectory,
+                    setSlashDismissed,
+                    setSlashIndex,
+                    pickSlash,
+                    onSend,
+                  })
                 }
-              }
-              if (e.key === "Delete" && !e.shiftKey) {
-                const deletedPh = deletePlaceholderAtCursor(input, cursor);
-                if (deletedPh) {
-                  e.preventDefault();
-                  onInputChange(deletedPh.text);
-                  setCursor(deletedPh.cursor);
-                  focusTextareaAt(deletedPh.cursor);
-                  return;
-                }
-              }
-              if (mention && !mentionDismissed) {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setMentionDismissed(true);
-                  return;
-                }
-                if (mentionDisplayMatches.length > 0) {
-                  const count = mentionDisplayMatches.length;
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setMentionIndex((i) => (i + 1) % count);
-                    return;
-                  }
-                  if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setMentionIndex((i) => (i - 1 + count) % count);
-                    return;
-                  }
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    pickMention(
-                      mentionDisplayMatches[mentionIndex]?.item ?? mentionDisplayMatches[0]!.item,
-                    );
-                    return;
-                  }
-                  if (e.key === "Tab") {
-                    e.preventDefault();
-                    const selected = mentionDisplayMatches[mentionIndex] ?? mentionDisplayMatches[0]!;
-                    if (selected.isDir) {
-                      browseMentionDirectory(selected.item);
-                    } else {
-                      pickMention(selected.item);
-                    }
-                    return;
-                  }
-                } else if (e.key === "Enter" || e.key === "Tab") {
-                  e.preventDefault();
-                  return;
-                }
-              }
-              if (showSlashPopup) {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setSlashDismissed(true);
-                  return;
-                }
-                if (slashMatches.length > 0) {
-                  const count = slashMatches.length;
-                  if (e.key === "ArrowDown") {
-                    e.preventDefault();
-                    setSlashIndex((i) => (i + 1) % count);
-                    return;
-                  }
-                  if (e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setSlashIndex((i) => (i - 1 + count) % count);
-                    return;
-                  }
-                  if (e.key === "Enter" || e.key === "Tab") {
-                    e.preventDefault();
-                    const match = slashMatches[slashIndex] ?? slashMatches[0]!;
-                    pickSlash(match.command.id);
-                    return;
-                  }
-                } else if (e.key === "Enter" || e.key === "Tab") {
-                  e.preventDefault();
-                  return;
-                }
-              }
-              if (e.key === "Enter" && !e.shiftKey && !inputDisabled && canSend) {
-                e.preventDefault();
-                onSend();
-              }
-            }}
-          />
-          <button
-            className="btn-primary min-w-16 rounded-lg px-4 py-2 text-sm font-medium"
-            disabled={inputDisabled || !canSend}
-            onClick={onSend}
-          >
-            {busy ? "发送中" : "发送"}
-          </button>
-        </div>
+              />
+              <ChatInputToolbar
+                disabled={composerDisabled}
+                projectSelected={Boolean(projectId)}
+                supportsVision={supportsVision}
+                slashMenuOpen={slashMenuOpen}
+                canSend={canSend}
+                busy={busy}
+                onSend={onSend}
+                onImportFiles={importProjectFiles}
+                onPickImage={onPasteImage}
+                onToggleSlashMenu={() => setSlashMenuOpen((open) => !open)}
+                onInvalidImage={onInvalidImagePick}
+              />
+            </div>
+          </div>
       </div>
       <ImagePreviewOverlay src={previewImageSrc} onClose={() => setPreviewImageSrc(null)} />
     </section>

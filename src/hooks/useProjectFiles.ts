@@ -99,5 +99,9 @@ export function useProjectFiles(projectId: string | undefined) {
     loadInitial,
     reset,
     onAgentEvent,
+    mergeImportedPaths: useCallback((paths: string[]) => {
+      applyFileEntries(mergeProjectFileEntries(fileEntriesRef.current, paths));
+      setFileRevision((value) => value + 1);
+    }, [applyFileEntries]),
   };
 }

@@ -122,6 +122,11 @@ function App() {
             onInitStarter={() => void ws.handleInitStarter()}
             onDismissSendHint={ws.dismissSendHint}
             onDismissCompactionNotice={ws.dismissCompactionNotice}
+            mergeImportedPaths={ws.mergeImportedPaths}
+            showSendBlocker={ws.showSendBlocker}
+            ensureActiveSession={ws.ensureActiveSession}
+            supportsVision={ws.supportsVision}
+            onInvalidImagePick={ws.notifyInvalidImagePick}
           />
         }
         right={

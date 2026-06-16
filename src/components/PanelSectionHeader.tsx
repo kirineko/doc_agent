@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ChevronDownIcon, ChevronRightIcon, panelIconButtonClassName } from "./PanelIcons";
 
 interface PanelSectionHeaderProps {
   title: string;
@@ -20,12 +21,12 @@ export function PanelSectionHeader({
         {actions}
         <button
           type="button"
-          className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-[10px] text-fg-secondary hover:bg-hover hover:text-link"
+          className={panelIconButtonClassName()}
           aria-label={collapsed ? `展开${title}` : `折叠${title}`}
           title={collapsed ? `展开${title}` : `折叠${title}`}
           onClick={onToggleCollapse}
         >
-          {collapsed ? "▶" : "▼"}
+          {collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
         </button>
       </div>
     </div>

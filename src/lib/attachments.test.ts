@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extensionForMime,
+  IMAGE_FILE_ACCEPT,
   isAllowedImageMime,
   parseMessageAttachments,
 } from "./attachments";
@@ -29,5 +30,11 @@ describe("attachments helpers", () => {
   it("maps mime to file extension", () => {
     expect(extensionForMime("image/webp")).toBe("webp");
     expect(extensionForMime("image/jpeg")).toBe("jpg");
+  });
+
+  it("exports image file accept filter", () => {
+    expect(IMAGE_FILE_ACCEPT).toContain("image/*");
+    expect(IMAGE_FILE_ACCEPT).toContain(".png");
+    expect(IMAGE_FILE_ACCEPT).toContain("image/jpeg");
   });
 });

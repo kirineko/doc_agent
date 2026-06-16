@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { joinPath, parentPath, pathSegments, segmentTarget } from "../lib/pathUtils";
 import { ProjectDirListing } from "../types";
+import { FolderOpenIcon, panelIconButtonClassName, RefreshIcon } from "./PanelIcons";
 import { PanelSectionHeader } from "./PanelSectionHeader";
 
 interface ProjectFileExplorerProps {
@@ -158,18 +159,40 @@ export function ProjectFileExplorer({
     }
   }
 
+  async function openProjectRoot() {
+    if (!projectId) return;
+    try {
+      await invoke("open_project_root", { projectId });
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  const panelIconBtn = panelIconButtonClassName();
   const refreshButton =
     projectId && !collapsed ? (
-      <button
-        type="button"
-        className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-fg-secondary hover:bg-hover hover:text-link disabled:cursor-not-allowed disabled:opacity-40"
-        aria-label="刷新当前目录"
-        title="刷新当前目录"
-        disabled={loading}
-        onClick={() => void loadDir(projectId, currentPath)}
-      >
-        ↻
-      </button>
+      <>
+        <button
+          type="button"
+          className={panelIconBtn}
+          aria-label="在 Finder 中打开项目根目录"
+          title="在 Finder 中打开项目根目录"
+          disabled={loading}
+          onClick={() => void openProjectRoot()}
+        >
+          <FolderOpenIcon />
+        </button>
+        <button
+          type="button"
+          className={panelIconBtn}
+          aria-label="刷新当前目录"
+          title="刷新当前目录"
+          disabled={loading}
+          onClick={() => void loadDir(projectId, currentPath)}
+        >
+          <RefreshIcon />
+        </button>
+      </>
     ) : null;
 
   return (

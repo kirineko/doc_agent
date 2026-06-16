@@ -439,13 +439,7 @@ export function useWorkspace() {
       starterSuggestions.length === 0,
   );
 
-  async function reloadMessages(sessionId: string) {
-    const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
-    applyBundle(bundle);
-    setMessagesLoaded(true);
-  }
-
-  async function ensureSession(): Promise<string | null> {
+  const ensureActiveSession = useCallback(async (): Promise<string | null> => {
     if (ensureSessionInFlightRef.current) return ensureSessionInFlightRef.current;
 
     const task = (async (): Promise<string | null> => {
@@ -484,6 +478,16 @@ export function useWorkspace() {
         ensureSessionInFlightRef.current = null;
       }
     }
+  }, []);
+
+  async function reloadMessages(sessionId: string) {
+    const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
+    applyBundle(bundle);
+    setMessagesLoaded(true);
+  }
+
+  async function ensureSession(): Promise<string | null> {
+    return ensureActiveSession();
   }
 
   const clearPendingAttachmentsForModel = useCallback((modelId: string) => {
@@ -596,14 +600,15 @@ export function useWorkspace() {
 
   const addPastedImage = useCallback(
     async (file: File, mime: string) => {
-      if (!modelSupportsVision(models, effectiveSessionConfig.model)) {
-        setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
-        return;
-      }
       if (!activeProjectRef.current) {
         showSendBlocker({ kind: "no_project" });
         return;
       }
+      if (!modelSupportsVision(models, effectiveSessionConfig.model)) {
+        setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
+        return;
+      }
+      await ensureActiveSession();
       if (pendingAttachments.length >= MAX_ATTACHMENTS_PER_MESSAGE) {
         setVisionToast(`单条消息最多 ${MAX_ATTACHMENTS_PER_MESSAGE} 张图片`);
         return;
@@ -628,7 +633,7 @@ export function useWorkspace() {
         setVisionToast(String(error));
       }
     },
-    [effectiveSessionConfig.model, models, pendingAttachments.length],
+    [effectiveSessionConfig.model, ensureActiveSession, models, pendingAttachments.length],
   );
 
   const removePendingAttachment = useCallback((path: string) => {
@@ -641,6 +646,10 @@ export function useWorkspace() {
 
   const dismissVisionToast = useCallback(() => {
     setVisionToast(null);
+  }, []);
+
+  const notifyInvalidImagePick = useCallback(() => {
+    setVisionToast("仅支持 PNG、JPEG、WebP、GIF 图片");
   }, []);
 
   async function submitClarifyAnswer(payload: { selected: string[]; custom?: string | null }) {
@@ -876,6 +885,7 @@ export function useWorkspace() {
     addPastedImage,
     removePendingAttachment,
     dismissVisionToast,
+    notifyInvalidImagePick,
     stream,
     contextRatio,
     apiKeyStatus,
@@ -914,5 +924,8 @@ export function useWorkspace() {
     dismissSendHint,
     dismissCompactionNotice,
     handleSessionUpdated,
+    mergeImportedPaths: projectFiles.mergeImportedPaths,
+    showSendBlocker,
+    ensureActiveSession,
   };
 }

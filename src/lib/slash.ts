@@ -32,3 +32,22 @@ export function applySlash(
   const cursorPos = state.start + prompt.length;
   return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
 }
+
+/** 在光标处插入斜杠命令 prompt；若存在活跃 /query 则替换 */
+export function insertSlashPrompt(
+  text: string,
+  cursor: number,
+  prompt: string,
+): { text: string; cursor: number; selectionEnd: number } {
+  const slash = detectSlash(text, cursor);
+  if (slash) {
+    return applySlash(text, slash, prompt);
+  }
+  const next = `${text.slice(0, cursor)}${prompt}${text.slice(cursor)}`;
+  const ph = firstPlaceholder(next, cursor);
+  if (ph) {
+    return { text: next, cursor: ph.start, selectionEnd: ph.end };
+  }
+  const cursorPos = cursor + prompt.length;
+  return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
+}

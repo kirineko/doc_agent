@@ -9,6 +9,16 @@ export const ALLOWED_IMAGE_MIMES = new Set([
   "image/gif",
 ]);
 
+/** 图片选择器允许的扩展名（不含 `.`） */
+export const IMAGE_FILE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"] as const;
+
+/** HTML `<input type="file">` 的 accept 值 */
+export const IMAGE_FILE_ACCEPT = [
+  "image/*",
+  ...Array.from(ALLOWED_IMAGE_MIMES),
+  ...IMAGE_FILE_EXTENSIONS.map((ext) => `.${ext}`),
+].join(",");
+
 export interface PendingAttachment extends MessageAttachment {
   previewUrl: string;
 }
@@ -46,6 +56,40 @@ export function parseMessageAttachments(message: Message): MessageAttachment[] {
 
 export function isAllowedImageMime(mime: string): boolean {
   return ALLOWED_IMAGE_MIMES.has(mime);
+}
+
+const ALLOWED_IMAGE_EXTENSIONS = new Set<string>(IMAGE_FILE_EXTENSIONS);
+
+function extensionFromFilename(name: string): string {
+  const index = name.lastIndexOf(".");
+  if (index < 0) return "";
+  return name.slice(index + 1).toLowerCase();
+}
+
+/** 校验 file picker 所选文件是否为支持的图片类型（MIME 或扩展名） */
+export function isAllowedImageFile(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  if (mime && isAllowedImageMime(mime)) return true;
+  return ALLOWED_IMAGE_EXTENSIONS.has(extensionFromFilename(file.name));
+}
+
+export function resolveImageMime(file: File): string | null {
+  const mime = file.type.toLowerCase();
+  if (mime && isAllowedImageMime(mime)) return mime;
+  const ext = extensionFromFilename(file.name);
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "webp":
+      return "image/webp";
+    case "gif":
+      return "image/gif";
+    default:
+      return null;
+  }
 }
 
 export function extensionForMime(mime: string): string {

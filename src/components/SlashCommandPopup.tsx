@@ -89,7 +89,7 @@ export function SlashCommandPopup({
                 key={match.command.id}
                 type="button"
                 data-slash-selected={selected ? "true" : undefined}
-                className={`flex w-full min-w-0 items-center gap-1.5 px-2 py-1 text-left text-xs ${
+                className={`grid w-full grid-cols-[7.25rem_minmax(5rem,auto)_minmax(0,1fr)] items-center gap-x-2 px-2 py-1 text-left text-xs ${
                   selected ? "mention-item-selected" : "text-fg hover:bg-hover"
                 }`}
                 onMouseDown={(e) => {
@@ -97,14 +97,14 @@ export function SlashCommandPopup({
                   onPick(match.command.id);
                 }}
               >
-                <span className="shrink-0 font-mono text-[11px] text-fg-muted">
+                <span className="truncate font-mono text-[11px] text-fg-muted">
                   /{match.command.id}
                 </span>
-                <span className="shrink-0 font-medium">
+                <span className="truncate font-medium">
                   {highlight(match.command.label, match.labelPositions)}
                 </span>
                 <span
-                  className={`min-w-0 flex-1 truncate text-[11px] ${
+                  className={`min-w-0 truncate text-[11px] ${
                     selected ? "text-fg-secondary" : "text-fg-muted"
                   }`}
                   title={match.command.description}

@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  getCachedAttachmentPreview,
+  setCachedAttachmentPreview,
+} from "../lib/attachmentPreviewCache";
 import type { MessageAttachment } from "../types";
 
 type ThumbnailSize = "chip" | "message";
@@ -44,8 +48,16 @@ export function AttachmentThumbnail({
   onPreview,
   onRemove,
 }: AttachmentThumbnailProps) {
-  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src);
-  const [loading, setLoading] = useState(Boolean(attachment && projectId && !src));
+  const attachmentPath = attachment?.path;
+  const attachmentMime = attachment?.mime;
+  const cachedSrc =
+    attachmentPath && projectId
+      ? getCachedAttachmentPreview(projectId, attachmentPath)
+      : undefined;
+  const [resolvedSrc, setResolvedSrc] = useState<string | undefined>(src ?? cachedSrc);
+  const [loading, setLoading] = useState(
+    Boolean(attachmentPath && projectId && !src && !cachedSrc),
+  );
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -55,9 +67,17 @@ export function AttachmentThumbnail({
       setFailed(false);
       return;
     }
-    if (!attachment || !projectId) {
+    if (!attachmentPath || !attachmentMime || !projectId) {
       setResolvedSrc(undefined);
       setLoading(false);
+      return;
+    }
+
+    const cached = getCachedAttachmentPreview(projectId, attachmentPath);
+    if (cached) {
+      setResolvedSrc(cached);
+      setLoading(false);
+      setFailed(false);
       return;
     }
 
@@ -67,12 +87,13 @@ export function AttachmentThumbnail({
     invoke<string>("read_attachment_preview", {
       req: {
         project_id: projectId,
-        path: attachment.path,
-        mime: attachment.mime,
+        path: attachmentPath,
+        mime: attachmentMime,
       },
     })
       .then((dataUrl) => {
         if (cancelled) return;
+        setCachedAttachmentPreview(projectId, attachmentPath, dataUrl);
         setResolvedSrc(dataUrl);
         setLoading(false);
       })
@@ -85,7 +106,7 @@ export function AttachmentThumbnail({
     return () => {
       cancelled = true;
     };
-  }, [attachment, projectId, src]);
+  }, [attachmentPath, attachmentMime, projectId, src]);
 
   const previewSrc = resolvedSrc;
   const canPreview = Boolean(previewSrc && onPreview);
@@ -105,7 +126,13 @@ export function AttachmentThumbnail({
           }}
           aria-label={canPreview ? `${alt}，点击放大` : alt}
         >
-          <img src={previewSrc} alt={alt} className="h-full w-full object-cover" loading="lazy" />
+          <img
+            src={previewSrc}
+            alt={alt}
+            className="h-full w-full object-cover"
+            loading="lazy"
+            decoding="async"
+          />
         </button>
       )}
       {removable && onRemove && (

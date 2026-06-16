@@ -9,6 +9,7 @@ use crate::agent::{clarify_interaction, loop_runner};
 use crate::core::project_files::{
     list_project_dir, list_project_files, ProjectDirListing, ProjectFileList,
 };
+use crate::core::project_import::{import_project_file, ImportConflictStrategy, ImportResult};
 use crate::core::sandbox::Sandbox;
 use crate::core::store::{ClarifyPending, Message, Project, Session, ToolCallRecord};
 use crate::state::AppState;
@@ -479,6 +480,44 @@ pub fn get_web_search_enabled(state: State<AppState>) -> Result<bool, String> {
 pub fn set_web_search_enabled(state: State<AppState>, enabled: bool) -> Result<(), String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     crate::core::web_search::set_web_search_enabled(&store, enabled)
+}
+
+#[tauri::command]
+pub fn open_project_root(state: State<AppState>, project_id: String) -> Result<(), String> {
+    let project = project_by_id(&state, &project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    tauri_plugin_opener::open_path(sandbox.root(), None::<&str>).map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportProjectFileRequest {
+    pub project_id: String,
+    pub filename: String,
+    pub data_base64: String,
+    pub on_conflict: String,
+}
+
+fn parse_import_conflict(value: &str) -> Result<ImportConflictStrategy, String> {
+    match value {
+        "fail_if_exists" => Ok(ImportConflictStrategy::FailIfExists),
+        "overwrite" => Ok(ImportConflictStrategy::Overwrite),
+        "rename" => Ok(ImportConflictStrategy::Rename),
+        other => Err(format!("unsupported on_conflict: {other}")),
+    }
+}
+
+#[tauri::command]
+pub fn import_project_file_cmd(
+    state: State<AppState>,
+    req: ImportProjectFileRequest,
+) -> Result<ImportResult, String> {
+    let project = project_by_id(&state, &req.project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(req.data_base64.as_bytes())
+        .map_err(|e| format!("invalid base64: {e}"))?;
+    let strategy = parse_import_conflict(&req.on_conflict)?;
+    import_project_file(&sandbox, &req.filename, &bytes, strategy)
 }
 
 #[tauri::command]

@@ -45,6 +45,8 @@ pub fn run() {
             ipc::list_project_files_cmd,
             ipc::list_project_dir_cmd,
             ipc::open_project_file,
+            ipc::open_project_root,
+            ipc::import_project_file_cmd,
             ipc::generate_suggestions,
             ipc::list_sessions,
             ipc::create_session,
