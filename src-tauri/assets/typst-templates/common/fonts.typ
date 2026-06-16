@@ -85,7 +85,11 @@
     justify: true,
     leading: leading-cjk,
     spacing: par-spacing * theme.density-scale,
-    first-line-indent: indent-cjk,
+    ..if theme.cjk-paragraph-indent {
+      (first-line-indent: indent-cjk)
+    } else {
+      (:)
+    },
   )
   show heading: it => show-themed-heading(it, theme, lang: "zh")
   show link: set text(fill: theme.accent)

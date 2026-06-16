@@ -1,5 +1,5 @@
 // doc-agent 设计 token：字号/间距/行距/配色/线宽/页边距 + 可主题化强调色
-// 锁定轴：字号阶、正文墨色、行距；自由轴：palette/accent/density/heading-style/cover
+// 锁定轴：字号阶、正文墨色、行距；自由轴：palette/accent/density/heading-style/cover/cjk-paragraph-indent
 
 #let fs-footnote = 9pt
 #let fs-small = 9.5pt
@@ -57,6 +57,7 @@
   density: "normal",
   heading-style: "accent-rule",
   cover: "none",
+  cjk-paragraph-indent: false,
 ) = {
   let base = palettes.at(palette)
   let accent-color = if accent != none { accent } else { base.accent }
@@ -69,6 +70,7 @@
     density-scale: scale,
     heading-style: heading-style,
     cover: cover,
+    cjk-paragraph-indent: cjk-paragraph-indent,
   )
 }
 

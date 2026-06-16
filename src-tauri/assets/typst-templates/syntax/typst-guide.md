@@ -82,12 +82,13 @@ $ display(integral_0^1 x dif x = 1/2) $
 
 ```typst
 #set text(font: "Times New Roman", size: 12pt, lang: "zh")
-#set par(justify: true, leading: 0.65em, first-line-indent: 2em)
 #set heading(numbering: "1.1")
 #set page(paper: "a4", margin: (x: 2.5cm, y: 2cm))
 
-#show: apply-zh-body   // 推荐：用内置字体栈
+#show: apply-zh-body   // 推荐：内置字体栈 + 段落规则（默认无首行缩进）
 ```
+
+`apply-zh-body` / `apply-en-body` 已设置正文对齐、行距与段间距。**不要**再重复 `#set par(first-line-indent: …)`，除非文档显式启用 `make-theme(cjk-paragraph-indent: true)`（见 §22）。
 
 ---
 
@@ -96,10 +97,11 @@ $ display(integral_0^1 x dif x = 1/2) $
 ```typst
 *粗体* _斜体_ #underline[下划线]
 #align(left|center|right|justify)[…]
-#pad(left: 2em)[缩进]
 #v(1cm)    // 垂直空白
 #h(1cm)    // 水平空白（不画线！选择题选项间距可用）
 ```
+
+**不要**对普通正文使用 `#pad(left: 2em)[…]` 或 `#pad(left: indent-cjk)[…]` 模拟首行缩进；段落层级由 `apply-zh-body` 的段间距保证，传统首行两字缩进见 §22 的 `cjk-paragraph-indent`。
 
 **填空答题线**用 `#fill-blank()`，**不要**用 `#h()` 或句号 `。` 代替（见 §18、§19）。
 
@@ -113,6 +115,13 @@ $ display(integral_0^1 x dif x = 1/2) $
 #outline(title: [目录], indent: auto)
 #pagebreak()
 ```
+
+### 段落与标题规范（Agent 必读）
+
+- 章节标题 **MUST** 使用 `=` / `==` / `===` 等 heading 语法。
+- **MUST NOT** 用单独一行的 `*粗体*`、`_斜体_` 或纯文本充当章节标题（会被当作正文段落，版式与真标题不一致）。
+- 正文 **MUST NOT** 滥用 `#pad(left: …)` 或重复 `#set par(first-line-indent: …)`；需要传统中文「首行两字缩进」时，用 `make-theme(cjk-paragraph-indent: true)`（§22）。
+- `#outline` 的 `depth` 可按文档需要自由设置；不强制限制目录层级。
 
 ---
 
@@ -366,9 +375,15 @@ def f(): pass
 
 ## 22. 主题与配色（`common/tokens.typ`）
 
-设计系统区分**锁定轴**（字号、正文墨色、行距、版心，不可覆盖）与**自由轴**（palette/accent/density/heading-style，可定制观感）。
+设计系统区分**锁定轴**（字号、正文墨色、行距、版心，不可覆盖）与**自由轴**（palette/accent/density/heading-style/cover/cjk-paragraph-indent，可定制观感）。
 
 **调色板预设**：`academic-blue` / `slate` / `burgundy` / `forest` / `charcoal`（试卷默认，墨色灰阶）。
+
+**中文段落缩进**：默认 **无** 首行缩进（Agent 生成更稳定）。需要传统文书风格时：
+
+```typst
+#show: apply-zh-body.with(theme: make-theme(cjk-paragraph-indent: true))
+```
 
 <!-- doc-agent:compile -->
 ```typst
@@ -380,6 +395,17 @@ def f(): pass
 
 = 标题
 正文 $x^2$。
+```
+
+<!-- doc-agent:compile -->
+```typst
+#import "/doc-agent/typst/common/fonts.typ": apply-zh-body
+#import "/doc-agent/typst/common/tokens.typ": make-theme
+
+#show: apply-zh-body.with(theme: make-theme(cjk-paragraph-indent: true))
+
+= 标题
+首段正文应有两字首行缩进。第二段同样缩进。
 ```
 
 自定义强调色（仅染标题/链接/表头，正文仍为墨色）：
@@ -407,6 +433,8 @@ def f(): pass
 | `+` 项间插入 `#v(3.5cm)` | 下一题号变 1 | 用 `#calc-item` 或同一 `+` 项内排版 |
 | `mat(delim: "{", …)` 做分段 | 版式错误 | `cases(..., & cond,)` |
 | 计算题题干末尾加 `。` | 与答题空白叠在一起难看 | 省略句号 |
+| 用 `*粗体*` 或纯文本当章节标题 | 被当作正文段落，缩进/字号与真标题不一致 | 使用 `= 标题` / `== 小节` |
+| 正文用 `#pad(left: 2em)` 模拟缩进 | 与主题段落规则冲突，版式偶发不一致 | 用默认 `apply-zh-body`；需首行缩进时 `cjk-paragraph-indent: true` |
 | 凭记忆写 Typst | 编译失败 | 先读本手册与场景模板 |
 
 ---

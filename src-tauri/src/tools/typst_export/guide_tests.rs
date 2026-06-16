@@ -210,4 +210,99 @@ mod tests {
         )
         .expect("theme axes should compile");
     }
+
+    #[test]
+    fn make_theme_exposes_cjk_paragraph_indent() {
+        let tokens = bundled::find_source("common/tokens.typ").expect("tokens.typ");
+        assert!(
+            tokens.contains("cjk-paragraph-indent: false"),
+            "make-theme should default cjk-paragraph-indent to false"
+        );
+        assert!(
+            tokens.contains("cjk-paragraph-indent: cjk-paragraph-indent,"),
+            "theme dict should carry cjk-paragraph-indent"
+        );
+    }
+
+    #[test]
+    fn apply_zh_body_conditional_first_line_indent() {
+        let fonts = bundled::find_source("common/fonts.typ").expect("fonts.typ");
+        assert!(
+            fonts.contains("..if theme.cjk-paragraph-indent"),
+            "apply-zh-body should conditionally set first-line-indent"
+        );
+        assert!(
+            !fonts.contains("first-line-indent: indent-cjk,\n  )"),
+            "apply-zh-body must not unconditionally set first-line-indent"
+        );
+    }
+
+    #[test]
+    fn default_zh_body_report_fixture_compiles() {
+        require_font_dirs();
+        let dir = tempfile::tempdir().unwrap();
+        compile_snippet(
+            dir.path(),
+            "report-indent-default.typ",
+            r##"#import "/doc-agent/typst/common/fonts.typ": apply-zh-body
+#import "/doc-agent/typst/common/page.typ": page-a4
+#import "/doc-agent/typst/common/tokens.typ": make-theme
+
+#show: apply-zh-body.with(theme: make-theme())
+#page-a4()
+
+= 执行摘要
+
+本报告对某技术方案进行调研与评估。
+
+= 背景与目标
+
+== 业务背景
+
+说明项目背景、痛点与约束条件。
+"##,
+        )
+        .expect("default zh body report fixture should compile");
+    }
+
+    #[test]
+    fn cjk_paragraph_indent_theme_compiles() {
+        require_font_dirs();
+        let dir = tempfile::tempdir().unwrap();
+        compile_snippet(
+            dir.path(),
+            "report-indent-enabled.typ",
+            r##"#import "/doc-agent/typst/common/fonts.typ": apply-zh-body
+#import "/doc-agent/typst/common/page.typ": page-a4
+#import "/doc-agent/typst/common/tokens.typ": make-theme
+
+#show: apply-zh-body.with(theme: make-theme(cjk-paragraph-indent: true))
+#page-a4()
+
+= 执行摘要
+
+本报告对某技术方案进行调研与评估。
+
+= 背景与目标
+
+首段正文启用传统两字首行缩进。第二段同样应缩进。
+"##,
+        )
+        .expect("cjk-paragraph-indent theme should compile");
+    }
+
+    #[test]
+    fn bundled_report_zh_compiles_without_warnings() {
+        require_font_dirs();
+        let dir = tempfile::tempdir().unwrap();
+        let source = bundled::find_source("report/report-zh").expect("report-zh");
+        let output = compile_snippet(dir.path(), "report-zh.typ", source)
+            .expect("report-zh should compile");
+        assert!(
+            output.warnings.is_empty(),
+            "report-zh warnings: {:?}",
+            output.warnings
+        );
+        assert!(output.pages > 0);
+    }
 }

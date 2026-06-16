@@ -64,6 +64,4 @@ $ integral_a^b f(x) dif x = F(b) - F(a) $
 
 = 参考文献
 
-#pad(left: indent-cjk)[
-  [1] Typst Contributors. *Typst: A new markup-based typesetting system*. 2024.
-]
+[1] Typst Contributors. *Typst: A new markup-based typesetting system*. 2024.

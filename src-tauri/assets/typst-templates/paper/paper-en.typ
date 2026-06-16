@@ -64,6 +64,4 @@ We recommend Typst for formula-heavy PDF generation.
 
 = References
 
-#pad(left: 2em)[
-  [1] Typst Contributors. *Typst: A new markup-based typesetting system*. 2024.
-]
+[1] Typst Contributors. *Typst: A new markup-based typesetting system*. 2024.
