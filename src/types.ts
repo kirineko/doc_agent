@@ -164,7 +164,8 @@ export type AgentEvent =
       before_tokens: number;
       after_tokens: number;
     }
-  | { kind: "error"; session_id: string; turn_id: string; message: string };
+  | { kind: "error"; session_id: string; turn_id: string; message: string }
+  | { kind: "session_title_updated"; session_id: string; title: string };
 
 export const MODEL_OPTIONS = [
   { id: "deepseek-v4-flash", label: "DeepSeek V4 Flash", provider: "deepseek", supportsEffort: true, supportsVision: false },

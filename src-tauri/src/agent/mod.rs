@@ -7,5 +7,6 @@ pub mod model_catalog;
 pub mod provider;
 pub mod session_title;
 pub mod suggest;
+pub mod title_gen;
 pub mod tool_args;
 pub mod types;

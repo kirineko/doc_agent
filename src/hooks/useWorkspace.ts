@@ -372,6 +372,17 @@ export function useWorkspace() {
           })
           .catch(console.error);
       }
+      if (payload.kind === "session_title_updated" && activeProjectRef.current) {
+        const projectId = activeProjectRef.current;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === payload.session_id ? { ...s, title: payload.title } : s,
+          ),
+        );
+        invoke<Session[]>("list_sessions", { projectId })
+          .then((list) => setSessionsFromBackend(list, projectId))
+          .catch(console.error);
+      }
     });
     return () => {
       unlisten.then((fn) => fn());

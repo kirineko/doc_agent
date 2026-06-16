@@ -71,7 +71,12 @@ function SortableSessionItem({
           className="min-w-0 flex-1 px-1 py-1.5 pr-7 text-left"
           onClick={() => onSelectSession(session.id)}
         >
-          <div className="truncate font-medium">{plainSessionTitle(session.title)}</div>
+          <div
+            className="truncate font-medium"
+            title={plainSessionTitle(session.title)}
+          >
+            {plainSessionTitle(session.title)}
+          </div>
           <div className="text-[11px] text-fg-secondary">{formatSessionTime(session.updated_at)}</div>
         </button>
       </div>

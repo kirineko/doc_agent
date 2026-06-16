@@ -2,8 +2,9 @@ use crate::agent::provider::openai_compat::{
     encode_attachment_data_url, messages_from_store, messages_from_store_text,
 };
 use crate::agent::session_title::{
-    is_autotitle_eligible_user_count, is_default_session_title, summarize_session_title,
+    is_default_session_title, normalize_first_turn, truncate_for_storage,
 };
+use crate::agent::title_gen::spawn_llm_session_title;
 use crate::agent::types::{AgentEvent, ChatMessage, MessageAttachment, ToolCall};
 use crate::core::sandbox::Sandbox;
 use crate::core::store::Message;
@@ -228,33 +229,50 @@ pub(super) fn persist_tool_result<R: Runtime>(
     Ok(())
 }
 
-pub(super) fn maybe_autotitle_session(
+pub(super) fn maybe_autotitle_session<R: Runtime>(
+    app: &AppHandle<R>,
     state: &AppState,
     session_id: &str,
-    session_title: &str,
     user_count: usize,
     user_text: &str,
-    assistant_text: Option<&str>,
 ) -> Result<(), String> {
-    if !is_default_session_title(session_title) || !is_autotitle_eligible_user_count(user_count) {
+    if user_count >= 3 {
         return Ok(());
     }
 
-    let title = if user_count == 2 {
-        summarize_session_title(user_text, None)
-    } else {
-        summarize_session_title(user_text, assistant_text)
-    };
-    let Some(title) = title else {
-        return Ok(());
+    let session = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        store
+            .get_session(session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?
     };
 
-    state
-        .store
-        .lock()
-        .map_err(|e| e.to_string())?
-        .update_session(session_id, Some(&title), None, None, None)
-        .map_err(|e| e.to_string())?;
+    if user_count == 1 {
+        if !is_default_session_title(&session.title) {
+            return Ok(());
+        }
+        let normalized = normalize_first_turn(user_text);
+        if normalized.trim().is_empty() {
+            return Ok(());
+        }
+        let title = truncate_for_storage(&normalized);
+        state
+            .store
+            .lock()
+            .map_err(|e| e.to_string())?
+            .set_session_title_autogen(session_id, &title)
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+
+    if user_count == 2 {
+        if session.autotitle_llm_done || session.title_user_edited {
+            return Ok(());
+        }
+        spawn_llm_session_title(app.clone(), state.clone(), session_id.to_string());
+    }
+
     Ok(())
 }
 

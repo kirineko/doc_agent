@@ -595,6 +595,20 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **WHEN** 用户在项目 A 拖动排序后切换到项目 B
 - **THEN** 项目 B 展示其自身顺序（自动序或各自的手动序），不受项目 A 影响
 
+### Requirement: 侧栏会话标题动态截断展示
+
+系统 SHALL 在侧栏会话列表中展示完整持久化标题，并通过 CSS 文本溢出（`truncate` / `text-overflow: ellipsis`）按当前侧栏宽度动态截断；MUST 为标题元素提供 `title` 属性或等效 tooltip 以展示全文。展示前 MAY 调用 `plainSessionTitle` 去除存量 Markdown 标记。MUST NOT 依赖后端 18 字符固定截断作为唯一展示来源。
+
+#### Scenario: 窄侧栏截断
+
+- **WHEN** 用户收窄侧栏且会话标题较长
+- **THEN** 标题在可视区域内 ellipsis 截断，hover 可见完整文本
+
+#### Scenario: 宽侧栏展示更多
+
+- **WHEN** 用户拉宽侧栏
+- **THEN** 同一条标题可视字符数增加，无需重新请求后端
+
 ### Requirement: 上下文占用比例展示
 
 系统 SHALL 在会话区标题栏（中间区「会话」标题行右侧）以**最小化**形式展示当前上下文占用比例：仅图标 + 比例百分比值（如 `42%`），MUST NOT 展示 token 绝对值等冗余信息。比例数据来源为 `context_usage` 事件的 `ratio` 以及切换会话时 IPC `get_session_context_usage` 的初始值；无 LLM 调用历史时 MUST 显示 `0%`（仅无项目时隐藏）。指示器颜色 MAY 随接近上限而变化（如转橙/红）。

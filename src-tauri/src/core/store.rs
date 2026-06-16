@@ -31,6 +31,10 @@ pub struct Session {
     pub thinking_effort: String,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(default)]
+    pub autotitle_llm_done: bool,
+    #[serde(default)]
+    pub title_user_edited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +163,37 @@ impl Store {
         let _ = self
             .conn
             .execute("ALTER TABLE messages ADD COLUMN attachments_json TEXT", []);
+        let _ = self.conn.execute(
+            "ALTER TABLE sessions ADD COLUMN autotitle_llm_done INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = self.conn.execute(
+            "ALTER TABLE sessions ADD COLUMN title_user_edited INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = self.conn.execute_batch(
+            "UPDATE sessions SET autotitle_llm_done = 1
+             WHERE id IN (
+               SELECT session_id FROM messages WHERE role = 'user'
+               GROUP BY session_id HAVING COUNT(*) >= 2
+             );",
+        );
         Ok(())
+    }
+
+    fn map_session_row(row: &rusqlite::Row<'_>) -> Result<Session, rusqlite::Error> {
+        Ok(Session {
+            id: row.get(0)?,
+            project_id: row.get(1)?,
+            title: row.get(2)?,
+            model: row.get(3)?,
+            thinking_enabled: row.get::<_, i32>(4)? != 0,
+            thinking_effort: row.get(5)?,
+            created_at: row.get(6)?,
+            updated_at: row.get(7)?,
+            autotitle_llm_done: row.get::<_, i32>(8)? != 0,
+            title_user_edited: row.get::<_, i32>(9)? != 0,
+        })
     }
 
     fn map_message_row(row: &rusqlite::Row<'_>) -> Result<Message, rusqlite::Error> {
@@ -296,46 +330,30 @@ impl Store {
             thinking_effort: thinking_effort.to_string(),
             created_at: ts.clone(),
             updated_at: ts,
+            autotitle_llm_done: false,
+            title_user_edited: false,
         })
     }
 
     pub fn list_sessions(&self, project_id: &str) -> Result<Vec<Session>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, title, model, thinking_enabled, thinking_effort, created_at, updated_at
+            "SELECT id, project_id, title, model, thinking_enabled, thinking_effort, created_at, updated_at,
+                    autotitle_llm_done, title_user_edited
              FROM sessions WHERE project_id = ?1 ORDER BY updated_at DESC",
         )?;
-        let rows = stmt.query_map(params![project_id], |row| {
-            Ok(Session {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                title: row.get(2)?,
-                model: row.get(3)?,
-                thinking_enabled: row.get::<_, i32>(4)? != 0,
-                thinking_effort: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            })
-        })?;
+        let rows = stmt.query_map(params![project_id], Self::map_session_row)?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
 
     pub fn get_session(&self, id: &str) -> Result<Option<Session>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, project_id, title, model, thinking_enabled, thinking_effort, created_at, updated_at
+            "SELECT id, project_id, title, model, thinking_enabled, thinking_effort, created_at, updated_at,
+                    autotitle_llm_done, title_user_edited
              FROM sessions WHERE id = ?1",
         )?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(Session {
-                id: row.get(0)?,
-                project_id: row.get(1)?,
-                title: row.get(2)?,
-                model: row.get(3)?,
-                thinking_enabled: row.get::<_, i32>(4)? != 0,
-                thinking_effort: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
-            }))
+            Ok(Some(Self::map_session_row(&row)?))
         } else {
             Ok(None)
         }
@@ -370,25 +388,60 @@ impl Store {
                 return Err(StoreError::Message("session model is locked".into()));
             }
         }
-        let title = title.unwrap_or(&current.title);
+        let new_title = title.unwrap_or(&current.title);
         let model = model.unwrap_or(&current.model);
         let thinking_enabled = thinking_enabled.unwrap_or(current.thinking_enabled);
         let thinking_effort = thinking_effort.unwrap_or(&current.thinking_effort);
+        let title_user_edited = current.title_user_edited
+            || title.is_some_and(|t| t != current.title.as_str());
         let updated_at = now();
         self.conn.execute(
-            "UPDATE sessions SET title = ?1, model = ?2, thinking_enabled = ?3, thinking_effort = ?4, updated_at = ?5 WHERE id = ?6",
-            params![title, model, thinking_enabled as i32, thinking_effort, updated_at, id],
+            "UPDATE sessions SET title = ?1, model = ?2, thinking_enabled = ?3, thinking_effort = ?4, updated_at = ?5, title_user_edited = ?6 WHERE id = ?7",
+            params![new_title, model, thinking_enabled as i32, thinking_effort, updated_at, title_user_edited as i32, id],
         )?;
         Ok(Session {
             id: current.id,
             project_id: current.project_id,
-            title: title.to_string(),
+            title: new_title.to_string(),
             model: model.to_string(),
             thinking_enabled,
             thinking_effort: thinking_effort.to_string(),
             created_at: current.created_at,
             updated_at,
+            autotitle_llm_done: current.autotitle_llm_done,
+            title_user_edited,
         })
+    }
+
+    pub fn set_session_title_autogen(&self, id: &str, title: &str) -> Result<(), StoreError> {
+        let updated_at = now();
+        let updated = self.conn.execute(
+            "UPDATE sessions SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            params![title, updated_at, id],
+        )?;
+        if updated == 0 {
+            return Err(StoreError::Message("session not found".into()));
+        }
+        Ok(())
+    }
+
+    pub fn claim_autotitle_llm(&self, id: &str) -> Result<bool, StoreError> {
+        let updated = self.conn.execute(
+            "UPDATE sessions SET autotitle_llm_done = 1
+             WHERE id = ?1 AND autotitle_llm_done = 0 AND title_user_edited = 0",
+            params![id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    pub fn finish_llm_autotitle(&self, id: &str, title: &str) -> Result<bool, StoreError> {
+        let updated_at = now();
+        let updated = self.conn.execute(
+            "UPDATE sessions SET title = ?1, updated_at = ?2
+             WHERE id = ?3 AND autotitle_llm_done = 1 AND title_user_edited = 0",
+            params![title, updated_at, id],
+        )?;
+        Ok(updated > 0)
     }
 
     pub fn delete_session(&mut self, id: &str) -> Result<(), StoreError> {
@@ -974,5 +1027,42 @@ mod tests {
             .unwrap_or("")
             .starts_with("Previous context has been compacted."));
         assert_eq!(active[1].content.as_deref(), Some("recent"));
+    }
+
+    #[test]
+    fn autotitle_migration_backfills_two_user_messages() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        {
+            let store = Store::open(db_path.clone()).unwrap();
+            let project = store.create_project("demo", "/tmp/demo").unwrap();
+            let session = store
+                .create_session(&project.id, "新会话", "mock", true, "high")
+                .unwrap();
+            store
+                .add_message(&session.id, "user", Some("a"), None, None, None)
+                .unwrap();
+            store
+                .add_message(&session.id, "user", Some("b"), None, None, None)
+                .unwrap();
+        }
+        let store = Store::open(db_path).unwrap();
+        let session = store.list_sessions(&store.list_projects().unwrap()[0].id).unwrap()[0].clone();
+        assert!(session.autotitle_llm_done);
+    }
+
+    #[test]
+    fn manual_title_edit_sets_title_user_edited() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "新会话", "mock", true, "high")
+            .unwrap();
+        let updated = store
+            .update_session(&session.id, Some("自定义标题"), None, None, None)
+            .unwrap();
+        assert!(updated.title_user_edited);
+        assert!(!store.claim_autotitle_llm(&session.id).unwrap());
     }
 }

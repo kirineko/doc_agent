@@ -280,6 +280,10 @@ pub enum AgentEvent {
         before_tokens: u32,
         after_tokens: u32,
     },
+    SessionTitleUpdated {
+        session_id: String,
+        title: String,
+    },
 }
 
 #[derive(Debug, Clone)]

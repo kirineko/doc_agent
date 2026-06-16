@@ -219,7 +219,7 @@ async fn continue_loop<R: Runtime>(
     state: AppState,
     session_id: String,
     turn_id: String,
-    session_title: String,
+    _session_title: String,
     user_count: usize,
     user_text: String,
     project_root: String,
@@ -370,12 +370,11 @@ async fn continue_loop<R: Runtime>(
                 emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
             }
             maybe_autotitle_session(
+                &app,
                 &state,
                 &session_id,
-                &session_title,
                 user_count,
                 &user_text,
-                Some(turn.content.as_str()),
             )?;
             emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
             emit(
