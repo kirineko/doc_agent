@@ -27,7 +27,8 @@ pub fn build_script_error(code: &str, detail: &str, script_path: Option<&str>) -
     if let Some(path) = script_path {
         out["script_path"] = json!(path);
         out["hint"] = json!(format!(
-            "Use fs_patch on {path} for local fixes (not fs_write), then rerun with skill_run {{\"path\":\"{path}\"}}."
+            "Use fs_patch on {path} for local fixes (not fs_write), then rerun with skill_run {{\"path\":\"{path}\"}}. \
+             For API questions see skill_read {{\"skill\":\"runtime\"}}."
         ));
     }
     out

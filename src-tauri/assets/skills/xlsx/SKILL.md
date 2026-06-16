@@ -6,7 +6,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # XLSX creation, editing, and analysis
 
-> 本系统无 shell/Python/Node 环境，外部表格处理库一律不可用。所有操作通过内置工具完成。
+> 本系统无 shell/Python/Node 环境，外部表格处理库一律不可用。所有操作通过内置工具完成。**skill_run API 见 `skill_read {"skill":"runtime"}`。**
 
 ## Quick Reference
 

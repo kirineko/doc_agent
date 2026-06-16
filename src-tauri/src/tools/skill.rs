@@ -10,7 +10,8 @@ pub fn read_tool() -> ToolSpec {
     ToolSpec {
         name: "skill_read",
         description: "Read a built-in Document Skill guide. \
-            skill MUST be one of: docx, pdf, pptx, xlsx, html-report, clarify. \
+            skill MUST be one of: docx, pdf, pptx, xlsx, html-report, clarify, runtime. \
+            Before skill_run: read skill=runtime for JS API reference. \
             doc is optional (default SKILL.md). \
             docx template editing: doc=editing.md. docx with formulas: doc=math.md (after SKILL.md). \
             pptx API: doc=pptxgenjs.md; pptx template: skill=pptx, doc=editing.md. \
@@ -20,7 +21,7 @@ pub fn read_tool() -> ToolSpec {
             "properties": {
                 "skill": {
                     "type": "string",
-                    "description": "Skill id: docx, pdf, pptx, xlsx, html-report, clarify. Filenames like pptxgenjs.md are auto-resolved to skill=pptx."
+                    "description": "Skill id: docx, pdf, pptx, xlsx, html-report, clarify, runtime. Filenames like pptxgenjs.md are auto-resolved to skill=pptx."
                 },
                 "doc": {
                     "type": "string",
@@ -36,14 +37,16 @@ pub fn read_tool() -> ToolSpec {
 pub fn run_tool() -> ToolSpec {
     ToolSpec {
         name: "skill_run",
-        description: "Execute JavaScript in the embedded skill runtime. \
+        description: "Execute JavaScript in the embedded skill runtime (boa_engine, not Node). \
+            Before skill_run you MUST skill_read runtime for API reference. \
             Before generating any .docx/.pptx/.xlsx deliverable you MUST first call skill_read for that format. \
             Formula-heavy .docx: after skill_read docx, also skill_read docx with doc=math.md before skill_run. \
             Provide exactly one of code (inline script) or path (project-relative .js file). \
             Long scripts: failed inline runs are saved to .cache/skill-run/script.js; repair with fs_patch (not fs_write) and rerun with path. \
             After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned automatically when the turn ends. \
             Define async function main() returning JSON-serializable value; do NOT call main() at end. \
-            Libraries (auto-loaded): ExcelJS, PptxGenJS, PDFLib, docx — use globals OR require('exceljs') etc. \
+            Libraries (auto-loaded): ExcelJS, PptxGenJS, PDFLib, docx — use globals OR require('exceljs') etc.; no ES import. \
+            File helpers: doc_exists, doc_list, fs.existsSync, fs.readdirSync. \
             Save files: await wb.xlsx.writeFile('out.xlsx') (shimmed), doc_write(path, base64), doc_write_bytes(path, bytes). \
             Buffer.from(buf).toString('base64') and fs.writeFileSync are shimmed. No fetch/npm/shell. \
             After writing .docx files, check style_warnings and verify content with office_read_to_markdown before finishing.",

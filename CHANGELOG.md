@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+---
+
+## [2026.6.18] — 2026-06-18
+
+本版本新增 Agent turn 停止与同项目互斥、按会话运行态可视化，完善 skill_run 运行时文档与 Native API，并优化更新遮罩与右侧面板折叠体验。
+
 ### Turn 停止与会话运行态
 
 - **停止按钮**：Agent 执行中可在输入区点击「停止」；进入 stopping 状态后等待当前工具结束（最长约 35 秒），随后 emit `turn_cancelled` 并对未完成 tool call 补写 cancelled result
@@ -16,6 +22,22 @@
 - **同项目互斥**：同一项目内最多一个 session 处于 running；其他 session 发送或 clarify resume 时被拒绝并提示正在运行的会话标题
 - **SSE / 压缩可取消**：流式 LLM 与上下文压缩摘要请求监听 cancel 信号，stop 后不再追加 token
 - **后端**：新增 `TurnRegistry`、`cancel_turn` IPC、`turn_cancelled` 事件；clarify 暂停时 unregister，不算 running
+
+### skill_run 运行时
+
+- **runtime 文档**：新增内置 `skill_read {"skill":"runtime"}` 能力矩阵（引擎、normalize、API 表、polyfill、限制与示例）；system prompt 与 skill 索引要求编写/修复 skill_run 前先读 runtime
+- **Native API**：新增 `doc_exists` / `doc_list` 与 `fs.existsSync` / `fs.readdirSync`（沙箱校验；list 复用项目目录单层语义，支持 `unpacked/...` 列 slide 文件）
+- **import normalize**：常见 `import … from 'pptxgenjs'|'docx'|'exceljs'|'pdf-lib'`（含 `import * as` 与无分号写法）执行前改写成全局/require 等价
+- **Bundle 收紧**：移除裸子串 `pptx` 触发 pptxgenjs；仅含 `"output.pptx"` 等路径字符串的 OOXML fs 脚本不再误加载 ~374KB bundle
+- **诊断**：脚本错误 hint 指向 `skill_read runtime` 与白名单；docx/pptx/xlsx/pdf SKILL 交叉引用 runtime 文档
+- **Spec 修正**：`script-runtime` 归档合并为 boa_engine + JavaScript only + 全局/require 语义
+
+### 界面
+
+- **更新遮罩**：下载进度圆环与安装文案优化；启动静默更新与设置手动更新路径一致
+- **弹层定位**：`@` / `/` 弹层与斜杠 flyout 锚点定位修正，避免溢出视口
+- **更新临时文件清理**：应用启动时清理 updater 遗留临时目录
+- **右侧面板**：工具链与文件区折叠互斥；拖拽展开时自动取消另一区折叠
 
 ---
 

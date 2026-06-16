@@ -2647,12 +2647,129 @@ async function main() {
     }
 
     #[test]
-    fn skills_index_lists_six_skills() {
+    fn skills_index_lists_seven_skills() {
         let md = crate::core::skills::index_markdown();
-        for name in ["docx", "pdf", "pptx", "xlsx", "html-report", "clarify"] {
+        for name in [
+            "docx",
+            "pdf",
+            "pptx",
+            "xlsx",
+            "html-report",
+            "clarify",
+            "runtime",
+        ] {
             assert!(md.contains(name), "missing {name} in index");
         }
-        assert_eq!(crate::core::skills::available_names().len(), 6);
+        assert_eq!(crate::core::skills::available_names().len(), 7);
+    }
+
+    #[test]
+    fn skill_read_runtime_returns_api_guide() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "skill_read", json!({ "skill": "runtime" })).unwrap();
+        assert_eq!(out["skill"], "runtime");
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("boa_engine"));
+        assert!(content.contains("doc_list"));
+    }
+
+    #[test]
+    fn skill_run_import_pptxgenjs_generates_pptx() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+import PptxGenJS from 'pptxgenjs';
+async function main() {
+  const pptx = new PptxGenJS();
+  pptx.addSlide().addText("import test", { x: 1, y: 1, fontSize: 24 });
+  await pptx.writeFile({ fileName: "import-deck.pptx" });
+  return { ok: true };
+}
+"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
+        assert_valid_ooxml(&dir.path().join("import-deck.pptx"));
+    }
+
+    #[test]
+    fn skill_run_import_pptxgenjs_namespace_generates_pptx() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+import * as Deck from 'pptxgenjs';
+async function main() {
+  const pptx = new Deck();
+  pptx.addSlide().addText("namespace import test", { x: 1, y: 1, fontSize: 24 });
+  await pptx.writeFile({ fileName: "namespace-deck.pptx" });
+  return { ok: true };
+}
+"#;
+        exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({ "code": code, "timeout_secs": 60 }),
+        )
+        .unwrap();
+        assert_valid_ooxml(&dir.path().join("namespace-deck.pptx"));
+    }
+
+    #[test]
+    fn skill_run_doc_list_and_exists() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        fs::create_dir_all(dir.path().join("slides")).unwrap();
+        fs::write(dir.path().join("slides/a.xml"), b"<a/>").unwrap();
+        fs::write(dir.path().join("readme.txt"), b"hi").unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+async function main() {
+  if (!doc_exists("readme.txt")) throw new Error("readme missing");
+  if (doc_exists("missing.txt")) throw new Error("should not exist");
+  const slides = doc_list("slides");
+  if (!slides.some((e) => e.name === "a.xml" && !e.is_dir)) throw new Error("bad list");
+  const names = fs.readdirSync("slides");
+  if (!names.includes("a.xml")) throw new Error("bad readdir");
+  return { ok: true, count: slides.length };
+}
+"#;
+        let out = exec_tool(&registry, &ctx, "skill_run", json!({ "code": code })).unwrap();
+        assert_eq!(out["result"]["ok"], true);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn skill_run_doc_exists_returns_false_for_symlink_escape() {
+        let dir = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let outside_file = outside.path().join("secret.txt");
+        fs::write(&outside_file, b"secret").unwrap();
+        std::os::unix::fs::symlink(&outside_file, dir.path().join("linked.txt")).unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let code = r#"
+async function main() {
+  if (doc_exists("linked.txt")) throw new Error("doc_exists should not see symlink escape");
+  if (fs.existsSync("linked.txt")) throw new Error("existsSync should not see symlink escape");
+  return { ok: true };
+}
+"#;
+        let out = exec_tool(&registry, &ctx, "skill_run", json!({ "code": code })).unwrap();
+        assert_eq!(out["result"]["ok"], true);
     }
 
     #[test]

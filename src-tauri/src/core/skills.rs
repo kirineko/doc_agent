@@ -71,6 +71,11 @@ static CLARIFY_DOCS: &[SkillDoc] = &[SkillDoc {
     content: include_str!("../../assets/skills/clarify/SKILL.md"),
 }];
 
+static RUNTIME_DOCS: &[SkillDoc] = &[SkillDoc {
+    name: "SKILL.md",
+    content: include_str!("../../assets/skills/runtime/SKILL.md"),
+}];
+
 pub static SKILLS: &[Skill] = &[
     Skill {
         name: "docx",
@@ -101,6 +106,11 @@ pub static SKILLS: &[Skill] = &[
         name: "clarify",
         description: "文档创作前的需求澄清流程，帮助明确内容、结构与排版风格",
         docs: CLARIFY_DOCS,
+    },
+    Skill {
+        name: "runtime",
+        description: "skill_run 嵌入式 JS 运行时 API、polyfill 与限制（编写脚本前必读）",
+        docs: RUNTIME_DOCS,
     },
 ];
 

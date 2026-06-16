@@ -16,6 +16,8 @@ const HELPERS: &str = r#"
 const doc_read = (path) => __doc_read(path);
 const doc_write = (path, data) => __doc_write(path, data);
 const doc_log = (...args) => __doc_log(JSON.stringify(args));
+const doc_exists = (path) => __doc_exists(path);
+const doc_list = (path) => JSON.parse(__doc_list(path == null || path === "" ? "." : path));
 // 浏览器/Node 全局的最小 polyfill（boa 不内置 WebAPI）
 var setTimeout = (fn, _ms, ...a) => { Promise.resolve().then(() => fn(...a)); return 0; };
 var setImmediate = (fn, ...a) => { Promise.resolve().then(() => fn(...a)); return 0; };
@@ -136,6 +138,8 @@ var fs = {
     // Node 语义：无 encoding 返回 Buffer（字节），适用于图片等二进制
     return Buffer.from(b64, "base64");
   },
+  existsSync: (filePath) => doc_exists(filePath),
+  readdirSync: (filePath) => doc_list(filePath || ".").map((e) => e.name),
 };
 var require = (id) => {
   const key = String(id).toLowerCase();
@@ -303,16 +307,32 @@ fn run_in_thread(
 
 /// 常见 Node/浏览器 API 误用时，附加运行时环境提示，避免模型盲目试探。
 fn with_runtime_hint(msg: String) -> String {
+    let lower = msg.to_lowercase();
+    if lower.contains("cannot find module") {
+        return format!(
+            "{msg}\n提示：require 白名单：fs、path、exceljs、pptxgenjs、docx、pdf-lib；库也可用全局 ExcelJS/PptxGenJS/docx/PDFLib。\
+             先 skill_read {{\"skill\":\"runtime\"}} 查看完整 API。"
+        );
+    }
+    if lower.contains("import ") || lower.contains("unexpected token 'export'") {
+        return format!(
+            "{msg}\n提示：不支持 ES module import；用全局变量或 require('…')。先 skill_read {{\"skill\":\"runtime\"}}。"
+        );
+    }
+    if lower.contains("fetch") && lower.contains("not defined") {
+        return format!(
+            "{msg}\n提示：运行时无网络/fetch。先 skill_read {{\"skill\":\"runtime\"}}。"
+        );
+    }
     let suspicious = msg.contains("not a callable function")
         || msg.contains("not a constructor")
         || msg.contains("is not defined")
         || msg.contains("not an object");
     if suspicious {
         format!(
-            "{msg}\n提示：嵌入式 JS 运行时。require('fs'|'path'|'exceljs'|'pptxgenjs'|'docx'|'pdf-lib') 已映射；\
-             编辑 docx XML：fs.readFileSync(path,'utf-8') + replace + fs.writeFileSync。\
-             勿在末尾写 main()（运行时自动调用）。\
-             保存 xlsx：await wb.xlsx.writeFile('out.xlsx')；pptx：await pptx.writeFile({{ fileName: 'out.pptx' }})。"
+            "{msg}\n提示：嵌入式 boa 运行时（非 Node）。先 skill_read {{\"skill\":\"runtime\"}}。\
+             require('fs'|'path'|'exceljs'|'pptxgenjs'|'docx'|'pdf-lib')；doc_exists/doc_list 可查路径。\
+             勿在末尾写 main()。xlsx：await wb.xlsx.writeFile('out.xlsx')；pptx：await pptx.writeFile({{ fileName: 'out.pptx' }})。"
         )
     } else {
         msg
@@ -359,7 +379,7 @@ fn bundles_for_code(code: &str) -> Vec<(&'static str, &'static str, &'static str
             DOCX_SHIM,
         ));
     }
-    if lower.contains("pptxgenjs") || lower.contains("pptx") {
+    if needs_pptxgenjs(&lower) {
         out.push((
             "pptxgenjs",
             include_str!("../../../assets/js/pptxgenjs.bundle.js"),
@@ -382,6 +402,40 @@ fn needs_exceljs(lower: &str) -> bool {
         || (lower.contains("workbook") && lower.contains("addworksheet"))
         || lower.contains("xlsx.writefile")
         || lower.contains("xlsx.writebuffer")
+}
+
+/// `PptxGenJS` lowercases to `pptxgenjs`; bare `.pptx` path strings must not trigger load.
+fn needs_pptxgenjs(lower: &str) -> bool {
+    lower.contains("pptxgenjs")
+}
+
+#[cfg(test)]
+mod bundle_tests {
+    use super::*;
+
+    #[test]
+    fn pptx_path_alone_does_not_load_pptxgenjs() {
+        let code = r#"async function main() {
+  fs.writeFileSync("output.pptx", "x", "utf-8");
+  return { ok: true };
+}"#;
+        assert!(!needs_pptxgenjs(
+            &normalize::normalize_script(code).to_lowercase()
+        ));
+        assert!(bundles_for_code(&normalize::normalize_script(code))
+            .iter()
+            .all(|(name, _, _)| *name != "pptxgenjs"));
+    }
+
+    #[test]
+    fn pptxgenjs_usage_loads_bundle() {
+        let code = "async function main() { const p = new PptxGenJS(); return { ok: !!p }; }";
+        let lower = code.to_lowercase();
+        assert!(needs_pptxgenjs(&lower));
+        assert!(bundles_for_code(code)
+            .iter()
+            .any(|(name, _, _)| *name == "pptxgenjs"));
+    }
 }
 
 fn js_to_json(context: &mut Context, value: &JsValue) -> Result<Value, String> {

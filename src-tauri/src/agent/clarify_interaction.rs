@@ -94,49 +94,30 @@ pub async fn cancel_clarify<R: Runtime>(
     session_id: String,
 ) -> Result<(), String> {
     if state.turns.is_session_active(&session_id) {
-        state.turns.cancel(&session_id)?;
-        return Err("澄清正在提交，已请求停止当前恢复任务。".into());
+        if let Some((pending, result_json)) =
+            persist_cancelled_clarify_if_pending(&state, &session_id)?
+        {
+            emit_tool_result(
+                &app,
+                &pending.session_id,
+                &pending.turn_id,
+                &pending.tool_call_id,
+                result_json,
+            );
+            let _ = state.turns.cancel(&session_id);
+            return Ok(());
+        }
+        return Err("澄清答案已提交，无法再取消当前澄清。".into());
     }
 
     // 与 submit 相同：删 pending 与写 tool result 在同一锁块内，避免竞态窗口
-    let result_json = json!({ "cancelled": true }).to_string();
-    let (pending, project_id) = {
-        let store = state.store.lock().map_err(|e| e.to_string())?;
-        let session = store
-            .get_session(&session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "session not found".to_string())?;
-        let pending = store
-            .get_clarify_pending(&session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "澄清问题已处理或不存在".to_string())?;
-        let deleted = store
-            .delete_clarify_pending(&session_id)
-            .map_err(|e| e.to_string())?;
-        if deleted == 0 {
-            return Err("澄清问题已处理或不存在".into());
-        }
-        store
-            .finish_tool_call(&pending.tool_call_id, &result_json, "done", 0)
-            .map_err(|e| e.to_string())?;
-        store
-            .add_message(
-                &pending.session_id,
-                "tool",
-                Some(&result_json),
-                None,
-                Some(&pending.tool_call_id),
-                None,
-            )
-            .map_err(|e| e.to_string())?;
-        (pending, session.project_id)
-    };
+    let (pending, project_id, result_json) = persist_cancelled_clarify(&state, &session_id)?;
     emit_tool_result(
         &app,
         &pending.session_id,
         &pending.turn_id,
         &pending.tool_call_id,
-        result_json,
+        result_json.clone(),
     );
     let resume_session_id = pending.session_id.clone();
     let resume_turn_id = pending.turn_id.clone();
@@ -157,6 +138,76 @@ pub async fn cancel_clarify<R: Runtime>(
         ),
         other => other,
     }
+}
+
+fn persist_cancelled_clarify_if_pending(
+    state: &AppState,
+    session_id: &str,
+) -> Result<Option<(ClarifyPending, String)>, String> {
+    let result_json = json!({ "cancelled": true }).to_string();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let Some(pending) = store
+        .get_clarify_pending(session_id)
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(None);
+    };
+    let deleted = store
+        .delete_clarify_pending(session_id)
+        .map_err(|e| e.to_string())?;
+    if deleted == 0 {
+        return Ok(None);
+    }
+    store
+        .finish_tool_call(&pending.tool_call_id, &result_json, "done", 0)
+        .map_err(|e| e.to_string())?;
+    store
+        .add_message(
+            &pending.session_id,
+            "tool",
+            Some(&result_json),
+            None,
+            Some(&pending.tool_call_id),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(Some((pending, result_json)))
+}
+
+fn persist_cancelled_clarify(
+    state: &AppState,
+    session_id: &str,
+) -> Result<(ClarifyPending, String, String), String> {
+    let result_json = json!({ "cancelled": true }).to_string();
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let session = store
+        .get_session(session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "session not found".to_string())?;
+    let pending = store
+        .get_clarify_pending(session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "澄清问题已处理或不存在".to_string())?;
+    let deleted = store
+        .delete_clarify_pending(session_id)
+        .map_err(|e| e.to_string())?;
+    if deleted == 0 {
+        return Err("澄清问题已处理或不存在".into());
+    }
+    store
+        .finish_tool_call(&pending.tool_call_id, &result_json, "done", 0)
+        .map_err(|e| e.to_string())?;
+    store
+        .add_message(
+            &pending.session_id,
+            "tool",
+            Some(&result_json),
+            None,
+            Some(&pending.tool_call_id),
+            None,
+        )
+        .map_err(|e| e.to_string())?;
+    Ok((pending, session.project_id, result_json))
 }
 
 fn load_pending_clarify_answer(

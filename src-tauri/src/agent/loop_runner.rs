@@ -13,13 +13,13 @@ use crate::agent::turn_control::{
     format_turn_start_error, is_project_busy_user_error, is_session_busy_user_error, CancelSignal,
     TurnRegistry, TURN_CANCELLED,
 };
-use tauri::Emitter;
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig,
 };
 use crate::core::sandbox::Sandbox;
 use crate::state::AppState;
 use std::sync::Arc;
+use tauri::Emitter;
 use tauri::{AppHandle, Runtime};
 use uuid::Uuid;
 
@@ -116,9 +116,7 @@ pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
     turn_id: String,
     project_id: String,
 ) -> Result<(), String> {
-    state
-        .turns
-        .reserve_resume(session_id.clone(), project_id)?;
+    state.turns.reserve_resume(session_id.clone(), project_id)?;
     tauri::async_runtime::spawn(async move {
         for _attempt in 0..120 {
             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -187,12 +185,7 @@ fn return_if_cancelled<R: Runtime>(
     cancel: &CancelSignal,
 ) -> Option<Result<(), String>> {
     if cancel.is_cancelled() {
-        finish_cancelled(
-            app,
-            sandbox,
-            session_id.to_string(),
-            turn_id.to_string(),
-        );
+        finish_cancelled(app, sandbox, session_id.to_string(), turn_id.to_string());
         Some(Ok(()))
     } else {
         None
@@ -207,13 +200,7 @@ pub async fn run_turn<R: Runtime>(
     attachments: Vec<MessageAttachment>,
 ) -> Result<(), String> {
     let turn_id = Uuid::new_v4().to_string();
-    let (
-        _session_title,
-        project,
-        model,
-        thinking_enabled,
-        thinking_effort,
-    ) = {
+    let (_session_title, project, model, thinking_enabled, thinking_effort) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         let session = store
             .get_session(&session_id)
@@ -466,9 +453,7 @@ async fn continue_loop_inner<R: Runtime>(
     };
 
     for _step in 0..MAX_TOOL_STEPS {
-        if let Some(result) =
-            return_if_cancelled(&app, &sandbox, &session_id, &turn_id, &cancel)
-        {
+        if let Some(result) = return_if_cancelled(&app, &sandbox, &session_id, &turn_id, &cancel) {
             return result;
         }
 
@@ -485,9 +470,7 @@ async fn continue_loop_inner<R: Runtime>(
             &cancel,
         )
         .await;
-        if let Some(result) =
-            return_if_cancelled(&app, &sandbox, &session_id, &turn_id, &cancel)
-        {
+        if let Some(result) = return_if_cancelled(&app, &sandbox, &session_id, &turn_id, &cancel) {
             return result;
         }
         let (rebuilt, new_token_count, new_pending, compaction) = match compaction_result {

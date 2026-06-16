@@ -71,7 +71,8 @@ impl Sandbox {
     }
 
     fn ensure_relative_safe(&self, candidate: &Path) -> Result<(), SandboxError> {
-        let base = if candidate.exists() {
+        let exists = candidate.exists();
+        let base = if exists {
             candidate
                 .canonicalize()
                 .map_err(|e| SandboxError::Io(e.to_string()))?
@@ -80,6 +81,9 @@ impl Sandbox {
         };
         if base.starts_with(&self.root) {
             return Ok(());
+        }
+        if exists {
+            return Err(SandboxError::EscapesSandbox);
         }
         // For not-yet-existing paths, reject parent-dir components relative to root.
         let rel = candidate
@@ -136,5 +140,21 @@ mod tests {
         let sandbox = Sandbox::new(dir.path()).unwrap();
         let target = sandbox.resolve_for_write("notes/new.txt").unwrap();
         assert!(target.starts_with(sandbox.root()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_for_write_rejects_symlink_escape() {
+        let dir = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        let outside_file = outside.path().join("secret.txt");
+        fs::write(&outside_file, "secret").unwrap();
+        std::os::unix::fs::symlink(&outside_file, dir.path().join("linked.txt")).unwrap();
+
+        let sandbox = Sandbox::new(dir.path()).unwrap();
+        assert_eq!(
+            sandbox.resolve_for_write("linked.txt"),
+            Err(SandboxError::EscapesSandbox)
+        );
     }
 }

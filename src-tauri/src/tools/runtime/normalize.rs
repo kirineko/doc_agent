@@ -2,7 +2,15 @@
 pub fn normalize_script(code: &str) -> String {
     let mut out = String::new();
     for line in code.lines() {
-        if let Some(replacement) = rewrite_require_line(line.trim()) {
+        let trimmed = line.trim();
+        if let Some(replacement) = rewrite_import_line(trimmed) {
+            if !replacement.is_empty() {
+                out.push_str(&replacement);
+                out.push('\n');
+            }
+            continue;
+        }
+        if let Some(replacement) = rewrite_require_line(trimmed) {
             if !replacement.is_empty() {
                 out.push_str(&replacement);
                 out.push('\n');
@@ -41,8 +49,57 @@ fn contains_main_function(code: &str) -> bool {
     })
 }
 
+fn trim_optional_semicolon(line: &str) -> &str {
+    line.strip_suffix(';').unwrap_or(line).trim()
+}
+
+fn parse_import_from(body: &str) -> Option<(String, String)> {
+    let rest = body.strip_prefix("import ")?.trim();
+    let from_idx = rest.rfind(" from ")?;
+    let bindings = rest[..from_idx].trim().to_string();
+    let module_part = rest[from_idx + 6..].trim();
+    let module = module_part
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string();
+    Some((bindings, module))
+}
+
+fn rewrite_import_line(trimmed: &str) -> Option<String> {
+    let body = trim_optional_semicolon(trimmed);
+    if !body.starts_with("import ") {
+        return None;
+    }
+    let (bindings, module) = parse_import_from(body)?;
+    let module_lower = module.to_lowercase();
+    let global = match module_lower.as_str() {
+        "pptxgenjs" => "PptxGenJS.default ?? PptxGenJS",
+        "exceljs" => "ExcelJS",
+        "docx" => "docx",
+        "pdf-lib" | "pdflib" => "PDFLib",
+        _ => return None,
+    };
+    if bindings.starts_with('{') {
+        return Some(format!("const {bindings} = {global};"));
+    }
+    if let Some(alias) = bindings.strip_prefix("* as ") {
+        let alias = alias.trim();
+        if !alias.is_empty() {
+            return Some(format!("const {alias} = {global};"));
+        }
+        return Some(String::new());
+    }
+    let default_name = global.split('.').next().unwrap_or(global);
+    if bindings == default_name {
+        Some(String::new())
+    } else {
+        Some(format!("const {bindings} = {global};"))
+    }
+}
+
 fn rewrite_require_line(trimmed: &str) -> Option<String> {
-    let body = trimmed.strip_suffix(';')?.trim();
+    let body = trim_optional_semicolon(trimmed);
     let (kind, rest) = body
         .strip_prefix("const ")
         .map(|r| ("const", r))
@@ -117,5 +174,65 @@ mod tests {
     fn strips_fs_require() {
         let code = "const fs = require('fs');\nasync function main() { fs.readFileSync('a.xml','utf-8'); }";
         assert!(!normalize_script(code).contains("require"));
+    }
+
+    #[test]
+    fn rewrites_import_pptxgenjs_default() {
+        let code = "import PptxGenJS from 'pptxgenjs';\nasync function main() { new PptxGenJS(); }";
+        let n = normalize_script(code);
+        assert!(!n.contains("import "));
+        assert!(n.contains("new PptxGenJS()"));
+    }
+
+    #[test]
+    fn rewrites_import_without_trailing_semicolon() {
+        let code = "import PptxGenJS from 'pptxgenjs'\nasync function main() { new PptxGenJS(); }";
+        let n = normalize_script(code);
+        assert!(!n.contains("import "));
+        assert!(n.contains("new PptxGenJS()"));
+    }
+
+    #[test]
+    fn rewrites_require_without_trailing_semicolon() {
+        let code = "const fs = require('fs')\nasync function main() { fs.readFileSync('a.xml', 'utf-8'); }";
+        let n = normalize_script(code);
+        assert!(!n.contains("require"));
+    }
+
+    #[test]
+    fn rewrites_import_docx_destructure() {
+        let code = "import { Document, Packer } from 'docx';\nasync function main() {}";
+        let n = normalize_script(code);
+        assert!(n.contains("const { Document, Packer } = docx"));
+        assert!(!n.contains("import "));
+    }
+
+    #[test]
+    fn rewrites_import_exceljs_default() {
+        let code =
+            "import ExcelJS from 'exceljs';\nasync function main() { new ExcelJS.Workbook(); }";
+        assert!(!normalize_script(code).contains("import "));
+    }
+
+    #[test]
+    fn rewrites_import_pdf_lib_destructure() {
+        let code = "import { PDFDocument } from 'pdf-lib';\nasync function main() {}";
+        let n = normalize_script(code);
+        assert!(n.contains("const { PDFDocument } = PDFLib"));
+    }
+
+    #[test]
+    fn rewrites_import_namespace_alias() {
+        let code = "import * as X from 'pptxgenjs';\nasync function main() { new X(); }";
+        let n = normalize_script(code);
+        assert!(!n.contains("import "));
+        assert!(n.contains("const X = PptxGenJS.default ?? PptxGenJS"));
+        assert!(n.contains("new X()"));
+    }
+
+    #[test]
+    fn unknown_import_left_unchanged() {
+        let code = "import foo from 'unknown-pkg';\nasync function main() {}";
+        assert!(normalize_script(code).contains("import foo"));
     }
 }

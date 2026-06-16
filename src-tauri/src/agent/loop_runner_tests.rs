@@ -616,6 +616,180 @@ fn clarify_submit_rejected_while_other_session_running() {
 }
 
 #[test]
+fn clarify_cancel_active_pending_persists_cancelled_result() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let turn_id = "turn-1".to_string();
+        let (session_id, project_id) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let session = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap();
+            let assistant = store
+                .add_message(&session.id, "assistant", None, Some("thinking"), None, None)
+                .unwrap();
+            store
+                .add_tool_call(
+                    &assistant.id,
+                    "call_clarify",
+                    "clarify_ask",
+                    r#"{"id":"mock_doc_type","kind":"single","prompt":"类型？","options":[{"id":"pptx","label":"PPT"}]}"#,
+                )
+                .unwrap();
+            store
+                .update_tool_call_status("call_clarify", "awaiting_user")
+                .unwrap();
+            store
+                .save_clarify_pending(
+                    &session.id,
+                    &turn_id,
+                    "call_clarify",
+                    r#"{"id":"mock_doc_type","kind":"single","prompt":"类型？","options":[{"id":"pptx","label":"PPT"}]}"#,
+                )
+                .unwrap();
+            (session.id, project.id)
+        };
+        let cancel = state
+            .turns
+            .register(session_id.clone(), turn_id, project_id)
+            .unwrap();
+
+        crate::agent::clarify_interaction::cancel_clarify(
+            app.handle().clone(),
+            state.clone(),
+            session_id.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert!(cancel.is_cancelled());
+        state.turns.unregister(&session_id);
+        {
+            let store = state.store.lock().unwrap();
+            assert!(store.get_clarify_pending(&session_id).unwrap().is_none());
+            let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+            let clarify = calls.iter().find(|call| call.id == "call_clarify").unwrap();
+            assert_eq!(clarify.status, "done");
+            assert!(clarify
+                .result_json
+                .as_deref()
+                .is_some_and(|json| json.contains("cancelled")));
+            let messages = store.list_messages(&session_id).unwrap();
+            assert!(messages.iter().any(|m| {
+                m.role == "tool"
+                    && m.tool_call_id.as_deref() == Some("call_clarify")
+                    && m.content
+                        .as_deref()
+                        .is_some_and(|content| content.contains("cancelled"))
+            }));
+        }
+
+        let submit = crate::agent::clarify_interaction::submit_clarify_answer(
+            app.handle().clone(),
+            state,
+            crate::agent::clarify_interaction::SubmitClarifyAnswer {
+                session_id,
+                question_id: "mock_doc_type".into(),
+                selected: vec!["pptx".into()],
+                custom: None,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(submit.contains("已处理或不存在"));
+    });
+}
+
+#[test]
+fn clarify_cancel_active_without_pending_does_not_cancel_submitted_answer() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let turn_id = "turn-1".to_string();
+        let (session_id, project_id) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let session = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap();
+            let assistant = store
+                .add_message(&session.id, "assistant", None, Some("thinking"), None, None)
+                .unwrap();
+            store
+                .add_tool_call(
+                    &assistant.id,
+                    "call_clarify",
+                    "clarify_ask",
+                    r#"{"id":"mock_doc_type","kind":"single","prompt":"类型？","options":[{"id":"pptx","label":"PPT"}]}"#,
+                )
+                .unwrap();
+            let result_json = r#"{"question_id":"mock_doc_type","selected":["pptx"],"custom":null,"display_text":"PPT","brief":null}"#;
+            store
+                .finish_tool_call("call_clarify", result_json, "done", 0)
+                .unwrap();
+            store
+                .add_message(
+                    &session.id,
+                    "tool",
+                    Some(result_json),
+                    None,
+                    Some("call_clarify"),
+                    None,
+                )
+                .unwrap();
+            (session.id, project.id)
+        };
+        let cancel = state
+            .turns
+            .register(session_id.clone(), turn_id, project_id)
+            .unwrap();
+
+        let err = crate::agent::clarify_interaction::cancel_clarify(
+            app.handle().clone(),
+            state.clone(),
+            session_id.clone(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("已提交"));
+        assert!(!cancel.is_cancelled());
+        state.turns.unregister(&session_id);
+        let store = state.store.lock().unwrap();
+        assert!(store.get_clarify_pending(&session_id).unwrap().is_none());
+        let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+        let clarify = calls.iter().find(|call| call.id == "call_clarify").unwrap();
+        assert_eq!(clarify.status, "done");
+        assert!(clarify
+            .result_json
+            .as_deref()
+            .is_some_and(|json| json.contains(r#""selected":["pptx"]"#)));
+    });
+}
+
+#[test]
 fn clarify_cancel_allowed_while_other_session_running() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)

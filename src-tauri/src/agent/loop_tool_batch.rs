@@ -34,6 +34,7 @@ pub struct ToolBatchOutcome {
     pub cancelled: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn finish_cancelled_clarify_batch<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,

@@ -7,7 +7,7 @@ license: Proprietary. LICENSE.txt has complete terms
 # DOCX creation, editing, and analysis
 
 > 本系统无 shell/Python/Node 环境。所有操作通过内置工具完成：
-> `office_read_to_markdown`、`ooxml_unpack`、`ooxml_pack`、`docx_comment`、`docx_accept_changes`、`skill_run`（docx 库已内置）。
+> `office_read_to_markdown`、`ooxml_unpack`、`ooxml_pack`、`docx_comment`、`docx_accept_changes`、`skill_run`（docx 库已内置）。**skill_run API 见 `skill_read {"skill":"runtime"}`。**
 
 ## Overview
 

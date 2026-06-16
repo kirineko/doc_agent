@@ -6,7 +6,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 # PDF Processing Guide
 
-> 本系统无 shell/Python 环境，外部 PDF 命令行与 Python 库一律不可用。所有操作通过内置工具完成。
+> 本系统无 shell/Python 环境，外部 PDF 命令行与 Python 库一律不可用。所有操作通过内置工具完成。**skill_run API 见 `skill_read {"skill":"runtime"}`。**
 
 ## Quick Reference
 

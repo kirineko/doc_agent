@@ -56,7 +56,7 @@ pub(crate) fn build_working_messages(
                      澄清确认后按创作简报中的「交付格式」分支执行（见 clarify skill）。\
                      读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
                      仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
-                     不得凭记忆直接编写 skill_run 代码。\n{}",
+                     调用 skill_run 前 MUST 先 skill_read runtime 获取 API 规范；不得凭记忆直接编写 skill_run 代码。\n{}",
                     crate::core::skills::index_markdown()
                 )),
                 image_urls: vec![],
