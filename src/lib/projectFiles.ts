@@ -48,6 +48,62 @@ export function projectFileEntryFromApi(entry: {
   };
 }
 
+export function inferIsDirForMergedPath(
+  path: string,
+  map: Map<string, MentionFileEntry>,
+  added: string[],
+): boolean {
+  const existing = map.get(path);
+  if (existing?.isDir) return true;
+  const normalized = path.replace(/\/$/, "");
+  if (path.endsWith("/")) return true;
+  const prefix = `${normalized}/`;
+  for (const entry of map.values()) {
+    if (entry.path.startsWith(prefix)) return true;
+  }
+  for (const raw of added) {
+    const other = raw.trim().replace(/\\/g, "/");
+    if (other !== normalized && other.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+function ensureParentDirEntries(
+  map: Map<string, MentionFileEntry>,
+  path: string,
+  now: number,
+): void {
+  const segments = splitPath(path);
+  for (let index = 0; index < segments.length - 1; index += 1) {
+    const parent = segments.slice(0, index + 1).join("/");
+    if (isIgnoredMentionPath(parent)) continue;
+    const existing = map.get(parent);
+    if (!existing) {
+      map.set(parent, { path: parent, isDir: true, modifiedMs: now });
+      continue;
+    }
+    if (!existing.isDir) {
+      map.set(parent, { ...existing, isDir: true });
+    }
+  }
+}
+
+function promoteParentDirs(entries: MentionFileEntry[]): MentionFileEntry[] {
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  for (const entry of entries) {
+    if (entry.isDir) continue;
+    const segments = splitPath(entry.path);
+    for (let index = 0; index < segments.length - 1; index += 1) {
+      const parent = segments.slice(0, index + 1).join("/");
+      const parentEntry = byPath.get(parent);
+      if (parentEntry && !parentEntry.isDir) {
+        byPath.set(parent, { ...parentEntry, isDir: true });
+      }
+    }
+  }
+  return [...byPath.values()];
+}
+
 export function mergeProjectFileEntries(
   prev: MentionFileEntry[],
   added: string[],
@@ -60,11 +116,14 @@ export function mergeProjectFileEntries(
     const existing = map.get(path);
     map.set(path, {
       path,
-      isDir: existing?.isDir ?? false,
+      isDir: inferIsDirForMergedPath(path, map, added) || (existing?.isDir ?? false),
       modifiedMs: existing?.modifiedMs ?? now,
     });
+    if (!map.get(path)?.isDir) {
+      ensureParentDirEntries(map, path, now);
+    }
   }
-  return sortMentionFileEntries([...map.values()]);
+  return sortMentionFileEntries(promoteParentDirs([...map.values()]));
 }
 
 /** @deprecated use sameMentionFileEntries */

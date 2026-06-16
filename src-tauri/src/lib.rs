@@ -61,6 +61,8 @@ pub fn run() {
             ipc::set_api_key,
             ipc::has_api_key,
             ipc::clear_api_key,
+            ipc::get_web_search_enabled,
+            ipc::set_web_search_enabled,
             ipc::pick_project_directory,
             fetch_latest_release_version,
             fetch_provider_balances,

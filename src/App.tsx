@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ChatPanel } from "./components/ChatPanel";
+import { CredentialsButton } from "./components/CredentialsButton";
+import { CredentialsDrawer } from "./components/CredentialsDrawer";
+import { CredentialsHintBanner } from "./components/CredentialsHintBanner";
 import { Logo } from "./components/Logo";
-import { ModelSettingsDrawer } from "./components/ModelSettingsDrawer";
 import { RightPanel } from "./components/RightPanel";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsDrawer } from "./components/SettingsDrawer";
@@ -11,21 +13,40 @@ import { ThemeToggle } from "./components/ThemeToggle";
 import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useWorkspace } from "./hooks/useWorkspace";
+import { hasAnyLlmKey } from "./lib/credentials";
 
 function App() {
   const ws = useWorkspace();
   const [settingsOpen, setSettingsOpen] = useState(false);
   useAppUpdater();
 
+  const showCredentialsHint = useMemo(
+    () => !hasAnyLlmKey(ws.apiKeyStatus) && !ws.credentialsHintDismissed,
+    [ws.apiKeyStatus, ws.credentialsHintDismissed],
+  );
+
+  function openCredentialsDrawer() {
+    ws.setCredentialsOpen(true);
+  }
+
   return (
     <div className="flex h-full flex-col bg-app">
       <header className="flex items-center gap-3 border-b border-border px-3 py-1.5">
         <Logo />
         <div className="text-sm font-semibold text-fg">Doc Agent</div>
-        <div className="truncate text-xs text-fg-secondary">
+        <div className="hidden min-w-0 truncate text-xs text-fg-secondary sm:block">
           {ws.activeProjectName ? ws.activeProjectName : "请选择项目目录"}
         </div>
+        <CredentialsHintBanner
+          visible={showCredentialsHint}
+          onOpenCredentials={openCredentialsDrawer}
+          onDismiss={() => ws.setCredentialsHintDismissed(true)}
+        />
         <div className="ml-auto flex items-center gap-2">
+          <CredentialsButton
+            showStatusDot={!hasAnyLlmKey(ws.apiKeyStatus)}
+            onClick={openCredentialsDrawer}
+          />
           <SettingsButton onClick={() => setSettingsOpen(true)} />
           <ThemeToggle />
         </div>
@@ -36,16 +57,14 @@ function App() {
         onClose={() => setSettingsOpen(false)}
         apiKeyStatus={ws.apiKeyStatus}
       />
-      <ModelSettingsDrawer
-        open={ws.modelSettingsOpen}
-        models={ws.models}
-        config={ws.effectiveSessionConfig}
-        locked={ws.modelLocked}
+      <CredentialsDrawer
+        open={ws.credentialsOpen}
         apiKeyStatus={ws.apiKeyStatus}
+        tavilyHasKey={ws.tavilyHasKey}
         highlightApiKeyProvider={ws.highlightApiKeyProvider}
-        onClose={() => ws.setModelSettingsOpen(false)}
-        onChange={(patch) => void ws.updateSessionConfig(patch)}
+        onClose={() => ws.setCredentialsOpen(false)}
         onApiKeyStatusChange={ws.handleApiKeyStatusChange}
+        onTavilyStatusChange={(has) => void ws.handleTavilyKeyChange(has)}
       />
       <WorkspaceLayout
         sidebar={
@@ -54,24 +73,22 @@ function App() {
             sessions={ws.sessions}
             activeProjectId={ws.activeProjectId}
             activeSessionId={ws.activeSessionId}
-            apiKeyStatus={ws.apiKeyStatus}
-            pendingSessionConfig={ws.pendingSessionConfig}
+            models={ws.models}
+            sessionConfig={ws.effectiveSessionConfig}
             modelLocked={ws.modelLocked}
+            apiKeyStatus={ws.apiKeyStatus}
             highlightProject={ws.highlightProject}
-            highlightApiKeyProvider={ws.highlightApiKeyProvider}
+            webSearchActive={ws.webSearchActive}
+            modelSummary={ws.modelSummary}
             onProjectsChange={ws.setProjects}
             onSelectProject={ws.selectProject}
             onSelectSession={ws.setActiveSessionId}
             onCreateSession={() => ws.createSession()}
             onDeleteSession={(sessionId) => ws.deleteSession(sessionId)}
             onReorderSessions={ws.reorderSessions}
-            onPendingSessionConfigChange={ws.handlePendingSessionConfigChange}
-            onSessionUpdated={ws.handleSessionUpdated}
-            onApiKeyStatusChange={ws.handleApiKeyStatusChange}
-            tavilyEnabled={ws.tavilyEnabled}
-            onTavilyStatusChange={ws.handleTavilyStatusChange}
-            onOpenModelSettings={() => ws.setModelSettingsOpen(true)}
-            modelSummary={ws.modelSummary}
+            onSessionConfigChange={(patch) => void ws.updateSessionConfig(patch)}
+            onEnableWebSearch={() => void ws.enableWebSearch()}
+            onDisableWebSearch={() => void ws.disableWebSearch()}
           />
         }
         chat={

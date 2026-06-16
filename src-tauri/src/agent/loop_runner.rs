@@ -88,10 +88,10 @@ pub async fn run_turn<R: Runtime>(
     }
 
     let user_count = history.iter().filter(|m| m.role == "user").count() + 1;
-    let web_enabled = state
-        .secrets
-        .has_api_key("tavily")
-        .map_err(|e| e.to_string())?;
+    let web_enabled = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        crate::core::web_search::is_web_search_active(&state.secrets, &store)?
+    };
     let mut working_messages = build_working_messages(
         &history,
         &tool_call_history,
@@ -181,10 +181,10 @@ pub async fn resume_turn<R: Runtime>(
         .find(|m| m.role == "user")
         .and_then(|m| m.content.clone())
         .unwrap_or_default();
-    let web_enabled = state
-        .secrets
-        .has_api_key("tavily")
-        .map_err(|e| e.to_string())?;
+    let web_enabled = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        crate::core::web_search::is_web_search_active(&state.secrets, &store)?
+    };
     let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
     let mut working_messages = build_working_messages(
         &history,
@@ -369,13 +369,7 @@ async fn continue_loop<R: Runtime>(
                     .map_err(|e| e.to_string())?;
                 emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
             }
-            maybe_autotitle_session(
-                &app,
-                &state,
-                &session_id,
-                user_count,
-                &user_text,
-            )?;
+            maybe_autotitle_session(&app, &state, &session_id, user_count, &user_text)?;
             emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
             emit(
                 &app,

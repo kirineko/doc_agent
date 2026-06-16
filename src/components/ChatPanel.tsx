@@ -422,6 +422,9 @@ export function ChatPanel({
                     }
                     return;
                   }
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  return;
                 }
               }
               if (showSlashPopup) {

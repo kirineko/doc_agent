@@ -41,22 +41,33 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** UI 不显示思考强度选项，请求中不包含 `reasoning_effort`
 
 ### Requirement: API Key 安全存储
-系统 SHALL 将各模型 API Key 存储于操作系统密钥链，不以明文写入数据库或日志。Key 在侧栏全局区域配置，供所有会话按 provider 复用。
+系统 SHALL 将各模型 API Key 存储于操作系统密钥链，不以明文写入数据库或日志。Key 在 Header「密钥与服务」Drawer 中配置，供所有会话按 provider 复用。
 
 #### Scenario: 配置并使用密钥
-- **WHEN** 用户在侧栏全局区域输入某 provider 的 API Key 并保存
+- **WHEN** 用户在 Header 密钥 Drawer 输入某 provider 的 API Key 并保存
 - **THEN** 密钥存入 OS keychain，该 provider 下所有会话发起请求时从 keychain 读取，界面与日志不回显明文
 
 ### Requirement: API Key 全局配置入口
-系统 SHALL 在应用内提供与会话无关的 API Key 配置入口，至少覆盖 DeepSeek、Kimi 与 MiMo；已保存的 Key MUST 默认以折叠/摘要形式展示以降低视觉干扰，未配置时展开输入。Key 配置 MUST NOT 依赖 activeSession 存在才可访问。配置入口位于「模型与密钥」Drawer 内。
+系统 SHALL 在应用 Header 提供与会话、项目均无关的「密钥」入口，打开「密钥与服务」Drawer；至少覆盖 DeepSeek、Kimi 与 MiMo。已保存的 Key MUST 默认以折叠/摘要形式展示以降低视觉干扰，未配置时展开输入。Key 配置 MUST NOT 依赖 activeProject 或 activeSession 存在才可访问。
+
+#### Scenario: 启动即可配置 Key
+- **WHEN** 用户打开应用且尚未选择项目
+- **THEN** 仍可通过 Header 密钥入口配置并保存 DeepSeek/Kimi/MiMo API Key
 
 #### Scenario: 无会话时可配置 Key
 - **WHEN** 用户已选项目但处于草稿态（无 activeSession）
-- **THEN** 仍可在 Drawer 配置并保存 DeepSeek/Kimi/MiMo API Key
+- **THEN** 仍可在密钥 Drawer 配置并保存 DeepSeek/Kimi/MiMo API Key
 
 #### Scenario: 已保存 Key 低干扰展示
 - **WHEN** 某 provider 的 API Key 已保存
-- **THEN** Drawer 内以折叠摘要（如「已保存」）展示，不默认展开密码输入框
+- **THEN** 密钥 Drawer 内以折叠摘要（如「已保存」）展示，不默认展开密码输入框
+
+### Requirement: 发送缺 Key 时打开密钥 Drawer
+当用户因缺少 LLM Provider API Key 而无法发送时，系统 SHALL 打开 Header 密钥 Drawer（而非模型 Flyout），并高亮对应 Provider 的 Key 配置行。
+
+#### Scenario: 缺 DeepSeek Key 发送
+- **WHEN** 用户尝试发送消息且当前模型 provider 为 deepseek 但未配置 Key
+- **THEN** 系统展示 send hint，并打开密钥 Drawer 且高亮 DeepSeek Key 行
 
 ### Requirement: 默认会话模型配置
 系统 SHALL 在创建新会话（含懒创建与侧栏新建）时，若用户未显式选择其他模型，默认使用 DeepSeek V4 Flash、thinking enabled、thinking effort high。

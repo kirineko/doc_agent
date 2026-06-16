@@ -31,6 +31,7 @@ import {
   type SessionConfig,
 } from "../lib/sessionConfig";
 import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
+import { refreshWebSearchState, setWebSearchActive as persistWebSearchActive } from "../lib/webSearch";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
 import { initialAgentStreamState, streamReducer } from "../lib/workspaceStream";
 import { useProjectFiles } from "./useProjectFiles";
@@ -87,7 +88,8 @@ export function useWorkspace() {
   const [stream, dispatchStream] = useReducer(streamReducer, initialAgentStreamState);
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [models, setModels] = useState<ModelInfo[]>([]);
-  const [tavilyEnabled, setTavilyEnabled] = useState(false);
+  const [tavilyHasKey, setTavilyHasKey] = useState(false);
+  const [webSearchActive, setWebSearchActive] = useState(false);
   const [initializing, setInitializing] = useState(false);
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>([]);
   const [followupSuggestions, setFollowupSuggestions] = useState<string[]>([]);
@@ -95,7 +97,8 @@ export function useWorkspace() {
   const [sendHint, setSendHint] = useState<SendBlocker | null>(null);
   const [highlightProject, setHighlightProject] = useState(false);
   const [highlightApiKeyProvider, setHighlightApiKeyProvider] = useState<string>();
-  const [modelSettingsOpen, setModelSettingsOpen] = useState(false);
+  const [credentialsOpen, setCredentialsOpen] = useState(false);
+  const [credentialsHintDismissed, setCredentialsHintDismissed] = useState(false);
   const sendingRef = useRef(false);
   const initStarterInFlightRef = useRef(false);
   const ensureSessionInFlightRef = useRef<Promise<string | null> | null>(null);
@@ -143,8 +146,11 @@ export function useWorkspace() {
       const has = await invoke<boolean>("has_api_key", { provider });
       setApiKeyStatus((prev) => ({ ...prev, [provider]: has }));
     });
-    invoke<boolean>("has_api_key", { provider: "tavily" })
-      .then(setTavilyEnabled)
+    void refreshWebSearchState()
+      .then(({ hasKey, active }) => {
+        setTavilyHasKey(hasKey);
+        setWebSearchActive(active);
+      })
       .catch(console.error);
   }, []);
 
@@ -498,7 +504,7 @@ export function useWorkspace() {
       return;
     }
     setHighlightApiKeyProvider(blocker.provider);
-    setModelSettingsOpen(true);
+    setCredentialsOpen(true);
   }
 
   async function sendMessageContent(content: string) {
@@ -701,8 +707,40 @@ export function useWorkspace() {
     }
   }, [sendHint]);
 
-  const handleTavilyStatusChange = useCallback((has: boolean) => {
-    setTavilyEnabled(has);
+  const handleTavilyKeyChange = useCallback(async (has: boolean) => {
+    setTavilyHasKey(has);
+    try {
+      const { active } = await refreshWebSearchState();
+      setWebSearchActive(active);
+    } catch (error) {
+      console.error(error);
+      setWebSearchActive(has);
+    }
+  }, []);
+
+  const enableWebSearch = useCallback(async () => {
+    try {
+      const { hasKey } = await refreshWebSearchState();
+      setTavilyHasKey(hasKey);
+      if (!hasKey) {
+        setHighlightApiKeyProvider("tavily");
+        setCredentialsOpen(true);
+        return;
+      }
+      await persistWebSearchActive(true);
+      setWebSearchActive(true);
+    } catch (error) {
+      console.error(error);
+    }
+  }, []);
+
+  const disableWebSearch = useCallback(async () => {
+    try {
+      await persistWebSearchActive(false);
+      setWebSearchActive(false);
+    } catch (error) {
+      console.error(error);
+    }
   }, []);
 
   const handlePendingSessionConfigChange = useCallback(
@@ -841,7 +879,8 @@ export function useWorkspace() {
     stream,
     contextRatio,
     apiKeyStatus,
-    tavilyEnabled,
+    tavilyHasKey,
+    webSearchActive,
     initializing,
     starterSuggestions,
     followupSuggestions,
@@ -850,8 +889,10 @@ export function useWorkspace() {
     sendHint,
     highlightProject,
     highlightApiKeyProvider,
-    modelSettingsOpen,
-    setModelSettingsOpen,
+    credentialsOpen,
+    setCredentialsOpen,
+    credentialsHintDismissed,
+    setCredentialsHintDismissed,
     modelLocked,
     models,
     effectiveSessionConfig,
@@ -866,7 +907,9 @@ export function useWorkspace() {
     submitClarifyAnswer,
     handleInitStarter,
     handleApiKeyStatusChange,
-    handleTavilyStatusChange,
+    handleTavilyKeyChange,
+    enableWebSearch,
+    disableWebSearch,
     handlePendingSessionConfigChange,
     dismissSendHint,
     dismissCompactionNotice,

@@ -249,7 +249,7 @@ pub(super) fn maybe_autotitle_session<R: Runtime>(
     };
 
     if user_count == 1 {
-        if !is_default_session_title(&session.title) {
+        if session.title_user_edited || !is_default_session_title(&session.title) {
             return Ok(());
         }
         let normalized = normalize_first_turn(user_text);

@@ -1,6 +1,8 @@
-use crate::agent::provider::{provider_for, openai_compat::model_from_str};
+use crate::agent::provider::{openai_compat::model_from_str, provider_for};
 use crate::agent::session_title::truncate_for_storage;
-use crate::agent::types::{AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort};
+use crate::agent::types::{
+    AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort,
+};
 use crate::core::store::Message;
 use crate::state::AppState;
 use std::time::Duration;
@@ -71,7 +73,9 @@ pub fn clean_generated_title(text: &str) -> Option<String> {
     if s.starts_with('\'') && s.ends_with('\'') && s.chars().count() >= 2 {
         s = s[1..s.len() - 1].trim().to_string();
     }
-    s = s.trim_end_matches(['。', '.', '！', '!', '？', '?']).to_string();
+    s = s
+        .trim_end_matches(['。', '.', '！', '!', '？', '?'])
+        .to_string();
     s = s.replace('\n', " ").trim().to_string();
     if s.is_empty() || s == "新会话" {
         return None;
@@ -125,9 +129,7 @@ pub async fn generate_session_title(
         messages: vec![
             ChatMessage {
                 role: "system".into(),
-                content: Some(
-                    "你是会话标题生成器。根据对话摘要输出一行简短中文标题。".into(),
-                ),
+                content: Some("你是会话标题生成器。根据对话摘要输出一行简短中文标题。".into()),
                 image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
@@ -167,11 +169,7 @@ pub async fn generate_session_title(
     clean_generated_title(&turn.content)
 }
 
-pub fn spawn_llm_session_title<R: Runtime>(
-    app: AppHandle<R>,
-    state: AppState,
-    session_id: String,
-) {
+pub fn spawn_llm_session_title<R: Runtime>(app: AppHandle<R>, state: AppState, session_id: String) {
     tokio::spawn(async move {
         let (model, claimed) = {
             let store = state.store.lock().map_err(|e| e.to_string());

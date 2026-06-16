@@ -1,34 +1,34 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useRef, useState } from "react";
 import { pathBasename } from "../lib/pathUtils";
 import { type SessionConfig } from "../lib/sessionConfig";
-import { Project, Session } from "../types";
+import { ModelInfo, Project, Session } from "../types";
+import { ModelFlyout } from "./ModelFlyout";
 import { SessionList } from "./SessionList";
-import { WebSearchSection } from "./WebSearchSection";
+import { WebSearchStatus } from "./WebSearchStatus";
 
 interface SidebarProps {
   projects: Project[];
   sessions: Session[];
   activeProjectId?: string;
   activeSessionId?: string;
-  apiKeyStatus: Record<string, boolean>;
-  pendingSessionConfig: SessionConfig;
+  models: ModelInfo[];
+  sessionConfig: SessionConfig;
   modelLocked: boolean;
+  apiKeyStatus: Record<string, boolean>;
   highlightProject?: boolean;
-  highlightApiKeyProvider?: string;
-  tavilyEnabled: boolean;
+  webSearchActive: boolean;
+  modelSummary: string;
   onProjectsChange: (projects: Project[]) => void;
   onSelectProject: (projectId: string | undefined) => void | Promise<void>;
   onSelectSession: (sessionId: string | undefined) => void;
   onCreateSession: () => void | Promise<void>;
   onDeleteSession: (sessionId: string) => void | Promise<void>;
   onReorderSessions: (activeId: string, overId: string) => void;
-  onPendingSessionConfigChange: (patch: Partial<SessionConfig>) => void;
-  onSessionUpdated: (session: Session) => void;
-  onApiKeyStatusChange: (provider: string, has: boolean) => void;
-  onTavilyStatusChange: (has: boolean) => void;
-  onOpenModelSettings: () => void;
-  modelSummary: string;
+  onSessionConfigChange: (patch: Partial<SessionConfig>) => void;
+  onEnableWebSearch: () => void;
+  onDisableWebSearch: () => void;
 }
 
 export function Sidebar({
@@ -36,19 +36,26 @@ export function Sidebar({
   sessions,
   activeProjectId,
   activeSessionId,
+  models,
+  sessionConfig,
   modelLocked,
+  apiKeyStatus,
   highlightProject,
-  tavilyEnabled,
+  webSearchActive,
+  modelSummary,
   onProjectsChange,
   onSelectProject,
   onSelectSession,
   onCreateSession,
   onDeleteSession,
   onReorderSessions,
-  onTavilyStatusChange,
-  onOpenModelSettings,
-  modelSummary,
+  onSessionConfigChange,
+  onEnableWebSearch,
+  onDisableWebSearch,
 }: SidebarProps) {
+  const modelTriggerRef = useRef<HTMLButtonElement>(null);
+  const [modelFlyoutOpen, setModelFlyoutOpen] = useState(false);
+
   async function pickProject() {
     const selected = await open({ directory: true, multiple: false });
     if (!selected || Array.isArray(selected)) return;
@@ -135,23 +142,40 @@ export function Sidebar({
       </div>
 
       {activeProjectId && (
-        <div className="shrink-0 space-y-1 border-t border-border pt-2.5">
+        <div className="relative shrink-0 space-y-1 border-t border-border pt-2.5">
           <div className="text-[11px] uppercase tracking-[0.16em] text-fg-secondary">模型</div>
           <button
+            id="sidebar-model-trigger"
+            ref={modelTriggerRef}
             type="button"
             className="config-surface w-full rounded-md px-2.5 py-2 text-left text-xs text-fg hover:border-border-hover"
-            onClick={onOpenModelSettings}
+            aria-expanded={modelFlyoutOpen}
+            onClick={() => setModelFlyoutOpen((open) => !open)}
           >
             <div>{modelSummary}</div>
             <div className="mt-0.5 text-[10px] text-fg-muted">
-              {modelLocked ? "已锁定 · 点击查看密钥" : "点击配置模型与密钥"}
+              {modelLocked ? "已锁定 · 点击查看" : "点击选择模型"}
             </div>
           </button>
+          <ModelFlyout
+            open={modelFlyoutOpen}
+            triggerRef={modelTriggerRef}
+            models={models}
+            config={sessionConfig}
+            locked={modelLocked}
+            apiKeyStatus={apiKeyStatus}
+            onClose={() => setModelFlyoutOpen(false)}
+            onChange={onSessionConfigChange}
+          />
         </div>
       )}
 
       <div className="mt-auto shrink-0 space-y-1.5">
-        <WebSearchSection enabled={tavilyEnabled} onStatusChange={onTavilyStatusChange} />
+        <WebSearchStatus
+          enabled={webSearchActive}
+          onEnable={() => void onEnableWebSearch()}
+          onDisable={() => void onDisableWebSearch()}
+        />
       </div>
     </aside>
   );

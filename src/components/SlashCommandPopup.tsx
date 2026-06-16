@@ -26,6 +26,23 @@ function highlight(text: string, positions: number[]): ReactNode {
   return parts;
 }
 
+function scrollSlashSelectionIntoView(container: HTMLElement, selected: HTMLElement) {
+  const group = selected.closest<HTMLElement>("[data-slash-group]");
+  const header = group?.querySelector<HTMLElement>("[data-slash-group-label]");
+  const anchor = header ?? selected;
+  const containerRect = container.getBoundingClientRect();
+  const anchorRect = anchor.getBoundingClientRect();
+  const selectedRect = selected.getBoundingClientRect();
+
+  if (anchorRect.top < containerRect.top) {
+    container.scrollTop -= containerRect.top - anchorRect.top;
+    return;
+  }
+  if (selectedRect.bottom > containerRect.bottom) {
+    container.scrollTop += selectedRect.bottom - containerRect.bottom;
+  }
+}
+
 export function SlashCommandPopup({
   groups,
   selectedIndex,
@@ -37,7 +54,8 @@ export function SlashCommandPopup({
     const container = listRef.current;
     if (!container) return;
     const selected = container.querySelector<HTMLElement>('[data-slash-selected="true"]');
-    selected?.scrollIntoView({ block: "nearest" });
+    if (!selected) return;
+    scrollSlashSelectionIntoView(container, selected);
   }, [selectedIndex, groups]);
 
   if (groups.length === 0) {
@@ -56,8 +74,11 @@ export function SlashCommandPopup({
       className="mention-popup absolute bottom-full left-0 z-20 mb-1 max-h-48 w-full overflow-y-auto rounded-md py-1 shadow-lg"
     >
       {groups.map((group) => (
-        <div key={group.category}>
-          <div className="px-2 py-0.5 text-[11px] font-medium text-fg-muted">
+        <div key={group.category} data-slash-group>
+          <div
+            data-slash-group-label
+            className="px-2 py-0.5 text-[11px] font-medium text-fg-muted"
+          >
             {group.categoryLabel}
           </div>
           {group.items.map((match) => {

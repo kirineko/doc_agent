@@ -445,7 +445,12 @@ pub fn set_api_key(
     state
         .secrets
         .set_api_key(&provider, &api_key)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    if provider == "tavily" {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        crate::core::web_search::set_web_search_enabled(&store, true)?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -462,6 +467,18 @@ pub fn clear_api_key(state: State<AppState>, provider: String) -> Result<(), Str
         .secrets
         .clear_api_key(&provider)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_web_search_enabled(state: State<AppState>) -> Result<bool, String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    crate::core::web_search::is_web_search_active(&state.secrets, &store)
+}
+
+#[tauri::command]
+pub fn set_web_search_enabled(state: State<AppState>, enabled: bool) -> Result<(), String> {
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    crate::core::web_search::set_web_search_enabled(&store, enabled)
 }
 
 #[tauri::command]

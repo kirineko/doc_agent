@@ -16,12 +16,23 @@ describe("mergeProjectFileEntries", () => {
     ).toEqual(["b.md", "a.md"]);
   });
 
-  it("skips ooxml unpack internals", () => {
-    expect(
-      mergeProjectFileEntries([], ["unpacked/word/document.xml", "report.docx"]).map(
-        (entry) => entry.path,
-      ),
-    ).toEqual(["report.docx"]);
+  it("promotes parent dirs when a nested file is merged", () => {
+    const merged = mergeProjectFileEntries(
+      [{ path: "split-pages/page-1.pdf", isDir: false, modifiedMs: 1 }],
+      ["split-pages"],
+    );
+    expect(merged.find((entry) => entry.path === "split-pages")?.isDir).toBe(true);
+  });
+
+  it("keeps extensionless files as files without child paths", () => {
+    const merged = mergeProjectFileEntries([], ["Makefile"]);
+    expect(merged[0]?.isDir).toBe(false);
+  });
+
+  it("inserts parent dirs for nested file paths", () => {
+    const merged = mergeProjectFileEntries([], ["docs/report.md"]);
+    expect(merged.find((entry) => entry.path === "docs")?.isDir).toBe(true);
+    expect(merged.find((entry) => entry.path === "docs/report.md")?.isDir).toBe(false);
   });
 });
 

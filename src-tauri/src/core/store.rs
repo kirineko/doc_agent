@@ -353,7 +353,7 @@ impl Store {
         )?;
         let mut rows = stmt.query(params![id])?;
         if let Some(row) = rows.next()? {
-            Ok(Some(Self::map_session_row(&row)?))
+            Ok(Some(Self::map_session_row(row)?))
         } else {
             Ok(None)
         }
@@ -392,8 +392,8 @@ impl Store {
         let model = model.unwrap_or(&current.model);
         let thinking_enabled = thinking_enabled.unwrap_or(current.thinking_enabled);
         let thinking_effort = thinking_effort.unwrap_or(&current.thinking_effort);
-        let title_user_edited = current.title_user_edited
-            || title.is_some_and(|t| t != current.title.as_str());
+        let title_user_edited =
+            current.title_user_edited || title.is_some_and(|t| t != current.title.as_str());
         let updated_at = now();
         self.conn.execute(
             "UPDATE sessions SET title = ?1, model = ?2, thinking_enabled = ?3, thinking_effort = ?4, updated_at = ?5, title_user_edited = ?6 WHERE id = ?7",
@@ -1047,7 +1047,10 @@ mod tests {
                 .unwrap();
         }
         let store = Store::open(db_path).unwrap();
-        let session = store.list_sessions(&store.list_projects().unwrap()[0].id).unwrap()[0].clone();
+        let session = store
+            .list_sessions(&store.list_projects().unwrap()[0].id)
+            .unwrap()[0]
+            .clone();
         assert!(session.autotitle_llm_done);
     }
 
