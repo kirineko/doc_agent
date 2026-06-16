@@ -11,6 +11,7 @@ import { detectSlash, insertSlashPrompt } from "../lib/slash";
 import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
+import { STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
@@ -62,6 +63,8 @@ interface ChatPanelProps {
   ensureActiveSession?: () => Promise<string | null>;
   supportsVision?: boolean;
   onInvalidImagePick?: () => void;
+  runStatus?: SessionRunStatus;
+  onCancelTurn?: () => void;
 }
 
 export function ChatPanel({
@@ -99,6 +102,8 @@ export function ChatPanel({
   ensureActiveSession,
   supportsVision = false,
   onInvalidImagePick,
+  runStatus = "idle",
+  onCancelTurn,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -115,6 +120,8 @@ export function ChatPanel({
   const visibleMessages = useMemo(() => messages.filter(isVisibleMessage), [messages]);
   const lastMessageId = visibleMessages.at(-1)?.id;
   const hasActiveClarify = Boolean(activeClarify);
+  const showStop = (runStatus === "running" || runStatus === "stopping") && !hasActiveClarify;
+  const stopping = runStatus === "stopping";
   const inputDisabled = busy || initializing || hasActiveClarify;
   const canSend = Boolean(input.trim() || pendingAttachments.length > 0);
   const mention = detectMention(input, cursor);
@@ -399,8 +406,10 @@ export function ChatPanel({
                       ? "正在导入文件…"
                     : hasActiveClarify
                       ? "请先回答上方澄清问题"
-                      : busy
-                        ? "等待回复中…"
+                      : stopping
+                        ? `正在停止当前任务…（等待工具结束，最多约 ${STOPPING_TIMEOUT_SECONDS} 秒）`
+                        : busy
+                          ? "等待回复中…"
                         : "Enter 发送，Shift+Enter 换行，@ 引用，/ 任务模板，+ 上传文件，可粘贴或选图片"
                 }
                 value={input}
@@ -445,7 +454,10 @@ export function ChatPanel({
                 slashMenuOpen={slashMenuOpen}
                 canSend={canSend}
                 busy={busy}
+                showStop={showStop}
+                stopping={stopping}
                 onSend={onSend}
+                onStop={onCancelTurn}
                 onImportFiles={importProjectFiles}
                 onPickImage={onPasteImage}
                 onToggleSlashMenu={() => setSlashMenuOpen((open) => !open)}

@@ -20,6 +20,8 @@ pub enum ProviderError {
     Http(String),
     #[error("parse error: {0}")]
     Parse(String),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 #[async_trait]

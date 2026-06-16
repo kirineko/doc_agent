@@ -119,9 +119,7 @@ fn looks_like_calver(value: &str) -> bool {
 }
 
 fn is_valid_calver_segment(part: &str) -> bool {
-    !part.is_empty()
-        && !part.starts_with('0')
-        && part.chars().all(|ch| ch.is_ascii_digit())
+    !part.is_empty() && !part.starts_with('0') && part.chars().all(|ch| ch.is_ascii_digit())
 }
 
 fn entry_created_at(entry: &DirEntry) -> Option<SystemTime> {
@@ -145,7 +143,9 @@ mod tests {
 
     #[test]
     fn matches_known_updater_and_installer_names() {
-        assert!(is_updater_artifact_name("DocAgent-2026.6.17-updater-abc123"));
+        assert!(is_updater_artifact_name(
+            "DocAgent-2026.6.17-updater-abc123"
+        ));
         assert!(is_updater_artifact_name("DocAgent-2026.6.17-installer.exe"));
         assert!(is_updater_artifact_name("DocAgent_2026.6.17_x64-setup.exe"));
     }
@@ -155,10 +155,14 @@ mod tests {
         assert!(!is_updater_artifact_name("random-temp.txt"));
         assert!(!is_updater_artifact_name("DocAgent-2026.6.1-updater"));
         assert!(!is_updater_artifact_name("DocAgent-2026.6.1-setup.exe"));
-        assert!(!is_updater_artifact_name("DocAgent-2026.6.1-updater-setup.exe"));
+        assert!(!is_updater_artifact_name(
+            "DocAgent-2026.6.1-updater-setup.exe"
+        ));
         assert!(!is_updater_artifact_name("DocAgent-2026.6.1.msi"));
         assert!(!is_updater_artifact_name("OtherApp-1.0-updater-setup.exe"));
-        assert!(!is_updater_artifact_name("DocAgent-not-a-version-updater-x"));
+        assert!(!is_updater_artifact_name(
+            "DocAgent-not-a-version-updater-x"
+        ));
     }
 
     #[test]

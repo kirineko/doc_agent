@@ -31,6 +31,7 @@ mod provider_tests {
             },
             response_format: None,
             max_tokens: None,
+            cancel: None,
         }
     }
 

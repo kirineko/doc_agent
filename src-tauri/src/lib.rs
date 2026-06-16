@@ -61,6 +61,7 @@ pub fn run() {
             ipc::send_message,
             ipc::submit_clarify_answer,
             ipc::cancel_clarify,
+            ipc::cancel_turn,
             ipc::set_api_key,
             ipc::has_api_key,
             ipc::clear_api_key,

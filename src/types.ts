@@ -143,6 +143,7 @@ export type AgentEvent =
       changed_paths?: string[];
     }
   | { kind: "turn_complete"; session_id: string; turn_id: string }
+  | { kind: "turn_cancelled"; session_id: string; turn_id: string }
   | { kind: "turn_awaiting_user"; session_id: string; turn_id: string }
   | { kind: "clarify_question"; session_id: string; turn_id: string; tool_call_id: string; question: ClarifyQuestion }
   | {

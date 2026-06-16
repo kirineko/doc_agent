@@ -1,5 +1,6 @@
 use crate::agent::loop_support::build_working_messages;
 use crate::agent::provider::provider_for;
+use crate::agent::turn_control::{CancelSignal, TURN_CANCELLED};
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort,
 };
@@ -252,7 +253,11 @@ pub async fn compact_session_if_needed<R: Runtime>(
     token_count: u32,
     pending_estimate: u32,
     web_enabled: bool,
+    cancel: &CancelSignal,
 ) -> Result<(Vec<ChatMessage>, u32, u32, Option<CompactionOutcome>), String> {
+    if cancel.is_cancelled() {
+        return Err(TURN_CANCELLED.into());
+    }
     let effective = token_count.saturating_add(pending_estimate);
     let max_context = model.max_context_size();
     let reserved = reserved_context_size(max_context);
@@ -303,8 +308,10 @@ pub async fn compact_session_if_needed<R: Runtime>(
 
     let compact_input = build_compact_input(prepared.to_compact, &tool_call_history);
     let summary =
-        match run_compaction_llm(session_id, turn_id, model, api_key, &compact_input).await {
+        match run_compaction_llm(session_id, turn_id, model, api_key, &compact_input, cancel).await
+        {
             Ok(summary) => summary,
+            Err(err) if err == TURN_CANCELLED => return Err(err),
             Err(_) => {
                 truncate_fallback_compact_only(
                     state,
@@ -431,6 +438,7 @@ async fn run_compaction_llm(
     model: ModelId,
     api_key: Option<&str>,
     compact_input: &str,
+    cancel: &CancelSignal,
 ) -> Result<String, String> {
     let provider = provider_for(model);
     let request = ChatRequest {
@@ -465,12 +473,16 @@ async fn run_compaction_llm(
         },
         response_format: None,
         max_tokens: Some(8192),
+        cancel: Some(cancel.clone()),
     };
 
     let turn = provider
         .chat_stream(request, api_key, &mut |_| {})
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| match e {
+            crate::agent::provider::ProviderError::Cancelled => TURN_CANCELLED.into(),
+            other => other.to_string(),
+        })?;
     let summary = turn.content.trim();
     if summary.is_empty() {
         return Err("compaction produced empty summary".into());

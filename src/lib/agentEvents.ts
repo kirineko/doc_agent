@@ -36,9 +36,9 @@ function dropStreamingPlaceholders(liveTools: LiveToolCall[]): LiveToolCall[] {
 export function applyAgentEvent(
   state: AgentStreamState,
   event: AgentEvent,
-  activeSessionId: string | undefined,
+  activeSessionId?: string,
 ): AgentStreamState {
-  if (event.session_id !== activeSessionId) {
+  if (activeSessionId !== undefined && event.session_id !== activeSessionId) {
     return state;
   }
 
@@ -125,6 +125,11 @@ export function applyAgentEvent(
         ...clearStreamingBuffers(state, false),
         liveTools: dropStreamingPlaceholders(state.liveTools),
       };
+    case "turn_cancelled":
+      return {
+        ...clearStreamingBuffers(state, false),
+        liveTools: dropStreamingPlaceholders(state.liveTools),
+      };
     case "turn_awaiting_user":
       return {
         ...clearStreamingBuffers(state, false),
@@ -173,4 +178,13 @@ export function markAgentResuming(state: AgentStreamState): AgentStreamState {
 
 export function resetAgentStream(): AgentStreamState {
   return initialAgentStreamState;
+}
+
+export function isTerminalRunEvent(kind: AgentEvent["kind"]): boolean {
+  return (
+    kind === "turn_complete" ||
+    kind === "turn_cancelled" ||
+    kind === "turn_awaiting_user" ||
+    kind === "error"
+  );
 }

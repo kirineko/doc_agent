@@ -3,6 +3,7 @@ use crate::agent::compaction::MAX_TOOL_STEPS;
 use crate::agent::types::AgentEvent;
 use crate::core::store::{Message, Store};
 use crate::state::AppState;
+use std::time::Duration;
 use tempfile::tempdir;
 
 fn seed_bulky_history(store: &Store, session_id: &str, pairs: usize) {
@@ -375,6 +376,317 @@ fn mock_pdf_reads_finish_before_clarify_pause() {
         assert!(clarify_call.result_json.is_none());
         let pending = store.get_clarify_pending(&session_id).unwrap().unwrap();
         assert_eq!(pending.tool_call_id, clarify_call.id);
+    });
+}
+
+#[test]
+fn mock_slow_turn_cancelled_without_turn_complete() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap()
+                .id
+        };
+
+        let shared = state.clone();
+        let sid = session_id.clone();
+        let run =
+            tokio::spawn(
+                async move { run_turn(handle, shared, sid, "慢工具".into(), vec![]).await },
+            );
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        state.turns.cancel(&session_id).unwrap();
+        run.await.unwrap().unwrap();
+
+        assert!(!state.turns.is_session_active(&session_id));
+        let store = state.store.lock().unwrap();
+        let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+        assert!(calls.is_empty(), "cancel during SSE should not run tools");
+    });
+}
+
+#[test]
+fn project_rejects_second_session_while_first_is_running() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let (session_a, session_b) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let a = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap()
+                .id;
+            let b = store
+                .create_session(&project.id, "会话 B", "mock", true, "high")
+                .unwrap()
+                .id;
+            (a, b)
+        };
+
+        let shared = state.clone();
+        let sid = session_a.clone();
+        let run =
+            tokio::spawn(
+                async move { run_turn(handle, shared, sid, "慢工具".into(), vec![]).await },
+            );
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        let blocked = run_turn(
+            app.handle().clone(),
+            state.clone(),
+            session_b.clone(),
+            "hello".into(),
+            vec![],
+        )
+        .await
+        .unwrap_err();
+        assert!(blocked.contains("项目内有其他会话正在执行任务"));
+        {
+            let store = state.store.lock().unwrap();
+            let messages = store.list_messages(&session_b).unwrap();
+            assert!(
+                messages
+                    .iter()
+                    .all(|m| m.role != "user" || m.content.as_deref() != Some("hello")),
+                "rejected send must not persist user message"
+            );
+        }
+
+        state.turns.cancel(&session_a).unwrap();
+        run.await.unwrap().unwrap();
+    });
+}
+
+#[test]
+fn clarify_pending_allows_other_session_in_same_project() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let (session_a, session_b) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let a = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap()
+                .id;
+            let b = store
+                .create_session(&project.id, "会话 B", "mock", true, "high")
+                .unwrap()
+                .id;
+            (a, b)
+        };
+
+        run_turn(
+            handle.clone(),
+            state.clone(),
+            session_a.clone(),
+            "请澄清需求".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        {
+            let store = state.store.lock().unwrap();
+            assert!(store.get_clarify_pending(&session_a).unwrap().is_some());
+            assert!(!state.turns.is_session_active(&session_a));
+        }
+
+        run_turn(
+            handle,
+            state.clone(),
+            session_b.clone(),
+            "另一条消息".into(),
+            vec![],
+        )
+        .await
+        .expect("clarify pending on A should not block B in same project");
+    });
+}
+
+#[test]
+fn clarify_submit_rejected_while_other_session_running() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let (session_a, session_b) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let a = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap()
+                .id;
+            let b = store
+                .create_session(&project.id, "会话 B", "mock", true, "high")
+                .unwrap()
+                .id;
+            (a, b)
+        };
+
+        run_turn(
+            handle.clone(),
+            state.clone(),
+            session_a.clone(),
+            "请澄清需求".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let shared = state.clone();
+        let sid = session_b.clone();
+        let run =
+            tokio::spawn(
+                async move { run_turn(handle, shared, sid, "慢工具".into(), vec![]).await },
+            );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let blocked = crate::agent::clarify_interaction::submit_clarify_answer(
+            app.handle().clone(),
+            state.clone(),
+            crate::agent::clarify_interaction::SubmitClarifyAnswer {
+                session_id: session_a.clone(),
+                question_id: "mock_doc_type".into(),
+                selected: vec!["pptx".into()],
+                custom: None,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(blocked.contains("项目内有其他会话正在执行任务"));
+        {
+            let store = state.store.lock().unwrap();
+            assert!(store.get_clarify_pending(&session_a).unwrap().is_some());
+        }
+
+        state.turns.cancel(&session_b).unwrap();
+        run.await.unwrap().unwrap();
+    });
+}
+
+#[test]
+fn clarify_cancel_allowed_while_other_session_running() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let (session_a, session_b) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let a = store
+                .create_session(&project.id, "会话 A", "mock", true, "high")
+                .unwrap()
+                .id;
+            let b = store
+                .create_session(&project.id, "会话 B", "mock", true, "high")
+                .unwrap()
+                .id;
+            (a, b)
+        };
+
+        run_turn(
+            handle.clone(),
+            state.clone(),
+            session_a.clone(),
+            "请澄清需求".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+
+        let shared = state.clone();
+        let sid = session_b.clone();
+        let run =
+            tokio::spawn(
+                async move { run_turn(handle, shared, sid, "慢工具".into(), vec![]).await },
+            );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        crate::agent::clarify_interaction::cancel_clarify(
+            app.handle().clone(),
+            state.clone(),
+            session_a.clone(),
+        )
+        .await
+        .unwrap();
+
+        {
+            let store = state.store.lock().unwrap();
+            assert!(store.get_clarify_pending(&session_a).unwrap().is_none());
+            let calls = store.list_tool_calls_for_session(&session_a).unwrap();
+            let clarify = calls
+                .iter()
+                .find(|call| call.name == "clarify_ask")
+                .unwrap();
+            assert!(clarify
+                .result_json
+                .as_deref()
+                .is_some_and(|json| json.contains("cancelled")));
+        }
+
+        state.turns.cancel(&session_b).unwrap();
+        run.await.unwrap().unwrap();
     });
 }
 

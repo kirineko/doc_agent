@@ -16,7 +16,10 @@ interface ChatInputToolbarProps {
   slashMenuOpen: boolean;
   canSend: boolean;
   busy: boolean;
+  showStop?: boolean;
+  stopping?: boolean;
   onSend: () => void;
+  onStop?: () => void;
   onImportFiles: (files: File[]) => void | Promise<void>;
   onPickImage: (file: File, mime: string) => void | Promise<void>;
   onToggleSlashMenu: () => void;
@@ -63,7 +66,10 @@ export function ChatInputToolbar({
   slashMenuOpen,
   canSend,
   busy,
+  showStop = false,
+  stopping = false,
   onSend,
+  onStop,
   onImportFiles,
   onPickImage,
   onToggleSlashMenu,
@@ -153,14 +159,25 @@ export function ChatInputToolbar({
           <SlashIcon className={TOOLBAR_ICON_CLASS} />
         </ToolbarIconButton>
       </div>
-      <button
-        type="button"
-        className="btn-primary ml-auto shrink-0 rounded-md px-3 py-1.5 text-sm font-medium"
-        disabled={disabled || !canSend}
-        onClick={onSend}
-      >
-        {busy ? "发送中" : "发送"}
-      </button>
+      {showStop ? (
+        <button
+          type="button"
+          className="ml-auto shrink-0 rounded-md border border-rose-500/40 px-3 py-1.5 text-sm font-medium text-rose-400 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={stopping}
+          onClick={onStop}
+        >
+          {stopping ? "停止中…" : "停止"}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="btn-primary ml-auto shrink-0 rounded-md px-3 py-1.5 text-sm font-medium"
+          disabled={disabled || !canSend}
+          onClick={onSend}
+        >
+          {busy ? "发送中" : "发送"}
+        </button>
+      )}
     </div>
   );
 }

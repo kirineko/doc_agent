@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### Turn 停止与会话运行态
+
+- **停止按钮**：Agent 执行中可在输入区点击「停止」；进入 stopping 状态后等待当前工具结束（最长约 35 秒），随后 emit `turn_cancelled` 并对未完成 tool call 补写 cancelled result
+- **按会话运行态**：前端按 session 维护 `idle` / `running` / `stopping` 与流式缓冲；切换会话不再清除后台 session 的 running 进度
+- **侧栏指示**：running / stopping 会话在侧栏显示 spinner 指示，可点击切换查看后台任务
+- **同项目互斥**：同一项目内最多一个 session 处于 running；其他 session 发送或 clarify resume 时被拒绝并提示正在运行的会话标题
+- **SSE / 压缩可取消**：流式 LLM 与上下文压缩摘要请求监听 cancel 信号，stop 后不再追加 token
+- **后端**：新增 `TurnRegistry`、`cancel_turn` IPC、`turn_cancelled` 事件；clarify 暂停时 unregister，不算 running
+
 ---
 
 ## [2026.6.17] — 2026-06-17

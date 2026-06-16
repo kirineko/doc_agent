@@ -1,8 +1,11 @@
+use crate::agent::turn_control::CancelSignal;
 use crate::agent::types::{AssistantTurn, TokenUsage, ToolCall};
 use futures_util::StreamExt;
 use reqwest::Response;
 use serde_json::Value;
+use std::time::Duration;
 use thiserror::Error;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 #[derive(Debug, Error)]
@@ -11,10 +14,13 @@ pub enum SseError {
     Http(String),
     #[error("json error: {0}")]
     Json(String),
+    #[error("cancelled")]
+    Cancelled,
 }
 
 pub async fn consume_openai_sse<F>(
     response: Response,
+    cancel: Option<&CancelSignal>,
     mut on_delta: F,
 ) -> Result<AssistantTurn, SseError>
 where
@@ -28,7 +34,21 @@ where
     let mut finish_reason: Option<String> = None;
     let mut usage: Option<TokenUsage> = None;
 
-    while let Some(chunk) = stream.next().await {
+    loop {
+        if cancel.is_some_and(|c| c.is_cancelled()) {
+            return Err(SseError::Cancelled);
+        }
+
+        let chunk = tokio::select! {
+            chunk = stream.next() => chunk,
+            _ = wait_for_cancel(cancel), if cancel.is_some() => {
+                return Err(SseError::Cancelled);
+            }
+        };
+
+        let Some(chunk) = chunk else {
+            break;
+        };
         let chunk = chunk.map_err(|e| SseError::Http(e.to_string()))?;
         buffer.push_str(&String::from_utf8_lossy(&chunk));
 
@@ -81,6 +101,10 @@ where
         }
     }
 
+    if cancel.is_some_and(|c| c.is_cancelled()) {
+        return Err(SseError::Cancelled);
+    }
+
     Ok(AssistantTurn {
         content,
         reasoning_content: reasoning,
@@ -88,6 +112,16 @@ where
         finish_reason,
         usage,
     })
+}
+
+async fn wait_for_cancel(cancel: Option<&CancelSignal>) {
+    let Some(signal) = cancel else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    while !signal.is_cancelled() {
+        sleep(Duration::from_millis(50)).await;
+    }
 }
 
 fn parse_usage(value: &Value) -> Option<TokenUsage> {

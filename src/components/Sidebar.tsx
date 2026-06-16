@@ -3,6 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useRef, useState } from "react";
 import { pathBasename } from "../lib/pathUtils";
 import { type SessionConfig } from "../lib/sessionConfig";
+import type { SessionRunStatus } from "../lib/sessionRunState";
 import { ModelInfo, Project, Session } from "../types";
 import { ModelFlyout } from "./ModelFlyout";
 import { SessionList } from "./SessionList";
@@ -13,6 +14,7 @@ interface SidebarProps {
   sessions: Session[];
   activeProjectId?: string;
   activeSessionId?: string;
+  sessionRunStatuses?: Record<string, SessionRunStatus>;
   models: ModelInfo[];
   sessionConfig: SessionConfig;
   modelLocked: boolean;
@@ -36,6 +38,7 @@ export function Sidebar({
   sessions,
   activeProjectId,
   activeSessionId,
+  sessionRunStatuses,
   models,
   sessionConfig,
   modelLocked,
@@ -135,6 +138,7 @@ export function Sidebar({
         <SessionList
           sessions={sessions}
           activeSessionId={activeSessionId}
+          sessionRunStatuses={sessionRunStatuses}
           onSelectSession={onSelectSession}
           onDeleteSession={(sessionId) => void onDeleteSession(sessionId)}
           onReorderSessions={onReorderSessions}

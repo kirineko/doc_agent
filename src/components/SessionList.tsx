@@ -16,11 +16,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { plainSessionTitle } from "../lib/formatTitle";
 import { formatSessionTime } from "../lib/formatTime";
+import type { SessionRunStatus } from "../lib/sessionRunState";
 import type { Session } from "../types";
 
 interface SessionListProps {
   sessions: Session[];
   activeSessionId?: string;
+  sessionRunStatuses?: Record<string, SessionRunStatus>;
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onReorderSessions: (activeId: string, overId: string) => void;
@@ -29,6 +31,7 @@ interface SessionListProps {
 interface SortableSessionItemProps {
   session: Session;
   active: boolean;
+  runStatus: SessionRunStatus;
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
 }
@@ -36,6 +39,7 @@ interface SortableSessionItemProps {
 function SortableSessionItem({
   session,
   active,
+  runStatus,
   onSelectSession,
   onDeleteSession,
 }: SortableSessionItemProps) {
@@ -77,7 +81,22 @@ function SortableSessionItem({
           >
             {plainSessionTitle(session.title)}
           </div>
-          <div className="text-[11px] text-fg-secondary">{formatSessionTime(session.updated_at)}</div>
+          <div className="flex items-center gap-1.5 text-[11px] text-fg-secondary">
+            {runStatus === "running" ? (
+              <span
+                className="inline-flex items-center gap-1 text-sky-400"
+                aria-label="执行中"
+              >
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-sky-400" />
+                执行中
+              </span>
+            ) : runStatus === "stopping" ? (
+              <span className="text-amber-400" aria-label="停止中">
+                停止中…
+              </span>
+            ) : null}
+            <span>{formatSessionTime(session.updated_at)}</span>
+          </div>
         </button>
       </div>
       <button
@@ -96,6 +115,7 @@ function SortableSessionItem({
 export function SessionList({
   sessions,
   activeSessionId,
+  sessionRunStatuses = {},
   onSelectSession,
   onDeleteSession,
   onReorderSessions,
@@ -120,6 +140,7 @@ export function SessionList({
               key={session.id}
               session={session}
               active={session.id === activeSessionId}
+              runStatus={sessionRunStatuses[session.id] ?? "idle"}
               onSelectSession={onSelectSession}
               onDeleteSession={onDeleteSession}
             />

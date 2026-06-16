@@ -78,6 +78,7 @@ pub async fn vision_subcall(
         },
         response_format: None,
         max_tokens: None,
+        cancel: None,
     };
 
     let provider = provider_for(model_id);

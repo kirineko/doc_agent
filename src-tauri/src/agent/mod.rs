@@ -9,4 +9,5 @@ pub mod session_title;
 pub mod suggest;
 pub mod title_gen;
 pub mod tool_args;
+pub mod turn_control;
 pub mod types;

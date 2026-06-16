@@ -4,6 +4,8 @@ use crate::agent::types::{
 };
 use async_trait::async_trait;
 use serde_json::json;
+use std::time::Duration;
+use tokio::time::sleep;
 
 pub struct MockProvider;
 
@@ -61,6 +63,46 @@ impl LlmProvider for MockProvider {
         let wants_clarify =
             user_text.contains("澄清") || user_text.to_lowercase().contains("clarify");
         let wants_list = user_text.contains("列出") || user_text.to_lowercase().contains("list");
+        let wants_slow = user_text.contains("慢工具");
+
+        if wants_slow {
+            for chunk in ["执行", "慢", "工具", "中", "…"] {
+                if request
+                    .cancel
+                    .as_ref()
+                    .is_some_and(|signal| signal.is_cancelled())
+                {
+                    return Err(ProviderError::Cancelled);
+                }
+                sleep(Duration::from_millis(80)).await;
+                emit(
+                    &mut on_event,
+                    AgentEvent::ContentToken {
+                        session_id: session_id.clone(),
+                        turn_id: turn_id.clone(),
+                        delta: chunk.to_string(),
+                    },
+                );
+            }
+            if request.tools.iter().any(|t| t.name == "fs_list") {
+                let tool_id = "call_mock_slow_1".to_string();
+                return Ok(finish_turn(
+                    &request.messages,
+                    String::new(),
+                    "慢工具场景。",
+                    vec![ToolCall {
+                        id: tool_id,
+                        call_type: "function".into(),
+                        function: crate::agent::types::FunctionCall {
+                            name: "fs_list".into(),
+                            arguments: json!({ "path": "." }).to_string(),
+                        },
+                    }],
+                    None,
+                ));
+            }
+        }
+
         let wants_clarify_first = user_text.contains("先澄清再列出");
         let wants_pdf_clarify = user_text.contains("读取PDF并澄清");
 

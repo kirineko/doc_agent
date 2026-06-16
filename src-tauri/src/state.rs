@@ -1,3 +1,4 @@
+use crate::agent::turn_control::TurnRegistry;
 use crate::core::secrets::Secrets;
 use crate::core::store::Store;
 use crate::tools::registry::ToolRegistry;
@@ -9,6 +10,7 @@ pub struct AppState {
     pub store: Arc<Mutex<Store>>,
     pub secrets: Secrets,
     pub tools: ToolRegistry,
+    pub turns: Arc<TurnRegistry>,
 }
 
 impl AppState {
@@ -19,6 +21,7 @@ impl AppState {
             store: Arc::new(Mutex::new(store)),
             secrets: Secrets::open_in_data_dir(data_dir).map_err(|e| e.to_string())?,
             tools: ToolRegistry::default_tools(),
+            turns: Arc::new(TurnRegistry::new()),
         })
     }
 }

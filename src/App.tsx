@@ -73,6 +73,7 @@ function App() {
             sessions={ws.sessions}
             activeProjectId={ws.activeProjectId}
             activeSessionId={ws.activeSessionId}
+            sessionRunStatuses={ws.sessionRunStatuses}
             models={ws.models}
             sessionConfig={ws.effectiveSessionConfig}
             modelLocked={ws.modelLocked}
@@ -127,6 +128,10 @@ function App() {
             ensureActiveSession={ws.ensureActiveSession}
             supportsVision={ws.supportsVision}
             onInvalidImagePick={ws.notifyInvalidImagePick}
+            runStatus={
+              ws.activeSessionId ? ws.sessionRunStatuses[ws.activeSessionId] ?? "idle" : "idle"
+            }
+            onCancelTurn={() => void ws.cancelTurn()}
           />
         }
         right={

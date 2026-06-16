@@ -151,6 +151,7 @@ pub async fn generate_session_title(
         },
         response_format: None,
         max_tokens: Some(64),
+        cancel: None,
     };
 
     let provider = provider_for(model_id);

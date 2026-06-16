@@ -33,7 +33,14 @@ import {
 import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
 import { refreshWebSearchState, setWebSearchActive as persistWebSearchActive } from "../lib/webSearch";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
-import { initialAgentStreamState, streamReducer } from "../lib/workspaceStream";
+import {
+  deriveActiveStream,
+  sessionRunStatus,
+  sessionRunStatusMap,
+  STOPPING_TIMEOUT_MS,
+} from "../lib/sessionRunState";
+import { isTerminalRunEvent } from "../lib/agentEvents";
+import { initialSessionRunsState, sessionRunsReducer } from "../lib/workspaceStream";
 import { useProjectFiles } from "./useProjectFiles";
 import {
   type ActiveClarify,
@@ -85,7 +92,20 @@ export function useWorkspace() {
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [visionToast, setVisionToast] = useState<string | null>(null);
   const [contextRatio, setContextRatio] = useState(0);
-  const [stream, dispatchStream] = useReducer(streamReducer, initialAgentStreamState);
+  const [sessionRuns, dispatchSessionRuns] = useReducer(
+    sessionRunsReducer,
+    initialSessionRunsState,
+  );
+  const sessionRunsRef = useRef(sessionRuns);
+  sessionRunsRef.current = sessionRuns;
+  const stream = useMemo(
+    () => deriveActiveStream(sessionRuns, activeSessionId),
+    [sessionRuns, activeSessionId],
+  );
+  const sessionRunStatuses = useMemo(
+    () => sessionRunStatusMap(sessionRuns),
+    [sessionRuns],
+  );
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [tavilyHasKey, setTavilyHasKey] = useState(false);
@@ -99,7 +119,8 @@ export function useWorkspace() {
   const [highlightApiKeyProvider, setHighlightApiKeyProvider] = useState<string>();
   const [credentialsOpen, setCredentialsOpen] = useState(false);
   const [credentialsHintDismissed, setCredentialsHintDismissed] = useState(false);
-  const sendingRef = useRef(false);
+  const sendingSessionsRef = useRef(new Set<string>());
+  const stoppingTimersRef = useRef<Map<string, number>>(new Map());
   const initStarterInFlightRef = useRef(false);
   const ensureSessionInFlightRef = useRef<Promise<string | null> | null>(null);
   const selectionTargetProjectIdRef = useRef<string | undefined>(undefined);
@@ -190,8 +211,6 @@ export function useWorkspace() {
   }, [projectFiles.loadInitial, projectFiles.reset, setSessionsFromBackend]);
 
   useEffect(() => {
-    dispatchStream({ type: "reset" });
-
     if (!activeSessionId) {
       setContextRatio(0);
       setMessages([]);
@@ -320,10 +339,59 @@ export function useWorkspace() {
     }
   }, [apiKeyStatus.deepseek]);
 
+  const clearStoppingTimeout = useCallback((sessionId: string) => {
+    const timer = stoppingTimersRef.current.get(sessionId);
+    if (timer === undefined) return;
+    window.clearTimeout(timer);
+    stoppingTimersRef.current.delete(sessionId);
+  }, []);
+
+  const scheduleStoppingTimeout = useCallback((sessionId: string) => {
+    clearStoppingTimeout(sessionId);
+    const timer = window.setTimeout(async () => {
+      stoppingTimersRef.current.delete(sessionId);
+      if (sessionRunStatus(sessionRunsRef.current, sessionId) !== "stopping") {
+        return;
+      }
+      try {
+        // 兜底再发一次取消并借此探测后端状态：cancel_turn 在 session
+        // 仍注册时返回 Ok（后端仍在跑），不应强制 idle，继续等待 turn_cancelled。
+        await invoke("cancel_turn", { req: { session_id: sessionId } });
+        if (sessionRunStatus(sessionRunsRef.current, sessionId) === "stopping") {
+          scheduleStoppingTimeoutRef.current(sessionId);
+        }
+      } catch {
+        // cancel_turn 报错说明后端已无进行中的任务，可安全强制 idle 并对齐消息。
+        dispatchSessionRuns({ type: "force_idle", sessionId });
+        if (sessionId === activeSessionRef.current) {
+          invoke<MessageBundle>("list_messages", { sessionId })
+            .then((bundle) => applyBundle(bundle))
+            .catch(console.error);
+        }
+      }
+    }, STOPPING_TIMEOUT_MS);
+    stoppingTimersRef.current.set(sessionId, timer);
+  }, [clearStoppingTimeout]);
+  const scheduleStoppingTimeoutRef = useRef(scheduleStoppingTimeout);
+  scheduleStoppingTimeoutRef.current = scheduleStoppingTimeout;
+
+  useEffect(
+    () => () => {
+      for (const timer of stoppingTimersRef.current.values()) {
+        window.clearTimeout(timer);
+      }
+      stoppingTimersRef.current.clear();
+    },
+    [],
+  );
+
   useEffect(() => {
     const unlisten = listen<AgentEvent>("agent-event", (event) => {
       const payload = event.payload;
-      dispatchStream({ type: "event", event: payload, sessionId: activeSessionRef.current });
+      dispatchSessionRuns({ type: "event", event: payload });
+      if (isTerminalRunEvent(payload.kind)) {
+        clearStoppingTimeout(payload.session_id);
+      }
       if (payload.kind === "context_usage" && payload.session_id === activeSessionRef.current) {
         setContextRatio(payload.ratio);
       }
@@ -361,6 +429,17 @@ export function useWorkspace() {
           .then((bundle) => applyBundle(bundle))
           .catch(console.error);
       }
+      if (payload.kind === "turn_cancelled") {
+        const sessionId = payload.session_id;
+        if (isStaleSessionResult(sessionId, activeSessionRef.current)) return;
+        invoke<MessageBundle>("list_messages", { sessionId })
+          .then((bundle) => {
+            if (isStaleSessionResult(sessionId, activeSessionRef.current)) return;
+            applyBundle(bundle);
+            clearSuggestions();
+          })
+          .catch(console.error);
+      }
       if (payload.kind === "turn_complete" && activeSessionRef.current) {
         const sessionId = activeSessionRef.current;
         if (isStaleSessionResult(payload.session_id, sessionId)) return;
@@ -393,7 +472,7 @@ export function useWorkspace() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [runFollowup, setSessionsFromBackend]);
+  }, [clearStoppingTimeout, runFollowup, setSessionsFromBackend]);
 
   useEffect(() => {
     if (!sendHint) return;
@@ -486,10 +565,6 @@ export function useWorkspace() {
     setMessagesLoaded(true);
   }
 
-  async function ensureSession(): Promise<string | null> {
-    return ensureActiveSession();
-  }
-
   const clearPendingAttachmentsForModel = useCallback((modelId: string) => {
     if (modelSupportsVision(models, modelId)) return;
     if (pendingAttachmentsRef.current.length === 0) return;
@@ -517,7 +592,7 @@ export function useWorkspace() {
       path,
       mime,
     }));
-    if ((!trimmed && attachments.length === 0) || stream.busy || sendingRef.current) return;
+    if (!trimmed && attachments.length === 0) return;
     if (activeClarify) return;
 
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
@@ -536,21 +611,26 @@ export function useWorkspace() {
       return;
     }
 
-    sendingRef.current = true;
-    try {
-      const sessionId = await ensureSession();
-      if (!sessionId) {
-        showSendBlocker({ kind: "no_project" });
-        return;
-      }
+    const sessionId = await ensureActiveSession();
+    if (!sessionId) {
+      showSendBlocker({ kind: "no_project" });
+      return;
+    }
+    if (sendingSessionsRef.current.has(sessionId)) return;
+    const runStatus = sessionRunStatus(sessionRunsRef.current, sessionId);
+    if (runStatus === "running" || runStatus === "stopping") {
+      return;
+    }
 
+    sendingSessionsRef.current.add(sessionId);
+    try {
       setInput("");
       setSendHint(null);
       clearSendHighlights(setHighlightProject, setHighlightApiKeyProvider);
       setStarterSuggestions([]);
       setFollowupSuggestions([]);
       starterStartedRef.current = undefined;
-      dispatchStream({ type: "busy" });
+      dispatchSessionRuns({ type: "busy", sessionId });
       setMessages((prev) => [
         ...prev,
         createOptimisticUserMessage(sessionId, trimmed, attachments),
@@ -565,32 +645,28 @@ export function useWorkspace() {
       });
     } catch (error) {
       console.error(error);
-      const sessionId = activeSessionRef.current;
-      if (sessionId) {
-        const bundle = await invoke<MessageBundle>("list_messages", { sessionId }).catch(() => null);
-        if (
-          bundle &&
-          userMessageWasPersisted(bundle.messages, trimmed, attachments)
-        ) {
-          setPendingAttachments((prev) => {
-            revokePendingAttachments(prev);
-            return [];
-          });
-        }
-        await reloadMessages(sessionId).catch(console.error);
-        dispatchStream({
-          type: "event",
-          event: {
-            kind: "error",
-            session_id: sessionId,
-            turn_id: "local",
-            message: String(error),
-          },
-          sessionId,
+      const bundle = await invoke<MessageBundle>("list_messages", { sessionId }).catch(() => null);
+      if (
+        bundle &&
+        userMessageWasPersisted(bundle.messages, trimmed, attachments)
+      ) {
+        setPendingAttachments((prev) => {
+          revokePendingAttachments(prev);
+          return [];
         });
       }
+      await reloadMessages(sessionId).catch(console.error);
+      dispatchSessionRuns({
+        type: "event",
+        event: {
+          kind: "error",
+          session_id: sessionId,
+          turn_id: "local",
+          message: String(error),
+        },
+      });
     } finally {
-      sendingRef.current = false;
+      sendingSessionsRef.current.delete(sessionId);
     }
   }
 
@@ -659,7 +735,7 @@ export function useWorkspace() {
     const previousActive = activeClarify;
     // 提交后立即收起底部卡片；若 resume 又触发新 clarify，由 clarify_question 事件恢复
     setActiveClarify(undefined);
-    dispatchStream({ type: "busy_resume" });
+    dispatchSessionRuns({ type: "busy_resume", sessionId });
     try {
       await invoke("submit_clarify_answer", {
         req: {
@@ -672,7 +748,7 @@ export function useWorkspace() {
     } catch (error) {
       console.error(error);
       setActiveClarify(previousActive);
-      dispatchStream({
+      dispatchSessionRuns({
         type: "event",
         event: {
           kind: "error",
@@ -680,7 +756,6 @@ export function useWorkspace() {
           turn_id: "local",
           message: String(error),
         },
-        sessionId,
       });
     }
   }
@@ -697,7 +772,7 @@ export function useWorkspace() {
 
     initStarterInFlightRef.current = true;
     try {
-      const sessionId = await ensureSession();
+      const sessionId = await ensureActiveSession();
       if (!sessionId) {
         showSendBlocker({ kind: "no_project" });
         return;
@@ -772,8 +847,25 @@ export function useWorkspace() {
   }, []);
 
   const dismissCompactionNotice = useCallback(() => {
-    dispatchStream({ type: "clear_compaction_notice" });
+    const sessionId = activeSessionRef.current;
+    if (!sessionId) return;
+    dispatchSessionRuns({ type: "clear_compaction_notice", sessionId });
   }, []);
+
+  const cancelTurn = useCallback(async () => {
+    const sessionId = activeSessionRef.current;
+    if (!sessionId) return;
+    if (sessionRunStatus(sessionRunsRef.current, sessionId) !== "running") return;
+    dispatchSessionRuns({ type: "stopping", sessionId });
+    scheduleStoppingTimeout(sessionId);
+    try {
+      await invoke("cancel_turn", { req: { session_id: sessionId } });
+    } catch (error) {
+      console.error(error);
+      clearStoppingTimeout(sessionId);
+      dispatchSessionRuns({ type: "force_idle", sessionId });
+    }
+  }, [clearStoppingTimeout, scheduleStoppingTimeout]);
 
   const handleSessionUpdated = useCallback((session: Session) => {
     setSessions((prev) => {
@@ -887,6 +979,8 @@ export function useWorkspace() {
     dismissVisionToast,
     notifyInvalidImagePick,
     stream,
+    sessionRunStatuses,
+    cancelTurn,
     contextRatio,
     apiKeyStatus,
     tavilyHasKey,

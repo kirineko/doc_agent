@@ -1,5 +1,7 @@
-use crate::agent::loop_runner;
+use crate::agent::loop_runner::{self, ActiveTurnGuard};
+use crate::agent::turn_control::is_project_busy_user_error;
 use crate::agent::types::{AgentEvent, ClarifyAnswer, ClarifyQuestion};
+use crate::core::store::{ClarifyPending, Store};
 use crate::state::AppState;
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Runtime};
@@ -17,22 +19,26 @@ pub async fn submit_clarify_answer<R: Runtime>(
     state: AppState,
     answer: SubmitClarifyAnswer,
 ) -> Result<(), String> {
+    let (project_id, pending_preview, _question) = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        load_pending_clarify_answer(&store, &answer)?
+    };
+
+    let cancel = loop_runner::register_active_turn(
+        &state,
+        &answer.session_id,
+        &pending_preview.turn_id,
+        &project_id,
+    )?;
+    let _turn_guard = ActiveTurnGuard::new(&state, &answer.session_id);
+
     // 删 pending 与写 tool result 必须在同一锁块内完成：
     // 中间释放锁会留下「pending 已删但 tool_call 无 result」的窗口，
     // 期间 send_message 的 pending 检查会放行，插入的 user 消息将打断
     // assistant(tool_calls) → tool 序列导致 API 400。
     let (pending, result_json) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
-        let pending = store
-            .get_clarify_pending(&answer.session_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| "澄清问题已处理或不存在".to_string())?;
-        let question: ClarifyQuestion =
-            serde_json::from_str(&pending.question_json).map_err(|e| e.to_string())?;
-        if question.id != answer.question_id {
-            return Err("澄清问题不匹配".into());
-        }
-        validate_clarify_answer(&question, &answer)?;
+        let (_project_id, pending, question) = load_pending_clarify_answer(&store, &answer)?;
         let deleted = store
             .delete_clarify_pending(&answer.session_id)
             .map_err(|e| e.to_string())?;
@@ -78,7 +84,8 @@ pub async fn submit_clarify_answer<R: Runtime>(
         result_json,
     );
 
-    loop_runner::resume_turn(app, state, pending.session_id, pending.turn_id).await
+    loop_runner::resume_loop_from_store(app, state, pending.session_id, pending.turn_id, cancel)
+        .await
 }
 
 pub async fn cancel_clarify<R: Runtime>(
@@ -86,10 +93,19 @@ pub async fn cancel_clarify<R: Runtime>(
     state: AppState,
     session_id: String,
 ) -> Result<(), String> {
+    if state.turns.is_session_active(&session_id) {
+        state.turns.cancel(&session_id)?;
+        return Err("澄清正在提交，已请求停止当前恢复任务。".into());
+    }
+
     // 与 submit 相同：删 pending 与写 tool result 在同一锁块内，避免竞态窗口
     let result_json = json!({ "cancelled": true }).to_string();
-    let pending = {
+    let (pending, project_id) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
+        let session = store
+            .get_session(&session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
         let pending = store
             .get_clarify_pending(&session_id)
             .map_err(|e| e.to_string())?
@@ -113,7 +129,7 @@ pub async fn cancel_clarify<R: Runtime>(
                 None,
             )
             .map_err(|e| e.to_string())?;
-        pending
+        (pending, session.project_id)
     };
     emit_tool_result(
         &app,
@@ -122,7 +138,46 @@ pub async fn cancel_clarify<R: Runtime>(
         &pending.tool_call_id,
         result_json,
     );
-    loop_runner::resume_turn(app, state, pending.session_id, pending.turn_id).await
+    let resume_session_id = pending.session_id.clone();
+    let resume_turn_id = pending.turn_id.clone();
+    match loop_runner::resume_turn(
+        app.clone(),
+        state.clone(),
+        pending.session_id,
+        pending.turn_id,
+    )
+    .await
+    {
+        Err(err) if is_project_busy_user_error(&err) => loop_runner::spawn_reserved_resume_on_busy(
+            app,
+            state,
+            resume_session_id,
+            resume_turn_id,
+            project_id,
+        ),
+        other => other,
+    }
+}
+
+fn load_pending_clarify_answer(
+    store: &Store,
+    answer: &SubmitClarifyAnswer,
+) -> Result<(String, ClarifyPending, ClarifyQuestion), String> {
+    let session = store
+        .get_session(&answer.session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "session not found".to_string())?;
+    let pending = store
+        .get_clarify_pending(&answer.session_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "澄清问题已处理或不存在".to_string())?;
+    let question: ClarifyQuestion =
+        serde_json::from_str(&pending.question_json).map_err(|e| e.to_string())?;
+    if question.id != answer.question_id {
+        return Err("澄清问题不匹配".into());
+    }
+    validate_clarify_answer(&question, answer)?;
+    Ok((session.project_id, pending, question))
 }
 
 fn validate_clarify_answer(

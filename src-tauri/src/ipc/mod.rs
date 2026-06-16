@@ -74,6 +74,16 @@ pub struct CancelClarifyRequest {
     pub session_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CancelTurnRequest {
+    pub session_id: String,
+}
+
+#[tauri::command]
+pub fn cancel_turn(state: State<AppState>, req: CancelTurnRequest) -> Result<(), String> {
+    state.turns.cancel(&req.session_id)
+}
+
 #[tauri::command]
 pub fn list_projects(state: State<AppState>) -> Result<Vec<Project>, String> {
     state
@@ -152,11 +162,7 @@ pub async fn generate_suggestions(
     state: State<'_, AppState>,
     req: GenerateSuggestionsRequest,
 ) -> Result<Vec<String>, String> {
-    let shared = AppState {
-        store: state.store.clone(),
-        secrets: state.secrets.clone(),
-        tools: state.tools.clone(),
-    };
+    let shared = state.inner().clone();
     suggest::generate_suggestions(shared, req.session_id, &req.kind).await
 }
 
@@ -383,11 +389,7 @@ pub async fn send_message(
     state: State<'_, AppState>,
     req: SendMessageRequest,
 ) -> Result<(), String> {
-    let shared = AppState {
-        store: state.store.clone(),
-        secrets: state.secrets.clone(),
-        tools: state.tools.clone(),
-    };
+    let shared = state.inner().clone();
     let attachments: Vec<MessageAttachment> = req
         .attachments
         .into_iter()
@@ -405,11 +407,7 @@ pub async fn submit_clarify_answer(
     state: State<'_, AppState>,
     req: SubmitClarifyAnswerRequest,
 ) -> Result<(), String> {
-    let shared = AppState {
-        store: state.store.clone(),
-        secrets: state.secrets.clone(),
-        tools: state.tools.clone(),
-    };
+    let shared = state.inner().clone();
     clarify_interaction::submit_clarify_answer(
         app,
         shared,
@@ -429,11 +427,7 @@ pub async fn cancel_clarify(
     state: State<'_, AppState>,
     req: CancelClarifyRequest,
 ) -> Result<(), String> {
-    let shared = AppState {
-        store: state.store.clone(),
-        secrets: state.secrets.clone(),
-        tools: state.tools.clone(),
-    };
+    let shared = state.inner().clone();
     clarify_interaction::cancel_clarify(app, shared, req.session_id).await
 }
 

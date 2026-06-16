@@ -1,34 +1,43 @@
+import { AgentEvent } from "../types";
 import {
-  AgentStreamState,
-  applyAgentEvent,
-  initialAgentStreamState,
-  markAgentBusy,
-  markAgentResuming,
-  resetAgentStream,
-} from "./agentEvents";
-import type { AgentEvent } from "../types";
+  applyEventToSessionRuns,
+  clearCompactionNotice,
+  forceSessionIdle,
+  initialSessionRunsState,
+  markSessionResuming,
+  markSessionRunning,
+  markSessionStopping,
+  type SessionRunsState,
+} from "./sessionRunState";
 
 export type StreamAction =
-  | { type: "event"; event: AgentEvent; sessionId?: string }
-  | { type: "busy" }
-  | { type: "busy_resume" }
-  | { type: "reset" }
-  | { type: "clear_compaction_notice" };
+  | { type: "event"; event: AgentEvent }
+  | { type: "busy"; sessionId: string }
+  | { type: "stopping"; sessionId: string }
+  | { type: "busy_resume"; sessionId: string }
+  | { type: "force_idle"; sessionId: string }
+  | { type: "clear_compaction_notice"; sessionId: string };
 
-export function streamReducer(state: AgentStreamState, action: StreamAction): AgentStreamState {
-  if (action.type === "reset") {
-    return resetAgentStream();
+export function sessionRunsReducer(
+  state: SessionRunsState,
+  action: StreamAction,
+): SessionRunsState {
+  switch (action.type) {
+    case "event":
+      return applyEventToSessionRuns(state, action.event);
+    case "busy":
+      return markSessionRunning(state, action.sessionId);
+    case "stopping":
+      return markSessionStopping(state, action.sessionId);
+    case "busy_resume":
+      return markSessionResuming(state, action.sessionId);
+    case "force_idle":
+      return forceSessionIdle(state, action.sessionId);
+    case "clear_compaction_notice":
+      return clearCompactionNotice(state, action.sessionId);
+    default:
+      return state;
   }
-  if (action.type === "busy") {
-    return markAgentBusy(state);
-  }
-  if (action.type === "busy_resume") {
-    return markAgentResuming(state);
-  }
-  if (action.type === "clear_compaction_notice") {
-    return { ...state, compactionNotice: null };
-  }
-  return applyAgentEvent(state, action.event, action.sessionId);
 }
 
-export { initialAgentStreamState };
+export { initialSessionRunsState };

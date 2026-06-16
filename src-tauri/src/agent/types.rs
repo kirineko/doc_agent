@@ -1,4 +1,5 @@
 use crate::agent::model_catalog::{ModelCatalog, ProviderKind};
+use crate::agent::turn_control::CancelSignal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -249,6 +250,10 @@ pub enum AgentEvent {
         session_id: String,
         turn_id: String,
     },
+    TurnCancelled {
+        session_id: String,
+        turn_id: String,
+    },
     TurnAwaitingUser {
         session_id: String,
         turn_id: String,
@@ -296,6 +301,7 @@ pub struct ChatRequest {
     pub thinking: ThinkingConfig,
     pub response_format: Option<Value>,
     pub max_tokens: Option<u32>,
+    pub cancel: Option<CancelSignal>,
 }
 
 #[derive(Debug, Clone)]

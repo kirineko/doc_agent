@@ -88,6 +88,7 @@ pub async fn generate_suggestions(
         },
         response_format: Some(json!({ "type": "json_object" })),
         max_tokens: Some(512),
+        cancel: None,
     };
 
     let provider = provider_for(ModelId::DeepSeekV4Flash);

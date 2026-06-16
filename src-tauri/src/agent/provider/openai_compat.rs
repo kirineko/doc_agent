@@ -91,7 +91,8 @@ impl OpenAiCompatClient {
         }
 
         let mut tool_tracker = sse::ToolStreamTracker::new();
-        sse::consume_openai_sse(response, |reasoning, content, tools| {
+        let cancel = request.cancel.as_ref();
+        sse::consume_openai_sse(response, cancel, |reasoning, content, tools| {
             if let Some(delta) = reasoning {
                 on_event(AgentEvent::ReasoningToken {
                     session_id: session_id.to_string(),
@@ -119,7 +120,11 @@ impl OpenAiCompatClient {
             }
         })
         .await
-        .map_err(|e| ProviderError::Parse(e.to_string()))
+        .map_err(|e| match e {
+            sse::SseError::Cancelled => ProviderError::Cancelled,
+            sse::SseError::Http(msg) => ProviderError::Http(msg),
+            sse::SseError::Json(msg) => ProviderError::Parse(msg),
+        })
     }
 
     pub async fn complete_chat(
@@ -445,6 +450,7 @@ mod tests {
             thinking: ThinkingConfig { enabled, effort },
             response_format: None,
             max_tokens: None,
+            cancel: None,
         }
     }
 
