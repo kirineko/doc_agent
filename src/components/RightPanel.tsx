@@ -1,5 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Group, Panel, useDefaultLayout, useGroupRef, usePanelRef } from "react-resizable-panels";
+import {
+  applyRightPanelCollapseMode,
+  normalizeRightPanelCollapseMode,
+  rightPanelCollapseFlags,
+  shouldExpandBothOnLayoutChange,
+  toggleRightPanelCollapseMode,
+  type RightPanelCollapseMode,
+} from "../lib/rightPanelCollapse";
 import {
   DEFAULT_RIGHT_LAYOUT,
   onWorkspaceLayoutReset,
@@ -24,8 +32,9 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
   const groupRef = useGroupRef();
   const toolchainRef = usePanelRef();
   const filesRef = usePanelRef();
-  const [toolchainCollapsed, setToolchainCollapsed] = useState(false);
-  const [filesCollapsed, setFilesCollapsed] = useState(false);
+  const collapseModeRef = useRef<RightPanelCollapseMode>("both");
+  const isApplyingCollapseRef = useRef(false);
+  const [collapseMode, setCollapseMode] = useState<RightPanelCollapseMode>("both");
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
     id: RIGHT_LAYOUT_GROUP_ID,
@@ -33,42 +42,92 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
     panelIds: [RIGHT_PANEL_IDS.toolchain, RIGHT_PANEL_IDS.files],
   });
 
-  const syncCollapsedState = useCallback(() => {
-    setToolchainCollapsed(toolchainRef.current?.isCollapsed() ?? false);
-    setFilesCollapsed(filesRef.current?.isCollapsed() ?? false);
-  }, [toolchainRef, filesRef]);
+  const applyCollapseMode = useCallback(
+    (mode: RightPanelCollapseMode) => {
+      collapseModeRef.current = mode;
+      setCollapseMode(mode);
+
+      const toolchainPanel = toolchainRef.current;
+      const filesPanel = filesRef.current;
+      if (!toolchainPanel || !filesPanel) return;
+
+      isApplyingCollapseRef.current = true;
+      applyRightPanelCollapseMode(toolchainPanel, filesPanel, mode);
+      requestAnimationFrame(() => {
+        isApplyingCollapseRef.current = false;
+      });
+    },
+    [filesRef, toolchainRef],
+  );
+
+  const expandBothFromLayoutInteraction = useCallback(() => {
+    if (!shouldExpandBothOnLayoutChange(collapseModeRef.current, isApplyingCollapseRef.current)) {
+      return;
+    }
+
+    collapseModeRef.current = "both";
+    setCollapseMode("both");
+
+    const toolchainPanel = toolchainRef.current;
+    const filesPanel = filesRef.current;
+    if (!toolchainPanel || !filesPanel) return;
+
+    toolchainPanel.expand();
+    filesPanel.expand();
+  }, [filesRef, toolchainRef]);
 
   const toggleToolchain = useCallback(() => {
-    const panel = toolchainRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-    requestAnimationFrame(syncCollapsedState);
-  }, [toolchainRef, syncCollapsedState]);
+    applyCollapseMode(toggleRightPanelCollapseMode(collapseModeRef.current, "toolchain"));
+  }, [applyCollapseMode]);
 
   const toggleFiles = useCallback(() => {
-    const panel = filesRef.current;
-    if (!panel) return;
-    if (panel.isCollapsed()) panel.expand();
-    else panel.collapse();
-    requestAnimationFrame(syncCollapsedState);
-  }, [filesRef, syncCollapsedState]);
+    applyCollapseMode(toggleRightPanelCollapseMode(collapseModeRef.current, "files"));
+  }, [applyCollapseMode]);
+
+  const handleLayoutChange = useCallback(() => {
+    expandBothFromLayoutInteraction();
+  }, [expandBothFromLayoutInteraction]);
+
+  const handleLayoutChanged = useCallback(
+    (layout: Record<string, number>) => {
+      expandBothFromLayoutInteraction();
+      onLayoutChanged(layout);
+    },
+    [expandBothFromLayoutInteraction, onLayoutChanged],
+  );
 
   useEffect(() => {
-    syncCollapsedState();
-  }, [syncCollapsedState]);
+    const toolchainPanel = toolchainRef.current;
+    const filesPanel = filesRef.current;
+    if (!toolchainPanel || !filesPanel) return;
+
+    const mode = normalizeRightPanelCollapseMode({
+      toolchainCollapsed: toolchainPanel.isCollapsed(),
+      filesCollapsed: filesPanel.isCollapsed(),
+    });
+    collapseModeRef.current = mode;
+    setCollapseMode(mode);
+
+    if (mode !== "both") {
+      isApplyingCollapseRef.current = true;
+      applyRightPanelCollapseMode(toolchainPanel, filesPanel, mode);
+      requestAnimationFrame(() => {
+        isApplyingCollapseRef.current = false;
+      });
+    }
+  }, [filesRef, toolchainRef]);
 
   useEffect(() => {
     return onWorkspaceLayoutReset(() => {
       toolchainRef.current?.expand();
       filesRef.current?.expand();
       groupRef.current?.setLayout(DEFAULT_RIGHT_LAYOUT);
-      setToolchainCollapsed(false);
-      setFilesCollapsed(false);
+      collapseModeRef.current = "both";
+      setCollapseMode("both");
     });
   }, [groupRef, toolchainRef, filesRef]);
 
-  const hideVerticalSeparator = toolchainCollapsed || filesCollapsed;
+  const { toolchainCollapsed, filesCollapsed } = rightPanelCollapseFlags(collapseMode);
 
   return (
     <aside className="panel flex h-full min-h-0 flex-col p-2.5">
@@ -78,7 +137,8 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
         orientation="vertical"
         className="h-full min-h-0"
         defaultLayout={defaultLayout ?? DEFAULT_RIGHT_LAYOUT}
-        onLayoutChanged={onLayoutChanged}
+        onLayoutChange={handleLayoutChange}
+        onLayoutChanged={handleLayoutChanged}
       >
         <Panel
           id={RIGHT_PANEL_IDS.toolchain}
@@ -88,7 +148,6 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
           collapsedSize={PANEL_COLLAPSED_SIZE}
           collapsible
           className="min-h-0"
-          onResize={() => syncCollapsedState()}
         >
           <ToolChainPanel
             items={liveTools}
@@ -96,7 +155,7 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
             onToggleCollapse={toggleToolchain}
           />
         </Panel>
-        <PanelSeparator orientation="vertical" disabled={hideVerticalSeparator} />
+        <PanelSeparator orientation="vertical" />
         <Panel
           id={RIGHT_PANEL_IDS.files}
           panelRef={filesRef}
@@ -105,7 +164,6 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
           collapsedSize={PANEL_COLLAPSED_SIZE}
           collapsible
           className="min-h-0"
-          onResize={() => syncCollapsedState()}
         >
           <ProjectFileExplorer
             projectId={projectId}
