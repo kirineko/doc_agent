@@ -244,7 +244,7 @@ export function ChatPanel({
   }
 
   return (
-    <section className="panel flex min-w-0 flex-1 flex-col p-3">
+    <section className="panel flex h-full min-h-0 flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-xs font-medium text-fg-heading">会话</div>
         <ContextUsageIndicator ratio={contextRatio ?? 0} hidden={!projectId} />

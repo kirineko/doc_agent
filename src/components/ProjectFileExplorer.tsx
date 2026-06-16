@@ -2,10 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { joinPath, parentPath, pathSegments, segmentTarget } from "../lib/pathUtils";
 import { ProjectDirListing } from "../types";
+import { PanelSectionHeader } from "./PanelSectionHeader";
 
 interface ProjectFileExplorerProps {
   projectId?: string;
   fileRevision?: number;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 interface BreadcrumbProps {
@@ -99,6 +102,8 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
 export function ProjectFileExplorer({
   projectId,
   fileRevision = 0,
+  collapsed = false,
+  onToggleCollapse,
 }: ProjectFileExplorerProps) {
   const [listing, setListing] = useState<ProjectDirListing | null>(null);
   const [loading, setLoading] = useState(false);
@@ -153,23 +158,37 @@ export function ProjectFileExplorer({
     }
   }
 
+  const refreshButton =
+    projectId && !collapsed ? (
+      <button
+        type="button"
+        className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-fg-secondary hover:bg-hover hover:text-link disabled:cursor-not-allowed disabled:opacity-40"
+        aria-label="刷新当前目录"
+        title="刷新当前目录"
+        disabled={loading}
+        onClick={() => void loadDir(projectId, currentPath)}
+      >
+        ↻
+      </button>
+    ) : null;
+
   return (
-    <div className="flex min-h-0 flex-[0.38] flex-col border-t border-border pt-2">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-fg-heading">项目文件</div>
-        {projectId && (
-          <button
-            type="button"
-            className="inline-flex min-h-6 min-w-6 items-center justify-center rounded text-xs text-fg-secondary hover:bg-hover hover:text-link disabled:cursor-not-allowed disabled:opacity-40"
-            aria-label="刷新当前目录"
-            title="刷新当前目录"
-            disabled={loading}
-            onClick={() => void loadDir(projectId, currentPath)}
-          >
-            ↻
-          </button>
-        )}
-      </div>
+    <div className="flex h-full min-h-0 flex-col">
+      {onToggleCollapse ? (
+        <PanelSectionHeader
+          title="项目文件"
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
+          actions={refreshButton}
+        />
+      ) : (
+        <div className="mb-1 flex items-center justify-between gap-2">
+          <div className="text-xs font-medium text-fg-heading">项目文件</div>
+          {refreshButton}
+        </div>
+      )}
+      {!collapsed && (
+        <>
       {projectId ? (
         <Breadcrumb
           currentPath={currentPath}
@@ -220,6 +239,8 @@ export function ProjectFileExplorer({
           <div className="text-[11px] text-fg-muted">空目录</div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 }

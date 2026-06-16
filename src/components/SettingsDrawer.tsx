@@ -11,6 +11,7 @@ import {
   fetchLatestReleaseVersion,
   isNewerVersion,
 } from "../lib/updater";
+import { resetWorkspaceLayoutToDefaults } from "../lib/workspaceLayout";
 import { providerLabel } from "../types";
 
 interface SettingsDrawerProps {
@@ -170,6 +171,17 @@ export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerPr
               {updating ? "更新中…" : "更新"}
             </button>
           )}
+        </section>
+
+        <section className="config-surface rounded-md p-3 text-xs text-fg-secondary">
+          <div className="text-fg">工作区布局</div>
+          <button
+            type="button"
+            className="mt-3 w-full rounded-md border border-border-subtle px-2.5 py-1.5 text-xs text-fg-secondary hover:border-border-hover hover:text-fg"
+            onClick={() => resetWorkspaceLayoutToDefaults()}
+          >
+            恢复默认布局
+          </button>
         </section>
 
         {(configuredProviders.length > 0 || loadingBalances) && (

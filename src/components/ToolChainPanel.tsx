@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { formatToolArgs, toolLabel } from "../lib/toolLabels";
+import { PanelSectionHeader } from "./PanelSectionHeader";
 
 export interface LiveToolCall {
   id: string;
@@ -11,6 +12,8 @@ export interface LiveToolCall {
 
 interface ToolChainPanelProps {
   items: LiveToolCall[];
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
 function statusLabel(status: string): string {
@@ -52,7 +55,11 @@ export function formatCharCount(count: number): string {
   return `${(count / 1000).toFixed(1)}K 字符`;
 }
 
-export function ToolChainPanel({ items }: ToolChainPanelProps) {
+export function ToolChainPanel({
+  items,
+  collapsed = false,
+  onToggleCollapse,
+}: ToolChainPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -77,8 +84,17 @@ export function ToolChainPanel({ items }: ToolChainPanelProps) {
   }, [items.length]);
 
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-1.5 text-xs font-medium text-fg-heading">工具调用链</div>
+    <section className="flex h-full min-h-0 flex-col">
+      {onToggleCollapse ? (
+        <PanelSectionHeader
+          title="工具调用链"
+          collapsed={collapsed}
+          onToggleCollapse={onToggleCollapse}
+        />
+      ) : (
+        <div className="mb-1.5 shrink-0 text-xs font-medium text-fg-heading">工具调用链</div>
+      )}
+      {!collapsed && (
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -117,6 +133,7 @@ export function ToolChainPanel({ items }: ToolChainPanelProps) {
         ))}
         <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
       </div>
+      )}
     </section>
   );
 }

@@ -74,7 +74,7 @@ export function Sidebar({
   }
 
   return (
-    <aside className="panel flex h-full w-72 shrink-0 flex-col gap-2.5 p-3">
+    <aside className="panel flex h-full min-h-0 flex-col gap-2.5 p-3">
       <div
         id="sidebar-projects"
         className={`shrink-0 rounded-md ${highlightProject ? "ring-1 ring-amber-600/60" : ""}`}

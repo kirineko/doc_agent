@@ -8,6 +8,7 @@ import { SettingsDrawer } from "./components/SettingsDrawer";
 import { Sidebar } from "./components/Sidebar";
 import { UpdateProgressOverlay } from "./components/UpdateProgressOverlay";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useWorkspace } from "./hooks/useWorkspace";
 
@@ -46,68 +47,74 @@ function App() {
         onChange={(patch) => void ws.updateSessionConfig(patch)}
         onApiKeyStatusChange={ws.handleApiKeyStatusChange}
       />
-      <main className="flex min-h-0 flex-1 gap-2.5 p-2.5">
-        <Sidebar
-          projects={ws.projects}
-          sessions={ws.sessions}
-          activeProjectId={ws.activeProjectId}
-          activeSessionId={ws.activeSessionId}
-          apiKeyStatus={ws.apiKeyStatus}
-          pendingSessionConfig={ws.pendingSessionConfig}
-          modelLocked={ws.modelLocked}
-          highlightProject={ws.highlightProject}
-          highlightApiKeyProvider={ws.highlightApiKeyProvider}
-          onProjectsChange={ws.setProjects}
-          onSelectProject={ws.selectProject}
-          onSelectSession={ws.setActiveSessionId}
-          onCreateSession={() => ws.createSession()}
-          onDeleteSession={(sessionId) => ws.deleteSession(sessionId)}
-          onReorderSessions={ws.reorderSessions}
-          onPendingSessionConfigChange={ws.handlePendingSessionConfigChange}
-          onSessionUpdated={ws.handleSessionUpdated}
-          onApiKeyStatusChange={ws.handleApiKeyStatusChange}
-          tavilyEnabled={ws.tavilyEnabled}
-          onTavilyStatusChange={ws.handleTavilyStatusChange}
-          onOpenModelSettings={() => ws.setModelSettingsOpen(true)}
-          modelSummary={ws.modelSummary}
-        />
-        <ChatPanel
-          sessionId={ws.activeSessionId}
-          messages={ws.messages}
-          toolCalls={ws.toolCalls}
-          activeClarify={ws.activeClarify}
-          streamingReasoning={ws.stream.streamingReasoning}
-          streamingContent={ws.stream.streamingContent}
-          activity={ws.activity}
-          initializing={ws.initializing}
-          showInitCapsule={ws.showInitCapsule}
-          starterSuggestions={ws.starterSuggestions}
-          followupSuggestions={ws.followupSuggestions}
-          fileEntries={ws.fileEntries}
-          input={ws.input}
-          busy={ws.stream.busy}
-          contextRatio={ws.contextRatio}
-          compactionNotice={ws.stream.compactionNotice}
-          sendHint={ws.sendHint}
-          pendingAttachments={ws.pendingAttachments}
-          visionToast={ws.visionToast}
-          projectId={ws.activeProjectId}
-          onInputChange={ws.setInput}
-          onSend={ws.sendMessage}
-          onPasteImage={ws.addPastedImage}
-          onRemoveAttachment={ws.removePendingAttachment}
-          onDismissVisionToast={ws.dismissVisionToast}
-          onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
-          onInitStarter={() => void ws.handleInitStarter()}
-          onDismissSendHint={ws.dismissSendHint}
-          onDismissCompactionNotice={ws.dismissCompactionNotice}
-        />
-        <RightPanel
-          liveTools={ws.stream.liveTools}
-          projectId={ws.activeProjectId}
-          fileRevision={ws.fileRevision}
-        />
-      </main>
+      <WorkspaceLayout
+        sidebar={
+          <Sidebar
+            projects={ws.projects}
+            sessions={ws.sessions}
+            activeProjectId={ws.activeProjectId}
+            activeSessionId={ws.activeSessionId}
+            apiKeyStatus={ws.apiKeyStatus}
+            pendingSessionConfig={ws.pendingSessionConfig}
+            modelLocked={ws.modelLocked}
+            highlightProject={ws.highlightProject}
+            highlightApiKeyProvider={ws.highlightApiKeyProvider}
+            onProjectsChange={ws.setProjects}
+            onSelectProject={ws.selectProject}
+            onSelectSession={ws.setActiveSessionId}
+            onCreateSession={() => ws.createSession()}
+            onDeleteSession={(sessionId) => ws.deleteSession(sessionId)}
+            onReorderSessions={ws.reorderSessions}
+            onPendingSessionConfigChange={ws.handlePendingSessionConfigChange}
+            onSessionUpdated={ws.handleSessionUpdated}
+            onApiKeyStatusChange={ws.handleApiKeyStatusChange}
+            tavilyEnabled={ws.tavilyEnabled}
+            onTavilyStatusChange={ws.handleTavilyStatusChange}
+            onOpenModelSettings={() => ws.setModelSettingsOpen(true)}
+            modelSummary={ws.modelSummary}
+          />
+        }
+        chat={
+          <ChatPanel
+            sessionId={ws.activeSessionId}
+            messages={ws.messages}
+            toolCalls={ws.toolCalls}
+            activeClarify={ws.activeClarify}
+            streamingReasoning={ws.stream.streamingReasoning}
+            streamingContent={ws.stream.streamingContent}
+            activity={ws.activity}
+            initializing={ws.initializing}
+            showInitCapsule={ws.showInitCapsule}
+            starterSuggestions={ws.starterSuggestions}
+            followupSuggestions={ws.followupSuggestions}
+            fileEntries={ws.fileEntries}
+            input={ws.input}
+            busy={ws.stream.busy}
+            contextRatio={ws.contextRatio}
+            compactionNotice={ws.stream.compactionNotice}
+            sendHint={ws.sendHint}
+            pendingAttachments={ws.pendingAttachments}
+            visionToast={ws.visionToast}
+            projectId={ws.activeProjectId}
+            onInputChange={ws.setInput}
+            onSend={ws.sendMessage}
+            onPasteImage={ws.addPastedImage}
+            onRemoveAttachment={ws.removePendingAttachment}
+            onDismissVisionToast={ws.dismissVisionToast}
+            onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
+            onInitStarter={() => void ws.handleInitStarter()}
+            onDismissSendHint={ws.dismissSendHint}
+            onDismissCompactionNotice={ws.dismissCompactionNotice}
+          />
+        }
+        right={
+          <RightPanel
+            liveTools={ws.stream.liveTools}
+            projectId={ws.activeProjectId}
+            fileRevision={ws.fileRevision}
+          />
+        }
+      />
     </div>
   );
 }
