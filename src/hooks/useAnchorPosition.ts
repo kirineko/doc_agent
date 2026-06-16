@@ -11,7 +11,6 @@ export interface AnchorPosition {
 
 interface UseAnchorPositionOptions {
   gap?: number;
-  width?: number;
   maxHeight?: number;
 }
 
@@ -20,7 +19,7 @@ export function useAnchorPosition(
   open: boolean,
   options: UseAnchorPositionOptions = {},
 ): AnchorPosition | undefined {
-  const { gap = 8, width: preferredWidth = 320, maxHeight: preferredMaxHeight = 420 } = options;
+  const { gap = 8, maxHeight: preferredMaxHeight = 420 } = options;
   const [position, setPosition] = useState<AnchorPosition>();
 
   useEffect(() => {
@@ -34,7 +33,7 @@ export function useAnchorPosition(
       if (!trigger) return;
 
       const rect = trigger.getBoundingClientRect();
-      const width = Math.min(preferredWidth, Math.max(rect.width, 240));
+      const width = Math.max(rect.width, 240);
       const left = rect.left;
       const spaceAbove = rect.top - gap;
       const spaceBelow = window.innerHeight - rect.bottom - gap;
@@ -61,13 +60,22 @@ export function useAnchorPosition(
     }
 
     update();
+
+    const trigger = triggerRef.current;
+    let resizeObserver: ResizeObserver | undefined;
+    if (trigger && typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(update);
+      resizeObserver.observe(trigger);
+    }
+
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
     return () => {
+      resizeObserver?.disconnect();
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, triggerRef, gap, preferredWidth, preferredMaxHeight]);
+  }, [open, triggerRef, gap, preferredMaxHeight]);
 
   return position;
 }

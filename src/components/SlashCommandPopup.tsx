@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { SlashCommandGroup } from "../lib/slashFuzzy";
+import { SLASH_COMMAND_ROW_CLASS, slashCommandIdClassName } from "../lib/slashCommandRow";
 
 interface SlashCommandPopupProps {
   groups: SlashCommandGroup[];
@@ -77,7 +78,7 @@ export function SlashCommandPopup({
         <div key={group.category} data-slash-group>
           <div
             data-slash-group-label
-            className="px-2 py-0.5 text-[11px] font-medium text-fg-muted"
+            className="px-2 py-0.5 text-xs font-medium text-fg-muted"
           >
             {group.categoryLabel}
           </div>
@@ -89,7 +90,7 @@ export function SlashCommandPopup({
                 key={match.command.id}
                 type="button"
                 data-slash-selected={selected ? "true" : undefined}
-                className={`grid w-full grid-cols-[7.25rem_minmax(5rem,auto)_minmax(0,1fr)] items-center gap-x-2 px-2 py-1 text-left text-xs ${
+                className={`${SLASH_COMMAND_ROW_CLASS} ${
                   selected ? "mention-item-selected" : "text-fg hover:bg-hover"
                 }`}
                 onMouseDown={(e) => {
@@ -97,14 +98,14 @@ export function SlashCommandPopup({
                   onPick(match.command.id);
                 }}
               >
-                <span className="truncate font-mono text-[11px] text-fg-muted">
+                <span className={slashCommandIdClassName()} title={`/${match.command.id}`}>
                   /{match.command.id}
                 </span>
                 <span className="truncate font-medium">
                   {highlight(match.command.label, match.labelPositions)}
                 </span>
                 <span
-                  className={`min-w-0 truncate text-[11px] ${
+                  className={`min-w-0 truncate text-xs ${
                     selected ? "text-fg-secondary" : "text-fg-muted"
                   }`}
                   title={match.command.description}

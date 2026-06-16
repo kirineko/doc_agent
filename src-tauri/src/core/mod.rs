@@ -7,4 +7,5 @@ pub mod sandbox;
 pub mod secrets;
 pub mod skills;
 pub mod store;
+pub mod updater_cleanup;
 pub mod web_search;

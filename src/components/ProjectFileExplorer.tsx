@@ -175,8 +175,8 @@ export function ProjectFileExplorer({
         <button
           type="button"
           className={panelIconBtn}
-          aria-label="在 Finder 中打开项目根目录"
-          title="在 Finder 中打开项目根目录"
+          aria-label="在文件管理器中打开项目根目录"
+          title="在文件管理器中打开项目根目录"
           disabled={loading}
           onClick={() => void openProjectRoot()}
         >

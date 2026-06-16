@@ -5,6 +5,7 @@ import {
   SLASH_COMMANDS,
   type SlashCategory,
 } from "../lib/slashCommands";
+import { SLASH_COMMAND_ROW_CLASS, slashCommandIdClassName } from "../lib/slashCommandRow";
 
 interface SlashMenuFlyoutProps {
   open: boolean;
@@ -55,7 +56,7 @@ export function SlashMenuFlyout({ open, onClose, onPick }: SlashMenuFlyoutProps)
               <button
                 key={category}
                 type="button"
-                className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] transition ${
+                className={`shrink-0 rounded-full px-2.5 py-0.5 text-xs transition ${
                   selected
                     ? "mention-item-selected font-medium"
                     : "text-fg-secondary hover:bg-hover hover:text-fg"
@@ -72,16 +73,18 @@ export function SlashMenuFlyout({ open, onClose, onPick }: SlashMenuFlyoutProps)
             <button
               key={command.id}
               type="button"
-              className="grid w-full grid-cols-[7.25rem_minmax(5rem,auto)_minmax(0,1fr)] items-center gap-x-2 px-2 py-1 text-left text-xs text-fg hover:bg-hover"
+              className={`${SLASH_COMMAND_ROW_CLASS} text-fg hover:bg-hover`}
               onMouseDown={(event) => {
                 event.preventDefault();
                 onPick(command.id);
                 onClose();
               }}
             >
-              <span className="truncate font-mono text-[11px] text-fg-muted">/{command.id}</span>
+              <span className={slashCommandIdClassName()} title={`/${command.id}`}>
+                /{command.id}
+              </span>
               <span className="truncate font-medium">{command.label}</span>
-              <span className="truncate text-[11px] text-fg-muted" title={command.description}>
+              <span className="truncate text-xs text-fg-muted" title={command.description}>
                 {command.description}
               </span>
             </button>

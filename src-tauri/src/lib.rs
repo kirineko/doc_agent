@@ -36,6 +36,7 @@ pub fn run() {
                 }
             }
             app.manage(state);
+            crate::core::updater_cleanup::spawn_stale_cleanup();
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

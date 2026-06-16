@@ -4,6 +4,36 @@ import { useUpdateProgress } from "../hooks/useUpdateProgress";
 const RING_RADIUS = 20;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+export interface UpdateOverlayCopy {
+  primary: string;
+  secondary?: string;
+  percentLine?: string;
+}
+
+export function formatUpdateOverlayCopy(
+  phase: "downloading" | "installing",
+  version?: string,
+  percent?: number,
+): UpdateOverlayCopy {
+  if (phase === "installing") {
+    return { primary: "正在安装", secondary: "即将重启" };
+  }
+
+  if (percent !== undefined) {
+    return {
+      primary: "正在下载",
+      secondary: version ? `v${version}` : undefined,
+      percentLine: `${percent}%`,
+    };
+  }
+
+  if (version) {
+    return { primary: "正在下载", secondary: `v${version}` };
+  }
+
+  return { primary: "正在下载" };
+}
+
 function UpdateProgressRing({
   percent,
   spinning,
@@ -39,27 +69,6 @@ function UpdateProgressRing({
   );
 }
 
-function formatUpdateMessage(
-  phase: "downloading" | "installing",
-  version?: string,
-  percent?: number,
-): string {
-  if (phase === "installing") {
-    return "正在安装，即将重启…";
-  }
-
-  if (percent !== undefined) {
-    const versionLabel = version ? ` v${version}` : "";
-    return `正在下载${versionLabel}… ${percent}%`;
-  }
-
-  if (version) {
-    return `正在下载 v${version}…`;
-  }
-
-  return "正在下载更新…";
-}
-
 export function UpdateProgressOverlay() {
   const progress = useUpdateProgress();
 
@@ -70,7 +79,7 @@ export function UpdateProgressOverlay() {
   const spinning =
     progress.phase === "installing" ||
     (progress.phase === "downloading" && percent === undefined);
-  const message = formatUpdateMessage(progress.phase, progress.version, percent);
+  const copy = formatUpdateOverlayCopy(progress.phase, progress.version, percent);
 
   return (
     <div
@@ -80,9 +89,13 @@ export function UpdateProgressOverlay() {
       aria-label="正在更新"
       aria-busy="true"
     >
-      <div className="config-surface panel flex flex-col items-center gap-3 rounded-lg px-6 py-5 shadow-xl">
+      <div className="config-surface panel flex min-w-[17rem] flex-col items-center gap-2 rounded-lg px-6 py-5 text-center shadow-xl">
         <UpdateProgressRing percent={percent} spinning={spinning} />
-        <p className="text-sm text-fg">{message}</p>
+        <p className="text-sm font-medium text-fg">{copy.primary}</p>
+        {copy.secondary && <p className="text-xs text-fg-secondary">{copy.secondary}</p>}
+        {copy.percentLine && (
+          <p className="text-xs tabular-nums text-fg-secondary">{copy.percentLine}</p>
+        )}
       </div>
     </div>
   );

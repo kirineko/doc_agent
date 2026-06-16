@@ -35,7 +35,7 @@ function highlight(text: string, positions: number[]): ReactNode {
 function BrowseBreadcrumb({ scopeDir }: { scopeDir: string }) {
   const segments = scopeDir.split("/").filter(Boolean);
   return (
-    <div className="flex min-w-0 items-center gap-0.5 truncate border-b border-border-subtle px-2 py-1 text-[11px] text-fg-muted">
+    <div className="flex min-w-0 items-center gap-0.5 truncate border-b border-border-subtle px-2 py-1 text-xs text-fg-muted">
       <span className="shrink-0" aria-hidden>
         ⌂
       </span>
@@ -77,13 +77,13 @@ function MentionRow({
         onPick(match.item);
       }}
     >
-      <span className="w-3.5 shrink-0 text-center text-[11px] text-fg-muted" aria-hidden>
+      <span className="w-3.5 shrink-0 text-center text-xs text-fg-muted" aria-hidden>
         {match.isDir ? "📁" : "📄"}
       </span>
       <span className="min-w-0 shrink truncate font-medium">{highlight(label, positions)}</span>
       {showParentPath && match.parentPath !== "." && (
         <span
-          className={`min-w-0 flex-1 truncate text-[11px] ${
+          className={`min-w-0 flex-1 truncate text-xs ${
             selected ? "text-fg-secondary" : "text-fg-muted"
           }`}
           title={match.parentPath}
@@ -135,15 +135,15 @@ export function FileMentionPopup({
     >
       {browsing && browseContext.scopeDir && <BrowseBreadcrumb scopeDir={browseContext.scopeDir} />}
       {!browsing && !searching && (
-        <div className="px-2 py-0.5 text-[11px] text-fg-muted">输入名称搜索，Tab/Enter 选中，Esc 关闭</div>
+        <div className="px-2 py-0.5 text-xs text-fg-muted">输入名称搜索，Tab/Enter 选中，Esc 关闭</div>
       )}
       {groups.map((group) => (
         <div key={group.id}>
           {showGroupHeaders && (
-            <div className="px-2 py-0.5 text-[11px] font-medium text-fg-muted">{group.label}</div>
+            <div className="px-2 py-0.5 text-xs font-medium text-fg-muted">{group.label}</div>
           )}
           {!showGroupHeaders && searching && groups.length === 1 && group.id !== "." && (
-            <div className="px-2 py-0.5 text-[11px] font-medium text-fg-muted">{group.label}</div>
+            <div className="px-2 py-0.5 text-xs font-medium text-fg-muted">{group.label}</div>
           )}
           {group.items.map((match) => {
             const index = runningIndex++;
