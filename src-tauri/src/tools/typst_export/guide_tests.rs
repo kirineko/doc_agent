@@ -296,8 +296,8 @@ mod tests {
         require_font_dirs();
         let dir = tempfile::tempdir().unwrap();
         let source = bundled::find_source("report/report-zh").expect("report-zh");
-        let output = compile_snippet(dir.path(), "report-zh.typ", source)
-            .expect("report-zh should compile");
+        let output =
+            compile_snippet(dir.path(), "report-zh.typ", source).expect("report-zh should compile");
         assert!(
             output.warnings.is_empty(),
             "report-zh warnings: {:?}",
