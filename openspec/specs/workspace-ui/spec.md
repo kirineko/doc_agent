@@ -106,15 +106,21 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** 卡片显示移除按钮，点击后该项目立即从列表消失
 
 ### Requirement: @ 文件引用选择器
-输入框 SHALL 支持 `@` 触发的文件引用：检测到光标前的 `@` 及其后查询串时，弹出项目内文件/目录候选列表，支持 fzf 式模糊匹配（子序列匹配 + 评分排序 + 命中高亮）、键盘上下选择与确认；确认后在输入框插入 `@相对路径`。文件清单 MUST 限制遍历深度与数量并忽略隐藏目录/依赖目录/Office 临时文件；**此外 MUST 忽略 OOXML 解压工作目录（路径段名为 `unpacked` 或以 `_unpacked` 结尾的目录）及其全部子树**。清单 MUST 在项目文件变更后更新：优先通过 `tool_result.changed_paths` 增量合并，并在每个 turn 完成时 debounce 全量刷新一次。
+输入框 SHALL 支持 `@` 触发的文件引用：检测到光标前的 `@` 及其后查询串时，弹出项目内文件/目录候选列表，支持 fzf 式模糊匹配（子序列匹配 + 评分排序 + 命中高亮）、键盘上下选择与确认；确认后在输入框插入 `@相对路径`（含空白或解析终止符的路径 MUST 以引号包裹）。文件清单 MUST 限制遍历深度与数量并忽略隐藏目录/依赖目录/Office 临时文件；**此外 MUST 忽略 OOXML 解压工作目录（路径段名为 `unpacked` 或以 `_unpacked` 结尾的目录）及其全部子树**。清单 MUST 按修改时间降序索引，并携带 `is_dir` 供弹层区分目录与文件。清单 MUST 在项目文件变更后更新：优先通过 `tool_result.changed_paths` 增量合并，并在每个 turn 完成时 debounce 全量刷新一次。
+
+空 `@` query MUST 仅展示项目根目录直接子项；query 含 `/` 时 MUST 进入对应目录浏览其子项；全局搜索 MUST 按父目录分组展示，键盘选择顺序 MUST 与弹层渲染顺序一致。目录项 Tab MUST 进入子目录（append `路径/`），Enter MUST 确认引用；Esc MUST 仅关闭弹层，MUST NOT 删除输入内容。
 
 #### Scenario: 模糊匹配选择文件
 - **WHEN** 用户在输入框键入 `@课程` 且项目内存在「课程体系.xlsx」
 - **THEN** 弹层展示按匹配度排序的候选（含该文件），用户按 Enter 后输入框中 `@课程` 被替换为 `@课程体系.xlsx `
 
 #### Scenario: Esc 关闭弹层
-- **WHEN** 弹层展示中用户按 Esc 或将光标移出 `@` 区域
+- **WHEN** 弹层展示中用户按 Esc
 - **THEN** 弹层关闭，输入内容保持不变
+
+#### Scenario: Tab 进入目录
+- **WHEN** 用户在根级 `@` 弹层高亮目录 `docs` 并按 Tab
+- **THEN** 输入变为 `@docs/` 且弹层展示 `docs/` 下直接子项，消息未发送
 
 #### Scenario: Agent 理解 @ 引用
 - **WHEN** 用户发送包含 `@相对路径` 的消息
@@ -147,6 +153,8 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 ### Requirement: 推荐问展示交互
 首次会话与 follow-up 推荐问 SHALL 均以胶囊按钮形式统一展示在输入框上方；点击任一推荐 MUST 将该文本填入输入框供用户编辑，不得直接发送。每条推荐问长度 MUST 不超过 80 个字符。follow-up 生成期间 MUST NOT 禁用输入框；用户先行发送消息或切换会话时，迟到的 follow-up 结果 MUST 被丢弃。
 
+斜杠命令选择器与推荐问 MUST 共存：推荐问在输入框上方，斜杠弹层在 textarea 上方；二者互不阻断。
+
 #### Scenario: 点击推荐填入输入框
 - **WHEN** 用户点击一条推荐问胶囊
 - **THEN** 该文本出现在输入框中且输入框获得焦点，推荐区在用户发送消息前仍可展示
@@ -154,6 +162,63 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 #### Scenario: 迟到的 followup 被丢弃
 - **WHEN** followup 推荐尚未返回时用户已手动发送了新消息
 - **THEN** 返回的推荐结果被丢弃，不展示
+
+#### Scenario: 斜杠与推荐问共存
+- **WHEN** 空会话同时展示 starter 推荐问且用户在输入框键入 `/`
+- **THEN** 推荐问胶囊仍可见，斜杠弹层在 textarea 上方正常展示
+
+### Requirement: 斜杠命令选择器
+
+输入框 SHALL 支持 `/` 触发的斜杠命令选择器：检测到光标前位于**行首或空白字符后**的 `/` 且 `/` 与光标之间无空白时，弹出命令候选列表；支持 fzf 式模糊匹配、按分类分组展示、键盘上下选择与确认。
+
+确认后 MUST 将输入框中的 `/query` 替换为该命令的 `prompt` 文本，**MUST NOT** 自动发送消息；首个 `{{占位符}}` MUST 自动选中供编辑。行为 MUST 与「推荐问点击填入输入框」一致。
+
+斜杠弹层与 `@` 文件引用弹层 MUST 互斥：二者同时满足触发条件时，仅展示 `@` 弹层。
+
+澄清进行中（`activeClarify`）、busy、initializing 时 MUST NOT 展示斜杠弹层（与输入 disabled 一致）。
+
+#### Scenario: 选择命令填入 prompt
+
+- **WHEN** 用户输入 `/word` 并在弹层中选择「精准修改 Word」
+- **THEN** 输入框中 `/word` 被替换为对应 prompt（含文件名与改动占位）
+- **AND** 消息未被发送
+
+#### Scenario: 键盘确认
+
+- **WHEN** 斜杠弹层展示且用户按 Enter
+- **THEN** 当前高亮命令的 prompt 填入输入框且不发送
+
+#### Scenario: Esc 关闭
+
+- **WHEN** 弹层展示中用户按 Esc
+- **THEN** 弹层关闭，输入内容保持不变
+
+#### Scenario: 与 @ 互斥
+
+- **WHEN** 输入为 `分析 @报 /word` 且光标在 `@报` 区域内
+- **THEN** 仅展示 `@` 文件弹层，不展示斜杠命令弹层
+
+#### Scenario: 澄清期间不可用
+
+- **WHEN** session 存在 pending 的 clarify 问题
+- **THEN** 不展示斜杠命令弹层
+
+### Requirement: 斜杠命令弹层 UI
+
+斜杠命令弹层 MUST 按分类展示分组标题（通用、Word、PPT、Excel、PDF、Web），每条候选 MUST 展示命令 id、`label` 与一行 `description`；匹配字符 MUST 高亮（与 `@` 弹层同类样式）。
+
+弹层 MUST 可滚动；样式 MUST 复用或延伸现有 `mention-popup` 设计令牌，与明暗主题一致。
+
+#### Scenario: 分组标题与默认顺序
+
+- **WHEN** 用户键入 `/` 且 query 为空
+- **THEN** 弹层按 general、word、ppt、excel、pdf、web 顺序展示分组
+- **AND** 每组内命令顺序与 registry 一致
+
+#### Scenario: 双行展示
+
+- **WHEN** 弹层展示 `word:edit`
+- **THEN** 主行显示命令 id 与「精准修改 Word」，副行显示 registry 中的 description
 
 ### Requirement: 应用品牌标识
 系统 SHALL 使用定制 Logo 替换 Tauri 默认图标，并在顶栏标题旁展示 Logo 图形；窗口标题文案保持「Doc Agent」。

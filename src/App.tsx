@@ -83,7 +83,7 @@ function App() {
           showInitCapsule={ws.showInitCapsule}
           starterSuggestions={ws.starterSuggestions}
           followupSuggestions={ws.followupSuggestions}
-          filePaths={ws.filePaths}
+          fileEntries={ws.fileEntries}
           input={ws.input}
           busy={ws.stream.busy}
           contextRatio={ws.contextRatio}

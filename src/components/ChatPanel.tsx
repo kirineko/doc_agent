@@ -3,9 +3,14 @@ import {
   readClipboardImageFile,
   type PendingAttachment,
 } from "../lib/attachments";
-import { fuzzyMatch } from "../lib/fuzzy";
-import { applyMention, deleteMentionBeforeCursor, detectMention } from "../lib/mention";
+import type { MentionFileEntry } from "../lib/projectFiles";
+import { orderMentionFileMatchesForDisplay, searchMentionFiles } from "../lib/mentionFiles";
+import { applyMention, deleteMentionBeforeCursor, detectMention, expandMentionDirectory } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
+import { applySlash, detectSlash } from "../lib/slash";
+import { deletePlaceholderAtCursor, deletePlaceholderBeforeCursor } from "../lib/promptPlaceholder";
+import { SLASH_COMMANDS } from "../lib/slashCommands";
+import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
@@ -15,6 +20,7 @@ import { ImagePreviewOverlay } from "./ImagePreviewOverlay";
 import { MessageList } from "./MessageList";
 import { PendingAttachmentChips } from "./PendingAttachmentChips";
 import { SendHintBanner } from "./SendHintBanner";
+import { SlashCommandPopup } from "./SlashCommandPopup";
 import { SuggestionCards } from "./SuggestionCards";
 import type { SendBlocker } from "../lib/sendReadiness";
 
@@ -30,7 +36,7 @@ interface ChatPanelProps {
   showInitCapsule?: boolean;
   starterSuggestions?: string[];
   followupSuggestions?: string[];
-  filePaths?: string[];
+  fileEntries?: MentionFileEntry[];
   input: string;
   busy: boolean;
   contextRatio?: number;
@@ -62,7 +68,7 @@ export function ChatPanel({
   showInitCapsule = false,
   starterSuggestions = [],
   followupSuggestions = [],
-  filePaths = [],
+  fileEntries = [],
   input,
   busy,
   contextRatio,
@@ -86,6 +92,9 @@ export function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottomRef = useRef(true);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [mentionDismissed, setMentionDismissed] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
 
@@ -95,10 +104,22 @@ export function ChatPanel({
   const inputDisabled = busy || initializing || hasActiveClarify;
   const canSend = Boolean(input.trim() || pendingAttachments.length > 0);
   const mention = detectMention(input, cursor);
+  const slash = mention ? null : detectSlash(input, cursor);
   const mentionMatches = useMemo(() => {
-    if (!mention || filePaths.length === 0) return [];
-    return fuzzyMatch(mention.query, filePaths).slice(0, 8);
-  }, [mention, filePaths]);
+    if (!mention || fileEntries.length === 0) return [];
+    return searchMentionFiles(mention.query, fileEntries);
+  }, [mention, fileEntries]);
+  const mentionDisplayMatches = useMemo(() => {
+    if (!mention) return [];
+    return orderMentionFileMatchesForDisplay(mentionMatches, mention.query);
+  }, [mention, mentionMatches]);
+  const slashGroups = useMemo(
+    () => (slash ? searchSlashCommands(slash.query) : []),
+    [slash?.query],
+  );
+  const slashMatches = useMemo(() => flattenSlashGroups(slashGroups), [slashGroups]);
+  const showSlashPopup = Boolean(slash && !slashDismissed && !inputDisabled);
+  const showMentionPopup = Boolean(mention && !mentionDismissed && fileEntries.length > 0 && !inputDisabled);
   const suggestionItems = useMemo(() => {
     if (initializing) return [];
     if (hasActiveClarify) return [];
@@ -122,6 +143,9 @@ export function ChatPanel({
   useEffect(() => {
     stickToBottomRef.current = true;
     setMentionIndex(0);
+    setMentionDismissed(false);
+    setSlashIndex(0);
+    setSlashDismissed(false);
   }, [sessionId]);
 
   useEffect(() => {
@@ -147,7 +171,13 @@ export function ChatPanel({
 
   useEffect(() => {
     setMentionIndex(0);
+    setMentionDismissed(false);
   }, [mention?.query]);
+
+  useEffect(() => {
+    setSlashIndex(0);
+    setSlashDismissed(false);
+  }, [slash?.query]);
 
   useEffect(() => {
     if (!compactionNotice) return;
@@ -165,10 +195,10 @@ export function ChatPanel({
     return () => window.clearTimeout(timer);
   }, [visionToast, onDismissVisionToast]);
 
-  function focusTextareaAt(pos: number) {
+  function focusTextareaAt(start: number, end = start) {
     requestAnimationFrame(() => {
       textareaRef.current?.focus();
-      textareaRef.current?.setSelectionRange(pos, pos);
+      textareaRef.current?.setSelectionRange(start, end);
     });
   }
 
@@ -178,6 +208,26 @@ export function ChatPanel({
     onInputChange(result.text);
     setCursor(result.cursor);
     focusTextareaAt(result.cursor);
+  }
+
+  function browseMentionDirectory(path: string) {
+    if (!mention) return;
+    const result = expandMentionDirectory(input, mention, path);
+    onInputChange(result.text);
+    setCursor(result.cursor);
+    setMentionIndex(0);
+    focusTextareaAt(result.cursor);
+  }
+
+  function pickSlash(commandId: string) {
+    if (!slash) return;
+    const command = SLASH_COMMANDS.find((item) => item.id === commandId);
+    if (!command) return;
+    const result = applySlash(input, slash, command.prompt);
+    onInputChange(result.text);
+    setCursor(result.selectionEnd);
+    setSlashDismissed(false);
+    focusTextareaAt(result.cursor, result.selectionEnd);
   }
 
   function pickSuggestion(text: string) {
@@ -273,11 +323,19 @@ export function ChatPanel({
         />
 
         <div className="relative flex gap-2">
-          {mention && filePaths.length > 0 && (
+          {showMentionPopup && mention && (
             <FileMentionPopup
+              query={mention.query}
               matches={mentionMatches}
               selectedIndex={mentionIndex}
               onPick={pickMention}
+            />
+          )}
+          {showSlashPopup && (
+            <SlashCommandPopup
+              groups={slashGroups}
+              selectedIndex={slashIndex}
+              onPick={pickSlash}
             />
           )}
           <textarea
@@ -290,7 +348,7 @@ export function ChatPanel({
                   ? "请先回答上方澄清问题"
                   : busy
                   ? "等待回复中…"
-                  : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件，可粘贴图片"
+                  : "输入消息，Enter 发送，Shift+Enter 换行，@ 引用文件，/ 选择任务，可粘贴图片"
             }
             value={input}
             disabled={inputDisabled}
@@ -302,6 +360,14 @@ export function ChatPanel({
             onSelect={(e) => setCursor(e.currentTarget.selectionStart)}
             onKeyDown={(e) => {
               if (e.key === "Backspace" && !e.shiftKey) {
+                const deletedPh = deletePlaceholderBeforeCursor(input, cursor);
+                if (deletedPh) {
+                  e.preventDefault();
+                  onInputChange(deletedPh.text);
+                  setCursor(deletedPh.cursor);
+                  focusTextareaAt(deletedPh.cursor);
+                  return;
+                }
                 const deleted = deleteMentionBeforeCursor(input, cursor);
                 if (deleted) {
                   e.preventDefault();
@@ -311,21 +377,79 @@ export function ChatPanel({
                   return;
                 }
               }
-              if (mention && mentionMatches.length > 0) {
-                const count = mentionMatches.length;
-                if (e.key === "ArrowDown") {
+              if (e.key === "Delete" && !e.shiftKey) {
+                const deletedPh = deletePlaceholderAtCursor(input, cursor);
+                if (deletedPh) {
                   e.preventDefault();
-                  setMentionIndex((i) => (i + 1) % count);
+                  onInputChange(deletedPh.text);
+                  setCursor(deletedPh.cursor);
+                  focusTextareaAt(deletedPh.cursor);
                   return;
                 }
-                if (e.key === "ArrowUp") {
+              }
+              if (mention && !mentionDismissed) {
+                if (e.key === "Escape") {
                   e.preventDefault();
-                  setMentionIndex((i) => (i - 1 + count) % count);
+                  setMentionDismissed(true);
                   return;
                 }
-                if (e.key === "Enter" || e.key === "Tab") {
+                if (mentionDisplayMatches.length > 0) {
+                  const count = mentionDisplayMatches.length;
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionIndex((i) => (i + 1) % count);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionIndex((i) => (i - 1 + count) % count);
+                    return;
+                  }
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    pickMention(
+                      mentionDisplayMatches[mentionIndex]?.item ?? mentionDisplayMatches[0]!.item,
+                    );
+                    return;
+                  }
+                  if (e.key === "Tab") {
+                    e.preventDefault();
+                    const selected = mentionDisplayMatches[mentionIndex] ?? mentionDisplayMatches[0]!;
+                    if (selected.isDir) {
+                      browseMentionDirectory(selected.item);
+                    } else {
+                      pickMention(selected.item);
+                    }
+                    return;
+                  }
+                }
+              }
+              if (showSlashPopup) {
+                if (e.key === "Escape") {
                   e.preventDefault();
-                  pickMention(mentionMatches[mentionIndex]?.item ?? mentionMatches[0]!.item);
+                  setSlashDismissed(true);
+                  return;
+                }
+                if (slashMatches.length > 0) {
+                  const count = slashMatches.length;
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setSlashIndex((i) => (i + 1) % count);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setSlashIndex((i) => (i - 1 + count) % count);
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    const match = slashMatches[slashIndex] ?? slashMatches[0]!;
+                    pickSlash(match.command.id);
+                    return;
+                  }
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
                   return;
                 }
               }

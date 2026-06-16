@@ -1,6 +1,7 @@
 export interface ProjectFileEntry {
   path: string;
   is_dir: boolean;
+  modified_ms: number;
 }
 
 export interface ProjectFileList {

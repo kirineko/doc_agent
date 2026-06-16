@@ -834,7 +834,7 @@ export function useWorkspace() {
     initializing,
     starterSuggestions,
     followupSuggestions,
-    filePaths: projectFiles.filePaths,
+    fileEntries: projectFiles.fileEntries,
     fileRevision: projectFiles.fileRevision,
     sendHint,
     highlightProject,

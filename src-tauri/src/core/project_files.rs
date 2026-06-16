@@ -10,6 +10,7 @@ const MAX_ENTRIES: usize = 2000;
 pub struct ProjectFileEntry {
     pub path: String,
     pub is_dir: bool,
+    pub modified_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -132,9 +133,16 @@ pub fn list_project_files(root: &Path) -> ProjectFileList {
             .unwrap_or(entry.path())
             .to_string_lossy()
             .replace('\\', "/");
+        let modified_ms = fs::metadata(entry.path())
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
         entries.push(ProjectFileEntry {
             path: rel,
             is_dir: entry.file_type().is_dir(),
+            modified_ms,
         });
         if entries.len() >= MAX_ENTRIES {
             truncated = true;
@@ -142,7 +150,11 @@ pub fn list_project_files(root: &Path) -> ProjectFileList {
         }
     }
 
-    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    entries.sort_by(|a, b| {
+        b.modified_ms
+            .cmp(&a.modified_ms)
+            .then_with(|| a.path.cmp(&b.path))
+    });
     ProjectFileList { entries, truncated }
 }
 
@@ -201,6 +213,20 @@ mod tests {
             "列出normalized/课程负责人.csv中软件工程"
         ));
         assert!(!text_contains_document_extension("列出目录文件"));
+    }
+
+    #[test]
+    fn sorts_by_modified_time_desc() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("older.txt"), b"1").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        fs::write(root.join("newer.txt"), b"2").unwrap();
+
+        let list = list_project_files(root);
+        let paths: Vec<_> = list.entries.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths[0], "newer.txt");
+        assert!(paths.contains(&"older.txt"));
     }
 
     #[test]
