@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tool_tests {
     use crate::agent::types::ModelId;
-    use crate::core::cache_paths::{skill_run_dir, skill_run_error, skill_run_script};
+    use crate::core::cache_paths::{skill_run_error, skill_run_script};
     use crate::core::sandbox::Sandbox;
     use crate::tools::ooxml::style_lint::lint_docx;
     use crate::tools::ooxml::validate;
@@ -12,10 +12,6 @@ mod tool_tests {
     use std::io::Read;
     use tempfile::tempdir;
     use zip::ZipArchive;
-
-    fn skill_run_session_dir() -> String {
-        skill_run_dir("test-session")
-    }
 
     fn skill_run_session_script() -> String {
         skill_run_script("test-session")
@@ -568,7 +564,7 @@ async function main() {
     }
 
     #[test]
-    fn skill_run_path_rerun_after_docx_fix_keeps_script_within_turn() {
+    fn skill_run_path_rerun_after_docx_fix_keeps_script() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
@@ -586,12 +582,8 @@ async function main() {
         assert_eq!(out["result"]["ok"], true);
         assert!(
             dir.path().join(&skill_run_session_script()).exists(),
-            "path rerun should keep script for further in-turn fixes"
+            "path rerun should keep script for cross-turn fixes"
         );
-
-        // Turn 结束兜底：无失败现场 → 清理
-        crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
-        assert!(!dir.path().join(skill_run_session_dir()).exists());
     }
 
     #[test]
@@ -622,7 +614,7 @@ async function main() {
     }
 
     #[test]
-    fn cleanup_on_turn_end_keeps_dir_when_failure_pending() {
+    fn skill_run_failure_keeps_script_and_error_json() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
@@ -638,8 +630,6 @@ async function main() {
         )
         .unwrap_err();
 
-        // 失败现场（error.json 存在）→ turn 结束不清理；同 session 下一路径，下轮可 fs_patch + path 重跑
-        crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
         assert!(dir.path().join(&skill_run_session_script()).exists());
         assert!(dir.path().join(&skill_run_session_error()).exists());
     }
@@ -1091,8 +1081,8 @@ return { ok: true };
         assert_eq!(out["result"]["ok"], true);
         assert_eq!(out["result"]["n"], 3);
         assert!(
-            !dir.path().join(skill_run_session_dir()).exists(),
-            "successful skill_run should clean turn scratch dir"
+            dir.path().join(&skill_run_session_script()).exists(),
+            "successful skill_run should retain script.js for cross-turn reuse"
         );
     }
 
@@ -1149,7 +1139,7 @@ return { ok: true };
     }
 
     #[test]
-    fn skill_run_path_rerun_after_repair_cleans_temp_dir() {
+    fn skill_run_path_rerun_after_repair_keeps_script() {
         let dir = tempdir().unwrap();
         let sandbox = setup(&dir);
         let ctx = ToolContext::new(&sandbox);
@@ -1176,7 +1166,8 @@ return { ok: true };
         )
         .unwrap();
         assert_eq!(out["result"]["ok"], true);
-        assert!(!dir.path().join(skill_run_session_dir()).exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
+        assert!(!dir.path().join(&skill_run_session_error()).exists());
     }
 
     #[test]

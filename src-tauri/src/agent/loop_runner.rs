@@ -646,7 +646,6 @@ async fn continue_loop_inner<R: Runtime>(
         }
 
         if tool_calls.is_empty() {
-            cleanup_skill_run_tmp(&sandbox, &session_id, &turn_id);
             let msg = persist_assistant(
                 &state,
                 &session_id,
@@ -745,7 +744,6 @@ async fn continue_loop_inner<R: Runtime>(
         }
     }
 
-    cleanup_skill_run_tmp(&sandbox, &session_id, &turn_id);
     emit(
         &app,
         AgentEvent::Error {

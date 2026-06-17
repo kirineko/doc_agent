@@ -81,7 +81,7 @@ async function main() {
 { "path": "<script_path from prior skill_run>", "timeout_secs": 60 }
 ```
 
-**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮 turn 结束时若没有未修复的执行失败，系统会删除该 session 的 scratch 目录（`.cache/skill-run/<session_key>/`）；失败现场在同 session 下一路径，下轮可继续修复。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
+**清理**：`script.js` 在同 session 内跨 turn 保留，供后续 `fs_patch` + `path` 重跑；新的 inline `code` 会覆盖写入。`error.json` 仅在失败时写入，修复成功后自动删除。用户 cancel turn 时才会删除整个 scratch 目录。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
 
 ### Validation
 

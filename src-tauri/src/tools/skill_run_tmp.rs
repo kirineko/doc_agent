@@ -38,21 +38,6 @@ pub fn clear_error(ctx: &ToolContext) {
     }
 }
 
-pub fn has_error(ctx: &ToolContext) -> bool {
-    error_rel(ctx)
-        .ok()
-        .and_then(|rel| ctx.sandbox.resolve(&rel).ok())
-        .map(|p| p.exists())
-        .unwrap_or(false)
-}
-
-pub fn cleanup_on_turn_end(ctx: &ToolContext) {
-    if has_error(ctx) {
-        return;
-    }
-    cleanup(ctx);
-}
-
 pub fn write_error(ctx: &ToolContext, error: &Value) -> Result<(), ToolError> {
     let rel = error_rel(ctx)?;
     let path = ctx.sandbox.resolve_for_write(&rel)?;
@@ -63,10 +48,7 @@ pub fn write_error(ctx: &ToolContext, error: &Value) -> Result<(), ToolError> {
 }
 
 pub fn tmp_dir_exists(ctx: &ToolContext) -> bool {
-    turn_dir_path(ctx)
-        .ok()
-        .map(|p| p.is_dir())
-        .unwrap_or(false)
+    turn_dir_path(ctx).ok().map(|p| p.is_dir()).unwrap_or(false)
 }
 
 fn error_rel(ctx: &ToolContext) -> Result<String, ToolError> {
@@ -116,14 +98,17 @@ mod tests {
         let path_a = script_rel(&ctx_turn_a).unwrap();
         let path_b = script_rel(&ctx_turn_b).unwrap();
         assert_eq!(path_a, path_b);
-        assert_ne!(path_a, script_rel(&ToolContext::with_test_turn(
-            &sandbox, "p", "sess-2", "turn-a", "t"
-        ))
-        .unwrap());
+        assert_ne!(
+            path_a,
+            script_rel(&ToolContext::with_test_turn(
+                &sandbox, "p", "sess-2", "turn-a", "t"
+            ))
+            .unwrap()
+        );
     }
 
     #[test]
-    fn cleanup_on_turn_end_removes_session_scratch_dir() {
+    fn cleanup_removes_session_scratch_dir() {
         let dir = tempdir().unwrap();
         let sandbox = Sandbox::new(dir.path()).unwrap();
         let ctx = ToolContext::with_test_turn(&sandbox, "p", "sess-1", "turn-1", "t");
@@ -132,10 +117,7 @@ mod tests {
         let scratch_dir = turn_dir_path(&ctx).unwrap();
         assert!(scratch_dir.exists());
 
-        fs::remove_file(scratch_dir.join("script.js")).unwrap();
-        assert!(scratch_dir.is_dir());
-
-        cleanup_on_turn_end(&ctx);
+        cleanup(&ctx);
         assert!(!scratch_dir.exists());
     }
 }

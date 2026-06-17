@@ -43,7 +43,7 @@ pub fn run_tool() -> ToolSpec {
             Formula-heavy .docx: after skill_read docx, also skill_read docx with doc=math.md before skill_run. \
             Provide exactly one of code (inline script) or path (project-relative .js file). \
             Long scripts: failed inline runs are saved to the returned script_path (session-scoped, stable across turns in the same chat session); repair with fs_patch (not fs_write) and rerun with path. \
-            After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned when the turn ends without a pending error.json. \
+            After writing deliverables the script stays at script_path across turns for fs_patch + path rerun; new inline code overwrites it. error.json is cleared on success; scratch is removed only on turn cancel. \
             Define async function main() returning JSON-serializable value; do NOT call main() at end. \
             Libraries (auto-loaded): ExcelJS, PptxGenJS, PDFLib, docx — use globals OR require('exceljs') etc.; no ES import. \
             File helpers: doc_exists, doc_list, fs.existsSync, fs.readdirSync. \
@@ -143,12 +143,7 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
                 .as_ref()
                 .is_some_and(|warnings| !warnings.is_empty());
             let retain_script = should_retain_skill_run_script(&written_paths, has_style_warnings);
-            if retain_script {
-                // 成功执行：清除上一次失败遗留的 error.json，仅保留可修复的脚本
-                skill_run_tmp::clear_error(ctx);
-            } else {
-                skill_run_tmp::cleanup(ctx);
-            }
+            skill_run_tmp::clear_error(ctx);
             let mut response = json!({ "result": result });
             if !written_paths.is_empty() {
                 response["written_paths"] = json!(written_paths);
@@ -159,7 +154,7 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
                     json!(script_retain_reason(has_style_warnings, &written_paths));
                 response["repair_hint"] = json!(
                     "To fix the deliverable, use fs_read + fs_patch on script_path, then skill_run with path. \
-                     The script is cleaned automatically when the turn ends."
+                     script.js is retained across turns; new inline code overwrites it."
                 );
             }
             if let Some(style_warnings) = style_warnings {
@@ -226,8 +221,7 @@ fn is_office_deliverable(path: &str) -> bool {
         })
 }
 
-/// Keep session-scoped script_path for in-turn repair; the turn-end hook in the
-/// agent loop removes it once the turn finishes without a pending failure.
+/// Include script_path in the success response when the Agent may need to patch and rerun.
 fn should_retain_skill_run_script(written_paths: &[String], has_style_warnings: bool) -> bool {
     has_style_warnings || written_paths.iter().any(|path| is_office_deliverable(path))
 }

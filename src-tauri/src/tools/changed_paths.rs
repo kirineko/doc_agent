@@ -41,9 +41,6 @@ pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> V
         "excel_normalize" | "data_query" => {
             push_arg_path(&mut paths, args, "out_path");
         }
-        "xlsx_recalc" => {
-            push_arg_path(&mut paths, args, "path");
-        }
         "skill_run" => {
             // runtime 将 __doc_write 写入的相对路径放入 result.written_paths
             if let Some(items) = result.get("written_paths").and_then(|v| v.as_array()) {
@@ -139,6 +136,16 @@ mod tests {
             &json!({ "applied": 1, "missed": [] }),
         );
         assert_eq!(paths, vec!["notes/todo.md"]);
+    }
+
+    #[test]
+    fn xlsx_recalc_does_not_report_changed_paths() {
+        let paths = extract_changed_paths(
+            "xlsx_recalc",
+            &json!({ "path": "book.xlsx" }),
+            &json!({ "errors": [], "warnings": [] }),
+        );
+        assert!(paths.is_empty());
     }
 
     #[test]

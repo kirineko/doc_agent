@@ -134,6 +134,9 @@ mod tests {
         assert_ne!(same_session, skill_run_script("sess-2"));
         assert!(same_session.starts_with(".cache/skill-run/"));
         assert!(same_session.ends_with("/script.js"));
-        assert!(same_session.len() <= 40, "path should be short: {same_session}");
+        assert!(
+            same_session.len() <= 40,
+            "path should be short: {same_session}"
+        );
     }
 }

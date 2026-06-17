@@ -64,7 +64,7 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 
 ### Requirement: skill_run 临时脚本恢复区
 
-系统 SHALL 使用项目沙箱 `.cache/skill-run/<session_key>/` 作为 `skill_run` 的临时脚本恢复区（`session_key = hash(session_id)`，同一会话内各 turn 共用同一路径；段名为 8 位 hex）。该目录 MUST only contain temporary recovery files for the owning session。清理时机分两级：成功且无交付物时可立即清理；写出 Office 交付物或存在排版告警时在 turn 内保留供修复，turn 结束时只要不存在未修复的执行失败（`error.json`）就 MUST 删除整个 session scratch 目录，不依赖 Agent 显式调用。
+系统 SHALL 使用项目沙箱 `.cache/skill-run/<session_key>/` 作为 `skill_run` 的临时脚本恢复区（`session_key = hash(session_id)`，同一会话内各 turn 共用同一路径；段名为 8 位 hex）。该目录 MUST only contain recovery files for the owning session。`script.js` 在成功执行后 MUST 保留，供同 session 跨 turn 读取与 `fs_patch` 修复；新的 inline `code` 执行前 MUST 覆盖写入。`error.json` 仅在执行失败时写入；成功执行（含 path 重跑修复成功）后 MUST 删除。整个 session scratch 目录 MUST 仅在用户 cancel turn 时删除；turn 正常结束或达到 max tool steps MUST NOT 删除 `script.js`。
 
 #### Scenario: inline 脚本执行前保存
 
@@ -79,9 +79,10 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 
 #### Scenario: 同 session 跨 turn 共用 script_path
 
-- **WHEN** session A 在 turn 1 的 `skill_run.code` 执行失败
-- **AND** 用户在 turn 2 继续修复
+- **WHEN** session A 在 turn 1 成功执行 `skill_run` 写出交付物
+- **AND** 用户在 turn 2 要求修改该交付物
 - **THEN** turn 2 的 `script_path` MUST 与 turn 1 相同
+- **AND** `script.js` MUST 仍存在于磁盘
 - **AND** Agent 可用 `fs_patch` + `skill_run {"path":"<script_path>"}` 重跑
 
 #### Scenario: path 重跑使用返回 script_path
@@ -94,7 +95,18 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 
 - **WHEN** `skill_run.code` 执行失败
 - **THEN** 系统 SHALL 保留该 session 的 `script.js` 并写入同目录 `error.json`
-- **AND** turn 结束时该 session scratch 目录 MUST NOT 被清理
+- **AND** turn 结束时 scratch 目录 MUST NOT 被清理
+
+#### Scenario: 成功执行保留 script.js
+
+- **WHEN** `skill_run` 成功执行（含纯计算脚本、无 Office 交付物）
+- **THEN** `.cache/skill-run/<session_key>/script.js` MUST 保留
+- **AND** 若存在 `error.json` MUST 被删除
+
+#### Scenario: cancel turn 清理 scratch
+
+- **WHEN** 用户 cancel 进行中的 turn
+- **THEN** 系统 SHALL 删除该 session 的 `.cache/skill-run/<session_key>/` 目录（若存在）
 
 ### Requirement: fs_patch 局部文本修改
 

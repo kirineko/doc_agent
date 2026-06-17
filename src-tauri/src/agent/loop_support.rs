@@ -17,7 +17,7 @@ use uuid::Uuid;
 
 pub(super) fn cleanup_skill_run_tmp(sandbox: &Sandbox, session_id: &str, turn_id: &str) {
     let ctx = ToolContext::with_test_turn(sandbox, "cleanup", session_id, turn_id, "cleanup");
-    crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
+    crate::tools::skill_run_tmp::cleanup(&ctx);
 }
 
 pub(crate) fn build_working_messages(

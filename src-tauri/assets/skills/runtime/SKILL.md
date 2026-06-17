@@ -66,7 +66,7 @@ Bundle 按代码关键字注入（含 `pptxgenjs` / `PptxGenJS` / `docx` / `exce
 1. 失败脚本路径见工具返回的 `script_path` 或错误 JSON，错误含行列号
 2. 用 `fs_patch` 局部修复（勿 `fs_write` 整文件重写）
 3. `skill_run {"path":"<script_path>"}` 重跑
-4. turn 结束且无 `error.json` 时自动清理该 session 的 scratch 目录（`.cache/skill-run/<session_key>/`）；有失败现场则保留，同 session 下轮可继续修复
+4. `script.js` 在同 session 内跨 turn 保留；`error.json` 仅在失败时存在，修复成功后删除；用户 cancel turn 时删除 scratch 目录
 
 ## 最小示例
 
