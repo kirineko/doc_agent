@@ -1,5 +1,6 @@
 use super::*;
 use crate::agent::compaction::MAX_TOOL_STEPS;
+use crate::agent::run_limiter::GLOBAL_PARALLEL_FULL_MSG;
 use crate::agent::types::AgentEvent;
 use crate::core::store::{Message, Store};
 use crate::state::AppState;
@@ -460,7 +461,7 @@ fn project_rejects_second_session_while_first_is_running() {
             );
 
         tokio::time::sleep(Duration::from_millis(50)).await;
-        let blocked = run_turn(
+        run_turn(
             app.handle().clone(),
             state.clone(),
             session_b.clone(),
@@ -468,21 +469,78 @@ fn project_rejects_second_session_while_first_is_running() {
             vec![],
         )
         .await
-        .unwrap_err();
-        assert!(blocked.contains("项目内有其他会话正在执行任务"));
+        .expect("same project second session should start while first is running");
         {
             let store = state.store.lock().unwrap();
             let messages = store.list_messages(&session_b).unwrap();
             assert!(
                 messages
                     .iter()
-                    .all(|m| m.role != "user" || m.content.as_deref() != Some("hello")),
-                "rejected send must not persist user message"
+                    .any(|m| m.role == "user" && m.content.as_deref() == Some("hello")),
+                "second session message should persist"
             );
         }
 
         state.turns.cancel(&session_a).unwrap();
         run.await.unwrap().unwrap();
+    });
+}
+
+#[test]
+fn global_rejects_fourth_running_session() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let sessions: Vec<String> = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            (0..4)
+                .map(|i| {
+                    store
+                        .create_session(&project.id, &format!("s{i}"), "mock", true, "high")
+                        .unwrap()
+                        .id
+                })
+                .collect()
+        };
+
+        let mut handles = Vec::new();
+        for sid in sessions.iter().take(3) {
+            let h = handle.clone();
+            let st = state.clone();
+            let sid = sid.clone();
+            handles.push(tokio::spawn(async move {
+                run_turn(h, st, sid, "慢工具".into(), vec![]).await
+            }));
+        }
+        tokio::time::sleep(Duration::from_millis(80)).await;
+        let blocked = run_turn(
+            app.handle().clone(),
+            state.clone(),
+            sessions[3].clone(),
+            "hello".into(),
+            vec![],
+        )
+        .await
+        .unwrap_err();
+        assert!(blocked.contains("当前已有 3 个任务正在执行"));
+        for sid in sessions.iter().take(3) {
+            state.turns.cancel(sid).unwrap();
+        }
+        for h in handles {
+            let _ = h.await;
+        }
     });
 }
 
@@ -530,6 +588,11 @@ fn clarify_pending_allows_other_session_in_same_project() {
             let store = state.store.lock().unwrap();
             assert!(store.get_clarify_pending(&session_a).unwrap().is_some());
             assert!(!state.turns.is_session_active(&session_a));
+            assert_eq!(
+                state.run_limiter.occupied_count(),
+                0,
+                "clarify awaiting must release global run slot"
+            );
         }
 
         run_turn(
@@ -545,7 +608,7 @@ fn clarify_pending_allows_other_session_in_same_project() {
 }
 
 #[test]
-fn clarify_submit_rejected_while_other_session_running() {
+fn clarify_submit_allowed_while_other_session_running() {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -592,7 +655,83 @@ fn clarify_submit_rejected_while_other_session_running() {
             );
         tokio::time::sleep(Duration::from_millis(50)).await;
 
-        let blocked = crate::agent::clarify_interaction::submit_clarify_answer(
+        crate::agent::clarify_interaction::submit_clarify_answer(
+            app.handle().clone(),
+            state.clone(),
+            crate::agent::clarify_interaction::SubmitClarifyAnswer {
+                session_id: session_a.clone(),
+                question_id: "mock_doc_type".into(),
+                selected: vec!["pptx".into()],
+                custom: None,
+            },
+        )
+        .await
+        .expect("clarify submit should proceed while another session runs in same project");
+        {
+            let store = state.store.lock().unwrap();
+            assert!(store.get_clarify_pending(&session_a).unwrap().is_none());
+        }
+
+        state.turns.cancel(&session_b).unwrap();
+        run.await.unwrap().unwrap();
+    });
+}
+
+#[test]
+fn clarify_submit_rejected_when_global_full_preserves_pending() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let sessions: Vec<String> = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            ["会话 A", "会话 B", "会话 C", "会话 D"]
+                .iter()
+                .map(|title| {
+                    store
+                        .create_session(&project.id, title, "mock", true, "high")
+                        .unwrap()
+                        .id
+                })
+                .collect()
+        };
+        let session_a = sessions[0].clone();
+
+        run_turn(
+            handle.clone(),
+            state.clone(),
+            session_a.clone(),
+            "请澄清需求".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+        assert_eq!(state.run_limiter.occupied_count(), 0);
+
+        let mut slow_handles = Vec::new();
+        for sid in sessions.iter().skip(1) {
+            slow_handles.push(tokio::spawn({
+                let h = handle.clone();
+                let st = state.clone();
+                let sid = sid.clone();
+                async move { run_turn(h, st, sid, "慢工具".into(), vec![]).await }
+            }));
+        }
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert_eq!(state.run_limiter.occupied_count(), 3);
+
+        let err = crate::agent::clarify_interaction::submit_clarify_answer(
             app.handle().clone(),
             state.clone(),
             crate::agent::clarify_interaction::SubmitClarifyAnswer {
@@ -604,14 +743,24 @@ fn clarify_submit_rejected_while_other_session_running() {
         )
         .await
         .unwrap_err();
-        assert!(blocked.contains("项目内有其他会话正在执行任务"));
+        assert!(
+            err.contains(GLOBAL_PARALLEL_FULL_MSG),
+            "expected global parallel full: {err}"
+        );
         {
             let store = state.store.lock().unwrap();
-            assert!(store.get_clarify_pending(&session_a).unwrap().is_some());
+            assert!(
+                store.get_clarify_pending(&session_a).unwrap().is_some(),
+                "clarify pending must survive rejected submit"
+            );
         }
 
-        state.turns.cancel(&session_b).unwrap();
-        run.await.unwrap().unwrap();
+        for sid in sessions.iter().skip(1) {
+            state.turns.cancel(sid).unwrap();
+        }
+        for h in slow_handles {
+            let _ = h.await;
+        }
     });
 }
 

@@ -7,20 +7,22 @@
 ### 1. 解包
 
 ```json
-{ "path": "template.docx", "out_dir": "unpacked/" }
+{ "path": "template.docx" }
 ```
 
-工具：`ooxml_unpack`
+工具：`ooxml_unpack`（省略 `out_dir`，使用返回的 `out_dir`）
+
+> **务必省略 `out_dir`**：后端会生成隔离工作目录 `.cache/ooxml/<session_key>/<work_key>/`（`work_key = hash(session, turn, source)`，段名为短 hash，与源文件名无关），天然避免与其他并行会话冲突。不要显式指定固定 `out_dir`（如 `unpacked`），多个会话共享同一显式目录会在 `解包 → 编辑 → 打包` 流程的间隙互相覆盖。
 
 ### 2. 编辑 XML
 
-主文件：`unpacked/word/document.xml`（批注/页眉页脚等同目录其他 part）。
+主文件：`<out_dir>/word/document.xml`（批注/页眉页脚等同目录其他 part）。
 
 **推荐方式 A — `skill_run`（批量替换，可直接复制）**
 
 ```javascript
 async function main() {
-  const xmlPath = "unpacked/word/document.xml";
+  const xmlPath = "<out_dir>/word/document.xml";
   let xml = fs.readFileSync(xmlPath, "utf-8");
 
   // [旧文本, 新文本] 列表；旧文本必须与 XML 中可见文本逐字一致
@@ -50,7 +52,7 @@ async function main() {
 
 **推荐方式 B — 直接写文件**
 
-1. `fs_read` 读取 `unpacked/word/document.xml`
+1. `fs_read` 读取 `<out_dir>/word/document.xml`
 2. 在 Agent 侧完成替换
 3. `fs_write` 写回同路径
 
@@ -66,7 +68,7 @@ async function main() {
 **批注**（解包后）：
 
 ```json
-{ "dir": "unpacked/", "id": 0, "text": "批注正文" }
+{ "dir": "<out_dir>", "id": 0, "text": "批注正文" }
 ```
 
 工具：`docx_comment`
@@ -74,7 +76,7 @@ async function main() {
 ### 3. 打包
 
 ```json
-{ "dir": "unpacked/", "out_path": "output.docx", "original": "template.docx" }
+{ "dir": "<out_dir>", "out_path": "output.docx", "original": "template.docx" }
 ```
 
 工具：`ooxml_pack`（含校验与自动修复）
@@ -101,9 +103,9 @@ async function main() {
 
 ```text
 1. office_read_to_markdown {"path": "模板.docx"}      # 了解结构与占位符
-2. ooxml_unpack {"path": "模板.docx", "out_dir": "unpacked/"}
+2. ooxml_unpack {"path": "模板.docx"}
 3. skill_run（上方方式 A 脚本；检查返回的 missed）
-4. ooxml_pack {"dir": "unpacked/", "out_path": "输出.docx", "original": "模板.docx"}
+4. ooxml_pack {"dir": "<out_dir>", "out_path": "输出.docx", "original": "模板.docx"}
 ```
 
 ## 与「从零创建」的区别

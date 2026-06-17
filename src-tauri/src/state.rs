@@ -1,4 +1,6 @@
+use crate::agent::run_limiter::RunLimiter;
 use crate::agent::turn_control::TurnRegistry;
+use crate::core::file_locks::FileLockRegistry;
 use crate::core::secrets::Secrets;
 use crate::core::store::Store;
 use crate::tools::registry::ToolRegistry;
@@ -11,6 +13,8 @@ pub struct AppState {
     pub secrets: Secrets,
     pub tools: ToolRegistry,
     pub turns: Arc<TurnRegistry>,
+    pub file_locks: Arc<FileLockRegistry>,
+    pub run_limiter: Arc<RunLimiter>,
 }
 
 impl AppState {
@@ -22,6 +26,8 @@ impl AppState {
             secrets: Secrets::open_in_data_dir(data_dir).map_err(|e| e.to_string())?,
             tools: ToolRegistry::default_tools(),
             turns: Arc::new(TurnRegistry::new()),
+            file_locks: Arc::new(FileLockRegistry::new()),
+            run_limiter: Arc::new(RunLimiter::new()),
         })
     }
 }

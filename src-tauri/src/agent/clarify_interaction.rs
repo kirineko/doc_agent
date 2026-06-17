@@ -1,5 +1,6 @@
-use crate::agent::loop_runner::{self, ActiveTurnGuard};
-use crate::agent::turn_control::is_project_busy_user_error;
+use crate::agent::loop_runner;
+use crate::agent::run_limiter::GLOBAL_PARALLEL_FULL_MSG;
+use crate::agent::turn_control::is_session_busy_user_error;
 use crate::agent::types::{AgentEvent, ClarifyAnswer, ClarifyQuestion};
 use crate::core::store::{ClarifyPending, Store};
 use crate::state::AppState;
@@ -24,13 +25,13 @@ pub async fn submit_clarify_answer<R: Runtime>(
         load_pending_clarify_answer(&store, &answer)?
     };
 
-    let cancel = loop_runner::register_active_turn(
+    loop_runner::ensure_turn_can_start(&state, &answer.session_id, &project_id)?;
+    let turn_start = loop_runner::start_turn(
         &state,
         &answer.session_id,
         &pending_preview.turn_id,
         &project_id,
     )?;
-    let _turn_guard = ActiveTurnGuard::new(&state, &answer.session_id);
 
     // 删 pending 与写 tool result 必须在同一锁块内完成：
     // 中间释放锁会留下「pending 已删但 tool_call 无 result」的窗口，
@@ -84,7 +85,7 @@ pub async fn submit_clarify_answer<R: Runtime>(
         result_json,
     );
 
-    loop_runner::resume_loop_from_store(app, state, pending.session_id, pending.turn_id, cancel)
+    loop_runner::resume_loop_from_store(app, state, pending.session_id, pending.turn_id, turn_start)
         .await
 }
 
@@ -129,13 +130,15 @@ pub async fn cancel_clarify<R: Runtime>(
     )
     .await
     {
-        Err(err) if is_project_busy_user_error(&err) => loop_runner::spawn_reserved_resume_on_busy(
-            app,
-            state,
-            resume_session_id,
-            resume_turn_id,
-            project_id,
-        ),
+        Err(err) if err.contains(GLOBAL_PARALLEL_FULL_MSG) || is_session_busy_user_error(&err) => {
+            loop_runner::spawn_reserved_resume_on_busy(
+                app,
+                state,
+                resume_session_id,
+                resume_turn_id,
+                project_id,
+            )
+        }
         other => other,
     }
 }

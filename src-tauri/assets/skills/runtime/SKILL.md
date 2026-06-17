@@ -59,14 +59,14 @@ Bundle 按代码关键字注入（含 `pptxgenjs` / `PptxGenJS` / `docx` / `exce
 
 - 无 `fetch`、无任意 npm 包、无 `child_process`
 - 单次默认超时 30s（可传 `timeout_secs`）
-- OOXML 模板编辑常用 `fs` + 固定 XML 路径；列 slide 文件用 `doc_list('unpacked/ppt/slides')`
+- OOXML 模板编辑：先 `ooxml_unpack`（省略 `out_dir`），用返回的 `out_dir` 拼 XML 路径（自动目录在 `.cache/ooxml/` 下，段名为短 hash）；列 slide 用 `doc_list('<out_dir>/ppt/slides')`
 
 ## 故障修复
 
-1. 失败脚本保存在 `.cache/skill-run/script.js`，错误含行列号
+1. 失败脚本路径见工具返回的 `script_path` 或错误 JSON，错误含行列号
 2. 用 `fs_patch` 局部修复（勿 `fs_write` 整文件重写）
-3. `skill_run {"path":".cache/skill-run/script.js"}` 重跑
-4. turn 结束自动清理（失败时保留 `error.json`）
+3. `skill_run {"path":"<script_path>"}` 重跑
+4. turn 结束且无 `error.json` 时自动清理该 session 的 scratch 目录（`.cache/skill-run/<session_key>/`）；有失败现场则保留，同 session 下轮可继续修复
 
 ## 最小示例
 
@@ -86,7 +86,7 @@ async function main() {
 
 ```javascript
 async function main() {
-  const xmlPath = "unpacked/word/document.xml";
+  const xmlPath = "<out_dir>/word/document.xml";
   let xml = fs.readFileSync(xmlPath, "utf-8");
   xml = xml.replace("OLD", "NEW");
   fs.writeFileSync(xmlPath, xml, "utf-8");

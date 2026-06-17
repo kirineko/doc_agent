@@ -8,6 +8,15 @@
 
 ## [Unreleased]
 
+### 有界并行与文件治理
+
+- **全局并行**：应用内最多 3 个 running turn（跨 project/session）；第 4 个 `send_message` / `resume_turn` 在写入消息前拒绝；clarify 等待不占名额
+- **同 project 并行**：移除「同项目单 turn」互斥；多会话可同时处理不同文件，写同一路径时后者 `file_busy`
+- **文件锁**：`FileLockRegistry` + `ToolIoPlan`；工具执行前申请 Read/Write/SubtreeWrite；`skill_run` runtime 动态写兜底锁
+- **缓存路径**：`skill_run` scratch 迁至 `.cache/skill-run/<session_key>/`（同会话跨 turn 路径不变）；`ooxml_unpack` 省略 `out_dir` 时自动生成 `.cache/ooxml/<session_key>/<work_key>/`
+- **前端**：全局 3 并行满额提示、文件占用错误展示、后台 session 完成时刷新侧栏/文件区而不覆盖当前消息
+- **Skills / prompt**：禁止固定 `unpacked/` 与手写 `.cache/` 路径；必须使用工具返回的 `out_dir` / `script_path`
+
 ### OOXML 结构校验（pack 门禁）
 
 - **`ooxml_pack` 结构规则**：解包目录回包前新增 well-formed + 参照 bundled XSD 的结构规则校验（零 native / 无 XSD 引擎）；覆盖 OPC（`opc.ct.*`、`opc.rels.*`、`pkg.rels.01`）、Word（`wml.*`）、PowerPoint（`pml.*`）、Excel（`sml.*`）

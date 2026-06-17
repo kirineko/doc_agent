@@ -252,7 +252,7 @@ eq([
 | 复杂矩阵、对齐方程组 | ❌ / 很繁琐 | `typst_to_pdf` |
 | LaTeX 字符串直写 | ❌ | 手工转 `Math*` 树 |
 | 生成后公式自检 | ⚠️ | `office_read_to_markdown` **不保留**公式结构；用 `ooxml_pack` 校验 + 请用户 Word 打开确认 |
-| 极长脚本 | — | 失败后用 `path` 重跑 `.cache/skill-run/script.js` |
+| 极长脚本 | — | 失败后用 `path` 重跑工具返回的 `script_path` |
 
 **与 Typst 分工**：公式少、必须 Word 交付 → 本页；公式密集、版式严 → `typst_read_template` + `typst_to_pdf`（见系统提示）。
 

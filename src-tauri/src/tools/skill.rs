@@ -2,7 +2,7 @@ use super::{ToolContext, ToolError, ToolSpec};
 use crate::core::skills;
 use crate::tools::ooxml::style_lint::lint_docx;
 use crate::tools::runtime;
-use crate::tools::skill_run_tmp::{self, SCRIPT_REL};
+use crate::tools::skill_run_tmp::{self, script_rel};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
 
@@ -42,8 +42,8 @@ pub fn run_tool() -> ToolSpec {
             Before generating any .docx/.pptx/.xlsx deliverable you MUST first call skill_read for that format. \
             Formula-heavy .docx: after skill_read docx, also skill_read docx with doc=math.md before skill_run. \
             Provide exactly one of code (inline script) or path (project-relative .js file). \
-            Long scripts: failed inline runs are saved to .cache/skill-run/script.js; repair with fs_patch (not fs_write) and rerun with path. \
-            After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned automatically when the turn ends. \
+            Long scripts: failed inline runs are saved to the returned script_path (session-scoped, stable across turns in the same chat session); repair with fs_patch (not fs_write) and rerun with path. \
+            After writing deliverables the script stays at script_path for in-turn fixes; it is cleaned when the turn ends without a pending error.json. \
             Define async function main() returning JSON-serializable value; do NOT call main() at end. \
             Libraries (auto-loaded): ExcelJS, PptxGenJS, PDFLib, docx — use globals OR require('exceljs') etc.; no ES import. \
             File helpers: doc_exists, doc_list, fs.existsSync, fs.readdirSync. \
@@ -55,11 +55,11 @@ pub fn run_tool() -> ToolSpec {
             "properties": {
                 "code": {
                     "type": "string",
-                    "description": "Inline JavaScript source. Saved to .cache/skill-run/script.js before execution."
+                    "description": "Inline JavaScript source. Saved to a session-scoped script_path under .cache/skill-run/<session_key>/ (returned in the result) before execution."
                 },
                 "path": {
                     "type": "string",
-                    "description": "Project-relative path to a JavaScript file, e.g. .cache/skill-run/script.js after repair."
+                    "description": "Project-relative path to a JavaScript file, e.g. the script_path returned by a previous run, after repair."
                 },
                 "timeout_secs": { "type": "integer", "default": 30 }
             },
@@ -101,9 +101,10 @@ fn resolve_script_source(ctx: &ToolContext, args: &Value) -> Result<ScriptSource
         (None, None) => Err(ToolError::InvalidArgs("code or path required".into())),
         (Some(code), None) => {
             skill_run_tmp::write_temp_script(ctx, code)?;
+            let script_path = script_rel(ctx)?;
             Ok(ScriptSource {
                 code: code.to_string(),
-                diagnostic_path: Some(SCRIPT_REL.to_string()),
+                diagnostic_path: Some(script_path),
                 from_inline: true,
             })
         }
@@ -126,11 +127,13 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .unwrap_or(30)
         .clamp(1, 120);
 
+    let write_gate = ctx.write_gate.clone();
     let result = runtime::execute_script(
         ctx.sandbox,
         &source.code,
         Duration::from_secs(timeout_secs),
         source.diagnostic_path.as_deref(),
+        write_gate,
     );
 
     match result {
@@ -151,7 +154,7 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
                 response["written_paths"] = json!(written_paths);
             }
             if retain_script && skill_run_tmp::tmp_dir_exists(ctx) {
-                response["script_path"] = json!(SCRIPT_REL);
+                response["script_path"] = json!(script_rel(ctx)?);
                 response["script_retain_reason"] =
                     json!(script_retain_reason(has_style_warnings, &written_paths));
                 response["repair_hint"] = json!(
@@ -168,7 +171,12 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         }
         Err(err) => {
             let error_value = err.to_json_value();
-            if source.from_inline || source.diagnostic_path.as_deref() == Some(SCRIPT_REL) {
+            if source.from_inline
+                || source
+                    .diagnostic_path
+                    .as_deref()
+                    .is_some_and(|p| script_rel(ctx).is_ok_and(|rel| rel == p))
+            {
                 let _ = skill_run_tmp::write_error(ctx, &error_value);
             }
             Err(ToolError::Structured(error_value))
@@ -218,7 +226,7 @@ fn is_office_deliverable(path: &str) -> bool {
         })
 }
 
-/// Keep `.cache/skill-run/script.js` for in-turn repair; the turn-end hook in the
+/// Keep session-scoped script_path for in-turn repair; the turn-end hook in the
 /// agent loop removes it once the turn finishes without a pending failure.
 fn should_retain_skill_run_script(written_paths: &[String], has_style_warnings: bool) -> bool {
     has_style_warnings || written_paths.iter().any(|path| is_office_deliverable(path))

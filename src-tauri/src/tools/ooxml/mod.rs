@@ -6,20 +6,26 @@ mod unpack;
 pub(crate) mod validate;
 
 use super::{ensure_parent_dir, required_str_arg, ToolContext, ToolError, ToolSpec};
+use crate::core::cache_paths::ooxml_work_dir;
 use serde_json::{json, Value};
 
 pub fn unpack_tool() -> ToolSpec {
     ToolSpec {
         name: "ooxml_unpack",
-        description: "Unpack docx/pptx/xlsx to an editable directory of XML parts",
+        description: "Unpack docx/pptx/xlsx to an editable directory of XML parts. \
+            Omit out_dir to get an auto-generated workspace under .cache/ooxml/<session_key>/<work_key>/ (work_key includes session+turn+source; reuse the returned out_dir for fs_patch/ooxml_pack). \
+            Do not use a fixed shared out_dir like unpacked/ across parallel sessions.",
         parameters: json!({
             "type": "object",
             "properties": {
                 "path": { "type": "string" },
-                "out_dir": { "type": "string" },
+                "out_dir": {
+                    "type": "string",
+                    "description": "Optional output directory; omit for auto-generated .cache/ooxml/<session_key>/<work_key>/"
+                },
                 "merge_runs": { "type": "boolean", "default": true }
             },
-            "required": ["path", "out_dir"]
+            "required": ["path"]
         }),
         handler: unpack_handler,
     }
@@ -29,7 +35,8 @@ pub fn pack_tool() -> ToolSpec {
     ToolSpec {
         name: "ooxml_pack",
         description:
-            "Pack an unpacked OOXML directory into docx/pptx/xlsx with validation and auto-repair",
+            "Pack an unpacked OOXML directory into docx/pptx/xlsx with validation and auto-repair. \
+            dir MUST be the out_dir returned by ooxml_unpack (often under .cache/ooxml/).",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -46,7 +53,7 @@ pub fn pack_tool() -> ToolSpec {
 pub fn comment_tool() -> ToolSpec {
     ToolSpec {
         name: "docx_comment",
-        description: "Add a comment (or reply) to an unpacked docx directory",
+        description: "Add a comment (or reply) to an unpacked docx directory. dir MUST be the out_dir from ooxml_unpack.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -80,15 +87,32 @@ pub fn accept_changes_tool() -> ToolSpec {
 
 fn unpack_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
     let path = required_str_arg(&args, "path")?;
-    let out_dir = required_str_arg(&args, "out_dir")?;
+    let (out_dir, generated) = match args.get("out_dir").and_then(|v| v.as_str()) {
+        Some(dir) => (dir.to_string(), false),
+        None => {
+            if ctx.session_id.is_empty() || ctx.turn_id.is_empty() {
+                return Err(ToolError::InvalidArgs(
+                    "out_dir required when turn context is unavailable".into(),
+                ));
+            }
+            (ooxml_work_dir(ctx.session_id, ctx.turn_id, &path), true)
+        }
+    };
     let merge_runs = args
         .get("merge_runs")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
     let src = ctx.sandbox.resolve(&path)?;
     let dst = ctx.sandbox.resolve_for_write(&out_dir)?;
+    // 生成目录由 session+turn+path 确定；若已存在说明本轮已解包过该文档。
+    // 直接重新解包会 remove_dir_all 静默删除已编辑的 XML，因此拒绝并引导复用。
+    if generated && dst.exists() {
+        return Err(ToolError::Execution(format!(
+            "该文档已在本轮解包到 {out_dir}，请直接使用该 out_dir 继续编辑，避免重复解包覆盖已修改内容；如确需重新解包，请显式传入新的 out_dir。"
+        )));
+    }
     let report = unpack::unpack(&src, &dst, merge_runs)?;
-    Ok(json!({ "out_dir": dst.display().to_string(), "parts": report.parts }))
+    Ok(json!({ "out_dir": out_dir, "parts": report.parts }))
 }
 
 fn pack_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {

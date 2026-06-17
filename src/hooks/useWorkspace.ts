@@ -30,11 +30,12 @@ import {
   writeStoredSessionConfig,
   type SessionConfig,
 } from "../lib/sessionConfig";
-import { getSendBlocker, type SendBlocker } from "../lib/sendReadiness";
+import { getSendBlocker, isParallelLimitError, type SendBlocker } from "../lib/sendReadiness";
 import { refreshWebSearchState, setWebSearchActive as persistWebSearchActive } from "../lib/webSearch";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
 import {
   deriveActiveStream,
+  isParallelAtCapacity,
   sessionRunStatus,
   sessionRunStatusMap,
   STOPPING_TIMEOUT_MS,
@@ -104,6 +105,10 @@ export function useWorkspace() {
   );
   const sessionRunStatuses = useMemo(
     () => sessionRunStatusMap(sessionRuns),
+    [sessionRuns],
+  );
+  const parallelAtCapacity = useMemo(
+    () => isParallelAtCapacity(sessionRuns),
     [sessionRuns],
   );
   const [apiKeyStatus, setApiKeyStatus] = useState<Record<string, boolean>>({});
@@ -391,6 +396,15 @@ export function useWorkspace() {
       dispatchSessionRuns({ type: "event", event: payload });
       if (isTerminalRunEvent(payload.kind)) {
         clearStoppingTimeout(payload.session_id);
+        const projectId = activeProjectRef.current;
+        if (
+          projectId &&
+          payload.session_id !== activeSessionRef.current
+        ) {
+          invoke<Session[]>("list_sessions", { projectId })
+            .then((list) => setSessionsFromBackend(list, projectId))
+            .catch(console.error);
+        }
       }
       if (payload.kind === "context_usage" && payload.session_id === activeSessionRef.current) {
         setContextRatio(payload.ratio);
@@ -577,6 +591,9 @@ export function useWorkspace() {
 
   function showSendBlocker(blocker: SendBlocker) {
     setSendHint(blocker);
+    if (blocker.kind === "parallel_limit") {
+      return;
+    }
     if (blocker.kind === "no_project") {
       setHighlightProject(true);
       document.getElementById("sidebar-projects")?.scrollIntoView({ block: "nearest" });
@@ -605,6 +622,7 @@ export function useWorkspace() {
       model,
       apiKeyStatus,
       models,
+      parallelAtCapacity: isParallelAtCapacity(sessionRunsRef.current),
     });
     if (blocker) {
       showSendBlocker(blocker);
@@ -623,6 +641,7 @@ export function useWorkspace() {
     }
 
     sendingSessionsRef.current.add(sessionId);
+    const savedInput = trimmed;
     try {
       setInput("");
       setSendHint(null);
@@ -645,6 +664,10 @@ export function useWorkspace() {
       });
     } catch (error) {
       console.error(error);
+      if (isParallelLimitError(error)) {
+        setInput(savedInput);
+        showSendBlocker({ kind: "parallel_limit" });
+      }
       const bundle = await invoke<MessageBundle>("list_messages", { sessionId }).catch(() => null);
       if (
         bundle &&
@@ -980,6 +1003,7 @@ export function useWorkspace() {
     notifyInvalidImagePick,
     stream,
     sessionRunStatuses,
+    parallelAtCapacity,
     cancelTurn,
     contextRatio,
     apiKeyStatus,

@@ -1,9 +1,12 @@
+use crate::agent::loop_runner::TurnExecutionContext;
 use crate::agent::loop_support::{emit, persist_clarify_pending, persist_tool_result};
 use crate::agent::tool_args::{parse_tool_arguments, truncation_error};
 use crate::agent::turn_control::CancelSignal;
 use crate::agent::types::{AgentEvent, ChatMessage, ModelId, ToolCall};
 use crate::core::sandbox::Sandbox;
 use crate::state::AppState;
+use crate::tools::io_plan::plan_tool_io;
+use crate::tools::runtime::RuntimeWriteGate;
 use crate::tools::ToolContext;
 use futures_util::future::join_all;
 use serde_json::{json, Value};
@@ -68,8 +71,7 @@ pub async fn run_tool_batch<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     sandbox: &Sandbox,
-    session_id: &str,
-    turn_id: &str,
+    turn_ctx: &TurnExecutionContext,
     model_id: ModelId,
     tool_calls: &[ToolCall],
     stream_indices: &[usize],
@@ -78,7 +80,8 @@ pub async fn run_tool_batch<R: Runtime>(
     pending_estimate: &mut u32,
     cancel: &CancelSignal,
 ) -> Result<ToolBatchOutcome, String> {
-    let ctx = ToolContext::with_secrets(sandbox, &state.secrets);
+    let session_id = &turn_ctx.session_id;
+    let turn_id = &turn_ctx.turn_id;
     let plans = build_plans(tool_calls, stream_indices, truncated)?;
     let mut has_pending_clarify = false;
 
@@ -116,7 +119,8 @@ pub async fn run_tool_batch<R: Runtime>(
                 idx += 1;
             }
             let batch = &plans[start..idx];
-            let outcomes = execute_pdf_read_batch(app, state, &ctx, model_id, batch).await;
+            let outcomes =
+                execute_pdf_read_batch(app, state, sandbox, turn_ctx, model_id, batch).await;
             for (plan, outcome) in batch.iter().zip(outcomes) {
                 persist_tool_result(
                     state,
@@ -133,7 +137,7 @@ pub async fn run_tool_batch<R: Runtime>(
                 bump_pending(working_messages, pending_estimate);
             }
         } else {
-            let outcome = execute_one(app, state, &ctx, model_id, &plans[idx]).await;
+            let outcome = execute_one(app, state, sandbox, turn_ctx, model_id, &plans[idx]).await;
             persist_tool_result(
                 state,
                 app,
@@ -169,7 +173,7 @@ pub async fn run_tool_batch<R: Runtime>(
         }
         if plan.prebuilt_error.is_some() {
             emit_tool_call(app, session_id, turn_id, plan, plan.args.clone(), "running");
-            let outcome = execute_one(app, state, &ctx, model_id, plan).await;
+            let outcome = execute_one(app, state, sandbox, turn_ctx, model_id, plan).await;
             persist_tool_result(
                 state,
                 app,
@@ -398,10 +402,29 @@ fn emit_tool_call<R: Runtime>(
     );
 }
 
+fn build_tool_context<'a>(
+    sandbox: &'a Sandbox,
+    state: &'a AppState,
+    turn_ctx: &'a TurnExecutionContext,
+    write_gate: Option<Arc<RuntimeWriteGate>>,
+) -> ToolContext<'a> {
+    ToolContext::for_turn(
+        sandbox,
+        Some(&state.secrets),
+        &turn_ctx.project_id,
+        &turn_ctx.session_id,
+        &turn_ctx.turn_id,
+        &turn_ctx.session_title,
+        state.file_locks.clone(),
+        write_gate,
+    )
+}
+
 async fn execute_one<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
-    ctx: &ToolContext<'_>,
+    sandbox: &Sandbox,
+    turn_ctx: &TurnExecutionContext,
     model_id: ModelId,
     plan: &ToolCallPlan,
 ) -> ExecOutcome {
@@ -414,10 +437,65 @@ async fn execute_one<R: Runtime>(
             duration_ms: started.elapsed().as_millis() as i64,
         };
     }
+
+    let base_ctx = build_tool_context(sandbox, state, turn_ctx, None);
+    let io_plan = match plan_tool_io(&base_ctx, &plan.call.function.name, &plan.args) {
+        Ok(plan) => plan,
+        Err(err) => {
+            return ExecOutcome {
+                ok: false,
+                summary: err.to_json_value().to_string(),
+                changed_paths: Vec::new(),
+                duration_ms: started.elapsed().as_millis() as i64,
+            };
+        }
+    };
+
+    let lock_guard = match state.file_locks.acquire_many(
+        &turn_ctx.project_id,
+        &turn_ctx.session_id,
+        &turn_ctx.turn_id,
+        &turn_ctx.session_title,
+        io_plan.locks,
+    ) {
+        Ok(guard) => guard,
+        Err(err) => {
+            return ExecOutcome {
+                ok: false,
+                summary: err.to_tool_json().to_string(),
+                changed_paths: Vec::new(),
+                duration_ms: started.elapsed().as_millis() as i64,
+            };
+        }
+    };
+    if let Err(err) = turn_ctx.file_locks.hold(lock_guard) {
+        return ExecOutcome {
+            ok: false,
+            summary: json!({ "error": err }).to_string(),
+            changed_paths: Vec::new(),
+            duration_ms: started.elapsed().as_millis() as i64,
+        };
+    }
+
+    let write_gate = if io_plan.dynamic_writes {
+        Some(Arc::new(RuntimeWriteGate::new(
+            state.file_locks.clone(),
+            turn_ctx.file_locks.clone(),
+            sandbox,
+            turn_ctx.project_id.clone(),
+            turn_ctx.session_id.clone(),
+            turn_ctx.turn_id.clone(),
+            turn_ctx.session_title.clone(),
+        )))
+    } else {
+        None
+    };
+    let ctx = base_ctx.with_write_gate(write_gate);
+
     match state
         .tools
         .execute(
-            ctx,
+            &ctx,
             app,
             model_id,
             &plan.call.function.name,
@@ -453,7 +531,8 @@ async fn execute_one<R: Runtime>(
 async fn execute_pdf_read_batch<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
-    ctx: &ToolContext<'_>,
+    sandbox: &Sandbox,
+    turn_ctx: &TurnExecutionContext,
     model_id: ModelId,
     batch: &[ToolCallPlan],
 ) -> Vec<ExecOutcome> {
@@ -464,7 +543,7 @@ async fn execute_pdf_read_batch<R: Runtime>(
             let sem = sem.clone();
             async move {
                 let _permit = sem.acquire().await.expect("pdf_read semaphore");
-                execute_one(app, state, ctx, model_id, plan).await
+                execute_one(app, state, sandbox, turn_ctx, model_id, plan).await
             }
         })
         .collect();
@@ -537,6 +616,98 @@ mod tests {
         }
     }
 
+    fn tool_call(id: &str, name: &str, args: serde_json::Value) -> ToolCall {
+        ToolCall {
+            id: id.to_string(),
+            call_type: "function".into(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: args.to_string(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn write_lock_survives_execute_one_until_turn_context_drops() {
+        let dir = tempdir().unwrap();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let sandbox = Sandbox::new(&project_root).unwrap();
+
+        let calls_a = vec![tool_call(
+            "call_a",
+            "fs_write",
+            json!({ "path": "out.txt", "content": "from-a" }),
+        )];
+        let plans_a = build_plans(&calls_a, &[0], false).unwrap();
+        let turn_ctx_a = TurnExecutionContext {
+            project_id: "p1".into(),
+            session_id: "s-a".into(),
+            turn_id: "t-a".into(),
+            session_title: "A".into(),
+            file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+        };
+
+        let outcome_a = execute_one(
+            &app.handle(),
+            &state,
+            &sandbox,
+            &turn_ctx_a,
+            ModelId::Mock,
+            &plans_a[0],
+        )
+        .await;
+        assert!(
+            outcome_a.ok,
+            "first write should succeed: {}",
+            outcome_a.summary
+        );
+        assert_eq!(turn_ctx_a.file_locks.guard_count(), 1);
+
+        let calls_b = vec![tool_call(
+            "call_b",
+            "fs_write",
+            json!({ "path": "out.txt", "content": "from-b" }),
+        )];
+        let plans_b = build_plans(&calls_b, &[0], false).unwrap();
+        let turn_ctx_b = TurnExecutionContext {
+            project_id: "p1".into(),
+            session_id: "s-b".into(),
+            turn_id: "t-b".into(),
+            session_title: "B".into(),
+            file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+        };
+        let blocked = execute_one(
+            &app.handle(),
+            &state,
+            &sandbox,
+            &turn_ctx_b,
+            ModelId::Mock,
+            &plans_b[0],
+        )
+        .await;
+        assert!(!blocked.ok, "second turn should be blocked");
+        assert!(blocked.summary.contains("file_busy"), "{}", blocked.summary);
+
+        drop(turn_ctx_a);
+        let unblocked = execute_one(
+            &app.handle(),
+            &state,
+            &sandbox,
+            &turn_ctx_b,
+            ModelId::Mock,
+            &plans_b[0],
+        )
+        .await;
+        assert!(
+            unblocked.ok,
+            "lock should release with the first turn context: {}",
+            unblocked.summary
+        );
+    }
+
     #[tokio::test]
     async fn cancelled_clarify_ask_receives_cancelled_tool_result() {
         let dir = tempdir().unwrap();
@@ -600,12 +771,19 @@ mod tests {
         let mut working_messages = Vec::new();
         let mut pending_estimate = 0;
 
+        let turn_ctx = TurnExecutionContext {
+            project_id: "p1".into(),
+            session_id: session_id.clone(),
+            turn_id: "turn-1".into(),
+            session_title: "Test".into(),
+            file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+        };
+
         let outcome = run_tool_batch(
             &app.handle(),
             &state,
             &sandbox,
-            &session_id,
-            "turn-1",
+            &turn_ctx,
             ModelId::Mock,
             &tool_calls,
             &[0],
@@ -709,10 +887,19 @@ mod tests {
         let mut working_messages = Vec::new();
         let mut pending_estimate = 0;
 
+        let turn_ctx = TurnExecutionContext {
+            project_id: "p1".into(),
+            session_id: session_id.clone(),
+            turn_id: "turn-1".into(),
+            session_title: "Test".into(),
+            file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+        };
+
         let fs_outcome = execute_one(
             &app.handle(),
             &state,
-            &ToolContext::with_secrets(&sandbox, &state.secrets),
+            &sandbox,
+            &turn_ctx,
             ModelId::Mock,
             &plans[0],
         )

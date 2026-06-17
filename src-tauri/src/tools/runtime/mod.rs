@@ -1,6 +1,9 @@
 mod diagnostics;
 mod normalize;
 mod ops;
+pub mod write_gate;
+
+pub use write_gate::RuntimeWriteGate;
 
 use super::ToolError;
 use crate::core::sandbox::Sandbox;
@@ -224,6 +227,7 @@ pub fn execute_script(
     code: &str,
     timeout: Duration,
     script_path: Option<&str>,
+    write_gate: Option<std::sync::Arc<write_gate::RuntimeWriteGate>>,
 ) -> Result<(Value, Vec<String>), ToolError> {
     let root = sandbox.root().to_path_buf();
     let code = code.to_string();
@@ -237,7 +241,10 @@ pub fn execute_script(
         .stack_size(32 * 1024 * 1024)
         .spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_in_thread(&root, &code, timeout)
+                ops::set_runtime_write_gate(write_gate);
+                let result = run_in_thread(&root, &code, timeout);
+                ops::set_runtime_write_gate(None);
+                result
             }))
             .unwrap_or_else(|_| Err("script panicked".into()));
             let _ = tx.send(result);

@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   applyEventToSessionRuns,
+  countActiveSessionRuns,
   deriveActiveStream,
   initialSessionRunsState,
+  isParallelAtCapacity,
   markSessionRunning,
+  markSessionStopping,
+  MAX_PARALLEL_TURNS,
 } from "./sessionRunState";
 
 describe("sessionRunState", () => {
@@ -87,5 +91,26 @@ describe("sessionRunState", () => {
 
     expect(state.bySession[sessionId]?.status).toBe("running");
     expect(deriveActiveStream(state, sessionId).busy).toBe(true);
+  });
+
+  it("counts running and stopping sessions toward parallel capacity", () => {
+    let state = initialSessionRunsState;
+    for (let i = 0; i < MAX_PARALLEL_TURNS; i++) {
+      state = markSessionRunning(state, `session-${i}`);
+    }
+    expect(countActiveSessionRuns(state)).toBe(MAX_PARALLEL_TURNS);
+    expect(isParallelAtCapacity(state)).toBe(true);
+
+    state = markSessionStopping(state, "session-0");
+    expect(countActiveSessionRuns(state)).toBe(MAX_PARALLEL_TURNS);
+    expect(isParallelAtCapacity(state)).toBe(true);
+
+    state = applyEventToSessionRuns(state, {
+      kind: "turn_complete",
+      session_id: "session-1",
+      turn_id: "t1",
+    });
+    expect(countActiveSessionRuns(state)).toBe(MAX_PARALLEL_TURNS - 1);
+    expect(isParallelAtCapacity(state)).toBe(false);
   });
 });

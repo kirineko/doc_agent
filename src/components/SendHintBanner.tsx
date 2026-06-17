@@ -1,4 +1,5 @@
 import { providerLabel } from "../types";
+import { PARALLEL_LIMIT_MESSAGE } from "../lib/sessionRunState";
 import type { SendBlocker } from "../lib/sendReadiness";
 
 interface SendHintBannerProps {
@@ -10,7 +11,9 @@ export function SendHintBanner({ blocker, onDismiss }: SendHintBannerProps) {
   const message =
     blocker.kind === "no_project"
       ? "请先选择或创建项目目录"
-      : `请先配置 ${providerLabel(blocker.provider)} API Key`;
+      : blocker.kind === "parallel_limit"
+        ? PARALLEL_LIMIT_MESSAGE
+        : `请先配置 ${providerLabel(blocker.provider)} API Key`;
 
   return (
     <div

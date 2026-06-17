@@ -30,4 +30,15 @@ describe("getSendBlocker", () => {
       }),
     ).toBeUndefined();
   });
+
+  it("blocks when parallel capacity is reached", () => {
+    expect(
+      getSendBlocker({
+        activeProjectId: "p1",
+        model: "deepseek-v4-flash",
+        apiKeyStatus: { deepseek: true },
+        parallelAtCapacity: true,
+      }),
+    ).toEqual({ kind: "parallel_limit" });
+  });
 });

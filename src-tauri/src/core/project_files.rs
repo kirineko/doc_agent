@@ -3,6 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use crate::core::cache_paths::is_cache_path;
+
 const MAX_DEPTH: usize = 6;
 const MAX_ENTRIES: usize = 2000;
 
@@ -166,10 +168,9 @@ fn should_skip_entry(path: &Path, root: &Path) -> bool {
         return true;
     };
     rel.components().any(|component| {
-        component
-            .as_os_str()
-            .to_str()
-            .is_some_and(|name| should_skip_name(name) || is_ooxml_work_dir_segment(name))
+        component.as_os_str().to_str().is_some_and(|name| {
+            should_skip_name(name) || is_ooxml_work_dir_segment(name) || is_cache_path(name)
+        })
     })
 }
 
@@ -262,5 +263,23 @@ mod tests {
         assert!(paths.contains(&"report.docx"));
         assert!(!paths.iter().any(|p| p.contains("unpacked")));
         assert!(!paths.iter().any(|p| p.contains("contract_unpacked")));
+    }
+
+    #[test]
+    fn skips_cache_ooxml_work_dirs() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::write(root.join("report.docx"), b"x").unwrap();
+        fs::create_dir_all(root.join(".cache/ooxml/s1/t1/work-a/word")).unwrap();
+        fs::write(
+            root.join(".cache/ooxml/s1/t1/work-a/word/document.xml"),
+            b"<xml/>",
+        )
+        .unwrap();
+
+        let list = list_project_files(root);
+        let paths: Vec<_> = list.entries.iter().map(|e| e.path.as_str()).collect();
+        assert!(paths.contains(&"report.docx"));
+        assert!(!paths.iter().any(|p| p.contains(".cache/ooxml")));
     }
 }

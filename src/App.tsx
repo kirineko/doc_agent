@@ -131,6 +131,7 @@ function App() {
             runStatus={
               ws.activeSessionId ? ws.sessionRunStatuses[ws.activeSessionId] ?? "idle" : "idle"
             }
+            parallelAtCapacity={ws.parallelAtCapacity}
             onCancelTurn={() => void ws.cancelTurn()}
           />
         }

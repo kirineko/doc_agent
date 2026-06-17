@@ -5,6 +5,7 @@ pub mod excel;
 pub mod fs;
 pub mod html_export;
 pub mod image_read;
+pub mod io_plan;
 pub mod office;
 pub mod ooxml;
 pub mod pdf;
@@ -24,6 +25,9 @@ pub mod web;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod file_lock_integration;
 
 pub use registry::{ToolContext, ToolError, ToolRegistry, ToolSpec};
 

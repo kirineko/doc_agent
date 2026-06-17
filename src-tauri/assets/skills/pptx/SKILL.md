@@ -14,7 +14,7 @@ license: Proprietary. LICENSE.txt has complete terms
 | Task | Tool / Guide |
 |------|------|
 | Read/analyze content | `office_read_to_markdown {"path": "presentation.pptx"}` |
-| Raw XML access | `ooxml_unpack {"path": "presentation.pptx", "out_dir": "unpacked/"}` |
+| Raw XML access | `ooxml_unpack {"path": "presentation.pptx"}`（省略 `out_dir`，用返回路径） |
 | Edit or create from template | `skill_read {"skill": "pptx", "doc": "editing.md"}` |
 | **Create from scratch（最常用）** | `skill_read {"skill": "pptx", "doc": "pptxgenjs.md"}` → `skill_run` |
 
@@ -34,7 +34,7 @@ license: Proprietary. LICENSE.txt has complete terms
 
 **Read [pptxgenjs.md](pptxgenjs.md) for full details.** Use when no template is available.
 
-长脚本 `skill_run` 失败时，查看 `.cache/skill-run/script.js` 与错误行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":".cache/skill-run/script.js"}` 重跑；生成 pptx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
+长脚本 `skill_run` 失败时，查看工具返回的 `script_path` 与错误行列号，用 `fs_patch` 局部修复后用 `skill_run {"path":"<script_path>"}` 重跑；生成 pptx 后脚本在本轮内保留供检查修复，本轮结束自动清理。
 
 最小模板（`skill_run`，可直接复制）：
 

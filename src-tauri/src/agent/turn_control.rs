@@ -1,4 +1,3 @@
-use crate::state::AppState;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -55,23 +54,10 @@ impl TurnRegistry {
     fn check_turn_can_start(
         guard: &TurnRegistryInner,
         session_id: &str,
-        project_id: &str,
+        _project_id: &str,
     ) -> Result<(), String> {
         if guard.active.contains_key(session_id) || guard.reserved.contains_key(session_id) {
             return Err("当前会话正在执行任务，请等待完成或先停止。".into());
-        }
-        if let Some(other) = guard.active.values().find(|t| t.project_id == project_id) {
-            return Err(format!(
-                "project_busy:{}:{}",
-                other.session_id, other.turn_id
-            ));
-        }
-        if let Some((reserved_session_id, _)) = guard
-            .reserved
-            .iter()
-            .find(|(_, p)| p.as_str() == project_id)
-        {
-            return Err(format!("project_busy:{reserved_session_id}:reserved"));
         }
         Ok(())
     }
@@ -125,12 +111,6 @@ impl TurnRegistry {
                 return self.register(session_id, turn_id, project_id);
             }
         }
-        if let Some(other) = guard.active.values().find(|t| t.project_id == project_id) {
-            return Err(format!(
-                "project_busy:{}:{}",
-                other.session_id, other.turn_id
-            ));
-        }
         let cancel = CancelSignal::new();
         guard.reserved.remove(&session_id);
         guard.active.insert(
@@ -171,15 +151,6 @@ impl TurnRegistry {
         self.inner.lock().ok()?.active.get(session_id).cloned()
     }
 
-    pub fn active_for_project(&self, project_id: &str) -> Option<ActiveTurn> {
-        let guard = self.inner.lock().ok()?;
-        guard
-            .active
-            .values()
-            .find(|t| t.project_id == project_id)
-            .cloned()
-    }
-
     pub fn is_session_active(&self, session_id: &str) -> bool {
         self.inner
             .lock()
@@ -188,36 +159,8 @@ impl TurnRegistry {
     }
 }
 
-pub fn format_project_busy_error(running_title: &str) -> String {
-    format!(
-        "项目内有其他会话正在执行任务（{}），请先停止或等待完成。",
-        running_title
-    )
-}
-
-pub fn is_project_busy_user_error(err: &str) -> bool {
-    err.starts_with("项目内有其他会话正在执行任务")
-}
-
 pub fn is_session_busy_user_error(err: &str) -> bool {
     err.contains("当前会话正在执行任务")
-}
-
-pub fn format_turn_start_error(state: &AppState, err: String) -> String {
-    let Some(rest) = err.strip_prefix("project_busy:") else {
-        return err;
-    };
-    let running_session_id = rest.split(':').next().unwrap_or("");
-    let title = match state.store.lock() {
-        Ok(store) => store
-            .get_session(running_session_id)
-            .ok()
-            .flatten()
-            .map(|s| s.title)
-            .unwrap_or_else(|| "其他会话".into()),
-        Err(_) => "其他会话".into(),
-    };
-    format_project_busy_error(&title)
 }
 
 #[cfg(test)]
@@ -231,7 +174,7 @@ mod tests {
             .register("s1".into(), "t1".into(), "p1".into())
             .unwrap();
         assert!(registry.preflight_turn_start("s1", "p1").is_err());
-        assert!(registry.preflight_turn_start("s2", "p1").is_err());
+        assert!(registry.preflight_turn_start("s2", "p1").is_ok());
         assert!(registry.preflight_turn_start("s2", "p2").is_ok());
     }
 
@@ -247,30 +190,38 @@ mod tests {
     }
 
     #[test]
-    fn register_rejects_second_session_same_project() {
+    fn second_session_same_project_allowed() {
         let registry = TurnRegistry::new();
         registry
             .register("s1".into(), "t1".into(), "p1".into())
             .unwrap();
-        let err = registry
+        assert!(registry
             .register("s2".into(), "t2".into(), "p1".into())
-            .unwrap_err();
-        assert!(err.starts_with("project_busy:s1:"));
+            .is_ok());
     }
 
     #[test]
-    fn reserved_resume_blocks_normal_starts_until_registered() {
+    fn reserved_resume_allows_other_project_sessions() {
         let registry = TurnRegistry::new();
         registry.reserve_resume("s1".into(), "p1".into()).unwrap();
         assert!(registry.preflight_turn_start("s1", "p1").is_err());
-        let err = registry
-            .register("s2".into(), "t2".into(), "p1".into())
-            .unwrap_err();
-        assert!(err.starts_with("project_busy:s1:"));
+        assert!(registry.preflight_turn_start("s2", "p1").is_ok());
         registry
             .register_reserved("s1".into(), "t1".into(), "p1".into())
             .unwrap();
         assert!(registry.is_session_active("s1"));
+    }
+
+    #[test]
+    fn reserved_register_succeeds_after_reserve_resume() {
+        let registry = TurnRegistry::new();
+        registry.reserve_resume("s1".into(), "p1".into()).unwrap();
+        assert!(registry.preflight_turn_start("s1", "p1").is_err());
+        registry
+            .register_reserved("s1".into(), "t1".into(), "p1".into())
+            .unwrap();
+        assert!(registry.is_session_active("s1"));
+        assert!(!registry.preflight_turn_start("s1", "p1").is_ok());
     }
 
     #[test]

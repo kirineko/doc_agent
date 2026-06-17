@@ -9,13 +9,17 @@ use crate::agent::provider::openai_compat::{
 };
 use crate::agent::provider::provider_for;
 use crate::agent::provider::ProviderError;
+use crate::agent::run_limiter::{RunSlotGuard, GLOBAL_PARALLEL_FULL_MSG};
 use crate::agent::turn_control::{
-    format_turn_start_error, is_project_busy_user_error, is_session_busy_user_error, CancelSignal,
-    TurnRegistry, TURN_CANCELLED,
+    is_session_busy_user_error, CancelSignal, TurnRegistry, TURN_CANCELLED,
 };
+
+const RESERVED_RESUME_MAX_ATTEMPTS: u32 = 120;
+const RESERVED_RESUME_RETRY_DELAY_MS: u64 = 500;
 use crate::agent::types::{
     AgentEvent, ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig,
 };
+use crate::core::file_locks::TurnFileLockStore;
 use crate::core::sandbox::Sandbox;
 use crate::state::AppState;
 use std::sync::Arc;
@@ -43,7 +47,45 @@ impl Drop for ActiveTurnGuard {
     }
 }
 
-fn ensure_turn_can_start(
+#[derive(Clone)]
+pub struct TurnExecutionContext {
+    pub project_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub session_title: String,
+    pub file_locks: TurnFileLockStore,
+}
+
+pub(crate) struct TurnStart {
+    pub cancel: CancelSignal,
+    pub file_locks: TurnFileLockStore,
+    _run_slot: RunSlotGuard,
+    _turn_guard: ActiveTurnGuard,
+}
+
+pub(crate) fn start_turn(
+    state: &AppState,
+    session_id: &str,
+    turn_id: &str,
+    project_id: &str,
+) -> Result<TurnStart, String> {
+    let _run_slot = state.run_limiter.acquire(
+        session_id.to_string(),
+        turn_id.to_string(),
+        project_id.to_string(),
+    )?;
+    let cancel = register_turn_in_registry(state, session_id, turn_id, project_id)?;
+    let _turn_guard = ActiveTurnGuard::new(state, session_id);
+    let file_locks = TurnFileLockStore::new();
+    Ok(TurnStart {
+        cancel,
+        file_locks,
+        _run_slot,
+        _turn_guard,
+    })
+}
+
+pub(crate) fn ensure_turn_can_start(
     state: &AppState,
     session_id: &str,
     project_id: &str,
@@ -51,16 +93,16 @@ fn ensure_turn_can_start(
     state
         .turns
         .preflight_turn_start(session_id, project_id)
-        .map_err(|err| format_turn_start_error(state, err))
+        .map_err(|e| e.to_string())?;
+    state.run_limiter.preflight(session_id)
 }
 
-pub(crate) fn register_active_turn(
+fn register_turn_in_registry(
     state: &AppState,
     session_id: &str,
     turn_id: &str,
     project_id: &str,
 ) -> Result<CancelSignal, String> {
-    ensure_turn_can_start(state, session_id, project_id)?;
     state
         .turns
         .register(
@@ -68,7 +110,7 @@ pub(crate) fn register_active_turn(
             turn_id.to_string(),
             project_id.to_string(),
         )
-        .map_err(|err| format_turn_start_error(state, err))
+        .map_err(|e| e.to_string())
 }
 
 pub(crate) fn register_reserved_turn(
@@ -84,7 +126,7 @@ pub(crate) fn register_reserved_turn(
             turn_id.to_string(),
             project_id.to_string(),
         )
-        .map_err(|err| format_turn_start_error(state, err))
+        .map_err(|e| e.to_string())
 }
 
 fn session_project_id(state: &AppState, session_id: &str) -> Result<String, String> {
@@ -101,12 +143,27 @@ async fn resume_with_registration<R: Runtime>(
     state: AppState,
     session_id: String,
     turn_id: String,
-    register: fn(&AppState, &str, &str, &str) -> Result<CancelSignal, String>,
+    reserved: bool,
 ) -> Result<(), String> {
     let project_id = session_project_id(&state, &session_id)?;
-    let cancel = register(&state, &session_id, &turn_id, &project_id)?;
-    let _turn_guard = ActiveTurnGuard::new(&state, &session_id);
-    resume_loop_from_store(app, state, session_id, turn_id, cancel).await
+    let turn_start = if reserved {
+        state.run_limiter.preflight(&session_id)?;
+        let _run_slot =
+            state
+                .run_limiter
+                .acquire(session_id.clone(), turn_id.clone(), project_id.clone())?;
+        let cancel = register_reserved_turn(&state, &session_id, &turn_id, &project_id)?;
+        TurnStart {
+            cancel,
+            file_locks: TurnFileLockStore::new(),
+            _run_slot,
+            _turn_guard: ActiveTurnGuard::new(&state, &session_id),
+        }
+    } else {
+        ensure_turn_can_start(&state, &session_id, &project_id)?;
+        start_turn(&state, &session_id, &turn_id, &project_id)?
+    };
+    resume_loop_from_store(app, state, session_id, turn_id, turn_start).await
 }
 
 pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
@@ -118,8 +175,11 @@ pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
 ) -> Result<(), String> {
     state.turns.reserve_resume(session_id.clone(), project_id)?;
     tauri::async_runtime::spawn(async move {
-        for _attempt in 0..120 {
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        for _attempt in 0..RESERVED_RESUME_MAX_ATTEMPTS {
+            tokio::time::sleep(std::time::Duration::from_millis(
+                RESERVED_RESUME_RETRY_DELAY_MS,
+            ))
+            .await;
             match resume_reserved_turn(
                 app.clone(),
                 state.clone(),
@@ -129,8 +189,11 @@ pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
             .await
             {
                 Ok(()) => return,
+                // 全局满额需等待名额；session-busy 可能来自 clarify pause 释放 slot 与
+                // unregister 之间的瞬时竞态，旧 slot 释放后重试即可成功，避免卡死。
                 Err(err)
-                    if is_project_busy_user_error(&err) || is_session_busy_user_error(&err) =>
+                    if err.contains(GLOBAL_PARALLEL_FULL_MSG)
+                        || is_session_busy_user_error(&err) =>
                 {
                     continue;
                 }
@@ -167,7 +230,7 @@ fn finish_cancelled<R: Runtime>(
     session_id: String,
     turn_id: String,
 ) {
-    cleanup_skill_run_tmp(sandbox);
+    cleanup_skill_run_tmp(sandbox, &session_id, &turn_id);
     emit(
         app,
         AgentEvent::TurnCancelled {
@@ -200,7 +263,7 @@ pub async fn run_turn<R: Runtime>(
     attachments: Vec<MessageAttachment>,
 ) -> Result<(), String> {
     let turn_id = Uuid::new_v4().to_string();
-    let (_session_title, project, model, thinking_enabled, thinking_effort) = {
+    let (session_title, project, model, thinking_enabled, thinking_effort) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
         let session = store
             .get_session(&session_id)
@@ -274,8 +337,10 @@ pub async fn run_turn<R: Runtime>(
         Some(&sandbox),
     )?;
 
-    let cancel = register_active_turn(&state, &session_id, &turn_id, &project.id)?;
-    let _turn_guard = ActiveTurnGuard::new(&state, &session_id);
+    let turn_start = start_turn(&state, &session_id, &turn_id, &project.id)?;
+    let cancel = turn_start.cancel.clone();
+    let file_locks = turn_start.file_locks.clone();
+    let _turn_start = turn_start;
 
     {
         let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -291,11 +356,18 @@ pub async fn run_turn<R: Runtime>(
             .map_err(|e| e.to_string())?;
     }
 
+    let turn_ctx = TurnExecutionContext {
+        project_id: project.id.clone(),
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        session_title,
+        file_locks,
+    };
+
     continue_loop_inner(
         app,
         state.clone(),
-        session_id.clone(),
-        turn_id,
+        turn_ctx,
         user_count,
         user_text,
         project.root_path,
@@ -315,7 +387,7 @@ pub async fn resume_turn<R: Runtime>(
     session_id: String,
     turn_id: String,
 ) -> Result<(), String> {
-    resume_with_registration(app, state, session_id, turn_id, register_active_turn).await
+    resume_with_registration(app, state, session_id, turn_id, false).await
 }
 
 pub(crate) async fn resume_reserved_turn<R: Runtime>(
@@ -324,7 +396,7 @@ pub(crate) async fn resume_reserved_turn<R: Runtime>(
     session_id: String,
     turn_id: String,
 ) -> Result<(), String> {
-    resume_with_registration(app, state, session_id, turn_id, register_reserved_turn).await
+    resume_with_registration(app, state, session_id, turn_id, true).await
 }
 
 pub(crate) async fn resume_loop_from_store<R: Runtime>(
@@ -332,10 +404,13 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
     state: AppState,
     session_id: String,
     turn_id: String,
-    cancel: CancelSignal,
+    turn_start: TurnStart,
 ) -> Result<(), String> {
+    let cancel = turn_start.cancel.clone();
+    let file_locks = turn_start.file_locks.clone();
+    let _turn_start = turn_start;
     let (
-        _session_title,
+        session_title,
         project,
         history,
         tool_call_history,
@@ -390,11 +465,18 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
         Some(&sandbox),
     )?;
 
+    let turn_ctx = TurnExecutionContext {
+        project_id: project.id.clone(),
+        session_id: session_id.clone(),
+        turn_id: turn_id.clone(),
+        session_title,
+        file_locks,
+    };
+
     continue_loop_inner(
         app,
         state.clone(),
-        session_id.clone(),
-        turn_id,
+        turn_ctx,
         user_count,
         user_text,
         project.root_path,
@@ -412,8 +494,7 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
 async fn continue_loop_inner<R: Runtime>(
     app: AppHandle<R>,
     state: AppState,
-    session_id: String,
-    turn_id: String,
+    turn_ctx: TurnExecutionContext,
     user_count: usize,
     user_text: String,
     project_root: String,
@@ -424,6 +505,8 @@ async fn continue_loop_inner<R: Runtime>(
     working_messages: &mut Vec<ChatMessage>,
     cancel: CancelSignal,
 ) -> Result<(), String> {
+    let session_id = turn_ctx.session_id.clone();
+    let turn_id = turn_ctx.turn_id.clone();
     let sandbox = Sandbox::new(&project_root).map_err(|e| e.to_string())?;
     let model_id = model_from_str(&model);
     let api_key = if model_id == ModelId::Mock {
@@ -563,7 +646,7 @@ async fn continue_loop_inner<R: Runtime>(
         }
 
         if tool_calls.is_empty() {
-            cleanup_skill_run_tmp(&sandbox);
+            cleanup_skill_run_tmp(&sandbox, &session_id, &turn_id);
             let msg = persist_assistant(
                 &state,
                 &session_id,
@@ -633,8 +716,7 @@ async fn continue_loop_inner<R: Runtime>(
             &app,
             &state,
             &sandbox,
-            &session_id,
-            &turn_id,
+            &turn_ctx,
             model_id,
             &tool_calls,
             &stream_indices,
@@ -663,7 +745,7 @@ async fn continue_loop_inner<R: Runtime>(
         }
     }
 
-    cleanup_skill_run_tmp(&sandbox);
+    cleanup_skill_run_tmp(&sandbox, &session_id, &turn_id);
     emit(
         &app,
         AgentEvent::Error {
@@ -673,6 +755,58 @@ async fn continue_loop_inner<R: Runtime>(
         },
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod reserved_resume_tests {
+    use super::*;
+    use crate::state::AppState;
+    use tempfile::tempdir;
+
+    #[test]
+    fn reserved_turn_bypasses_turn_preflight_but_needs_global_slot() {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        state
+            .turns
+            .reserve_resume("s1".into(), "p1".into())
+            .unwrap();
+
+        assert!(ensure_turn_can_start(&state, "s1", "p1").is_err());
+        assert!(state.run_limiter.preflight("s1").is_ok());
+
+        let _busy = state
+            .run_limiter
+            .acquire("o1".into(), "t1".into(), "p1".into())
+            .unwrap();
+        let _busy2 = state
+            .run_limiter
+            .acquire("o2".into(), "t2".into(), "p1".into())
+            .unwrap();
+        let _busy3 = state
+            .run_limiter
+            .acquire("o3".into(), "t3".into(), "p1".into())
+            .unwrap();
+        assert!(state.run_limiter.preflight("s1").is_err());
+
+        drop(_busy);
+        assert!(state.run_limiter.preflight("s1").is_ok());
+        register_reserved_turn(&state, "s1", "turn-1", "p1").unwrap();
+        assert!(state.turns.is_session_active("s1"));
+    }
+
+    #[test]
+    fn run_limiter_session_busy_is_retried_by_reserved_resume() {
+        // 验证 spawn_reserved_resume_on_busy 的重试条件覆盖 run_limiter 的 session-busy 错误，
+        // 否则 clarify pause 释放 slot 与 unregister 间的瞬时竞态会让 reserved resume 卡死。
+        let limiter = crate::agent::run_limiter::RunLimiter::new();
+        let _g = limiter
+            .acquire("s1".into(), "t1".into(), "p1".into())
+            .unwrap();
+        let err = limiter.preflight("s1").unwrap_err();
+        assert!(is_session_busy_user_error(&err));
+        assert!(!err.contains(GLOBAL_PARALLEL_FULL_MSG));
+    }
 }
 
 #[cfg(test)]
@@ -697,8 +831,8 @@ mod token_accounting_tests {
     }
 }
 
-/// Turn 结束兜底：无论 style_warnings 是否被处理，只要没有未修复的脚本失败
-/// （`.cache/skill-run/error.json` 不存在），就清理 `.cache/skill-run/` 临时目录。
+/// Turn 结束兜底：无未修复脚本失败（该 session 的 error.json 不存在）时，
+/// 删除整个 `.cache/skill-run/<session_key>/` scratch 目录。
 #[cfg(test)]
 #[path = "loop_runner_tests.rs"]
 mod loop_runner_tests;

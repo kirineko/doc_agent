@@ -7,12 +7,21 @@ use boa_engine::{Context, JsResult, JsValue};
 use serde_json::json;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const MAX_LOG_CHARS: usize = 2_000;
 
 thread_local! {
+    static RUNTIME_WRITE_GATE: RefCell<Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>> =
+        const { RefCell::new(None) };
     // execute_script 每次 spawn 独立线程，写入记录天然按脚本隔离。
     static WRITTEN_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+pub fn set_runtime_write_gate(
+    gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
+) {
+    RUNTIME_WRITE_GATE.with(|cell| *cell.borrow_mut() = gate);
 }
 
 pub fn register(context: &mut Context, sandbox: &Sandbox) -> JsResult<()> {
@@ -83,6 +92,10 @@ fn register_write(context: &mut Context, root: PathBuf) -> JsResult<()> {
                 let bytes = STANDARD.decode(data_b64).map_err(|e| {
                     boa_engine::error::JsNativeError::typ().with_message(e.to_string())
                 })?;
+                if let Some(gate) = RUNTIME_WRITE_GATE.with(|cell| cell.borrow().clone()) {
+                    gate.before_write(&path)
+                        .map_err(|e| boa_engine::error::JsNativeError::typ().with_message(e))?;
+                }
                 let sb = Sandbox::new(root).map_err(|e| {
                     boa_engine::error::JsNativeError::typ().with_message(e.to_string())
                 })?;

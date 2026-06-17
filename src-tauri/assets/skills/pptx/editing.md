@@ -25,22 +25,24 @@ When using an existing presentation as a template:
 
    Match content type to layout style (e.g., key points → bullet slide, team info → multi-column, testimonials → quote slide).
 
-3. **Unpack**:
+3. **Unpack**（省略 `out_dir`，使用工具返回的 `out_dir`）：
 
    ```json
-   ooxml_unpack {"path": "template.pptx", "out_dir": "unpacked/"}
+   ooxml_unpack {"path": "template.pptx"}
    ```
+
+   > 务必省略 `out_dir`：后端生成 `.cache/ooxml/<session_key>/<work_key>/`（`work_key` 含 turn+source；段名为短 hash，与文件名无关），避免与并行会话冲突。不要显式指定固定 `out_dir`，多个会话共享同一显式目录会在解包/编辑/打包流程间隙互相覆盖。
 
 4. **Adjust slide structure**（删除/重排，见下方 Slide Operations）。**Complete all structural changes before step 5.**
 
-5. **Edit content**: Update text in each `unpacked/ppt/slides/slide{N}.xml`.
+5. **Edit content**: Update text in each `<out_dir>/ppt/slides/slide{N}.xml`.
    - 批量替换：`skill_run` + `fs.readFileSync(path, 'utf-8')` → `replace` → `fs.writeFileSync`（带 missed 检查，模式同 docx editing.md）
    - 逐处修改：`fs_read` + `fs_write`
 
-6. **Pack**:
+6. **Pack**（`dir` 使用 unpack 返回的 `out_dir`）：
 
    ```json
-   ooxml_pack {"dir": "unpacked/", "out_path": "output.pptx", "original": "template.pptx"}
+   ooxml_pack {"dir": "<out_dir>", "out_path": "output.pptx", "original": "template.pptx"}
    ```
 
    含校验与自动修复。
@@ -49,7 +51,7 @@ When using an existing presentation as a template:
 
 ## Slide Operations
 
-Slide order is in `unpacked/ppt/presentation.xml` → `<p:sldIdLst>`.
+Slide order is in `<out_dir>/ppt/presentation.xml` → `<p:sldIdLst>`.
 
 **Reorder**: Rearrange `<p:sldId>` elements.
 

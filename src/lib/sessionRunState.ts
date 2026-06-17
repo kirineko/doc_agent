@@ -9,6 +9,8 @@ import {
 
 export type SessionRunStatus = "idle" | "running" | "stopping";
 
+export const MAX_PARALLEL_TURNS = 3;
+export const PARALLEL_LIMIT_MESSAGE = "当前已有 3 个任务正在执行，请稍后重试。";
 export const STOPPING_TIMEOUT_MS = 35_000;
 export const STOPPING_TIMEOUT_SECONDS = Math.round(STOPPING_TIMEOUT_MS / 1000);
 
@@ -41,6 +43,16 @@ export function sessionRunStatus(
 ): SessionRunStatus {
   if (!sessionId) return "idle";
   return state.bySession[sessionId]?.status ?? "idle";
+}
+
+export function countActiveSessionRuns(state: SessionRunsState): number {
+  return Object.values(state.bySession).filter(
+    (run) => run.status === "running" || run.status === "stopping",
+  ).length;
+}
+
+export function isParallelAtCapacity(state: SessionRunsState): boolean {
+  return countActiveSessionRuns(state) >= MAX_PARALLEL_TURNS;
 }
 
 export function deriveActiveStream(

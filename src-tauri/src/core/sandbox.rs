@@ -13,6 +13,7 @@ pub enum SandboxError {
     Io(String),
 }
 
+#[derive(Clone)]
 pub struct Sandbox {
     root: PathBuf,
 }

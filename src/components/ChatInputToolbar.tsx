@@ -1,5 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { IMAGE_FILE_ACCEPT, isAllowedImageFile, resolveImageMime } from "../lib/attachments";
+import { PARALLEL_LIMIT_MESSAGE } from "../lib/sessionRunState";
 import {
   ImageIcon,
   panelIconButtonClassName,
@@ -18,6 +19,7 @@ interface ChatInputToolbarProps {
   busy: boolean;
   showStop?: boolean;
   stopping?: boolean;
+  sendBlockedByParallel?: boolean;
   onSend: () => void;
   onStop?: () => void;
   onImportFiles: (files: File[]) => void | Promise<void>;
@@ -68,6 +70,7 @@ export function ChatInputToolbar({
   busy,
   showStop = false,
   stopping = false,
+  sendBlockedByParallel = false,
   onSend,
   onStop,
   onImportFiles,
@@ -172,7 +175,8 @@ export function ChatInputToolbar({
         <button
           type="button"
           className="btn-primary ml-auto shrink-0 rounded-md px-3 py-1.5 text-sm font-medium"
-          disabled={disabled || !canSend}
+          disabled={disabled || !canSend || sendBlockedByParallel}
+          title={sendBlockedByParallel ? PARALLEL_LIMIT_MESSAGE : undefined}
           onClick={onSend}
         >
           {busy ? "发送中" : "发送"}

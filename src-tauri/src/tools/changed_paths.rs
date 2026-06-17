@@ -8,7 +8,11 @@ pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> V
             push_arg_path(&mut paths, args, "path");
         }
         "ooxml_unpack" => {
-            push_arg_path(&mut paths, args, "out_dir");
+            if args.get("out_dir").and_then(|v| v.as_str()).is_some() {
+                push_arg_path(&mut paths, args, "out_dir");
+            } else {
+                push_result_path(&mut paths, result, "out_dir");
+            }
         }
         "ooxml_pack" => {
             push_arg_path(&mut paths, args, "out_path");

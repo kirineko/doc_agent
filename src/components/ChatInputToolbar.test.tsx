@@ -59,4 +59,16 @@ describe("ChatInputToolbar", () => {
 
     expect(screen.getByRole("button", { name: "停止中…" })).toBeDisabled();
   });
+
+  it("disables Send when parallel capacity is reached", () => {
+    render(
+      <ChatInputToolbar
+        {...baseProps}
+        busy={false}
+        sendBlockedByParallel
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "发送" })).toBeDisabled();
+  });
 });

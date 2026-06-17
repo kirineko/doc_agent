@@ -1,7 +1,9 @@
 use crate::agent::types::ModelId;
+use crate::core::file_locks::FileLockRegistry;
 use crate::core::sandbox::Sandbox;
 use crate::core::secrets::Secrets;
 use serde_json::Value;
+use std::sync::Arc;
 use tauri::{AppHandle, Runtime};
 use thiserror::Error;
 
@@ -33,20 +35,87 @@ impl ToolError {
 pub struct ToolContext<'a> {
     pub sandbox: &'a Sandbox,
     pub secrets: Option<&'a Secrets>,
+    pub project_id: &'a str,
+    pub session_id: &'a str,
+    pub turn_id: &'a str,
+    pub session_title: &'a str,
+    pub file_locks: Option<Arc<FileLockRegistry>>,
+    pub write_gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
 }
 
 impl<'a> ToolContext<'a> {
     pub fn new(sandbox: &'a Sandbox) -> Self {
-        Self {
-            sandbox,
-            secrets: None,
-        }
+        Self::with_test_turn(sandbox, "test-project", "test-session", "test-turn", "test")
     }
 
     pub fn with_secrets(sandbox: &'a Sandbox, secrets: &'a Secrets) -> Self {
         Self {
             sandbox,
             secrets: Some(secrets),
+            project_id: "test-project",
+            session_id: "test-session",
+            turn_id: "test-turn",
+            session_title: "test",
+            file_locks: None,
+            write_gate: None,
+        }
+    }
+
+    pub fn with_test_turn(
+        sandbox: &'a Sandbox,
+        project_id: &'a str,
+        session_id: &'a str,
+        turn_id: &'a str,
+        session_title: &'a str,
+    ) -> Self {
+        Self {
+            sandbox,
+            secrets: None,
+            project_id,
+            session_id,
+            turn_id,
+            session_title,
+            file_locks: None,
+            write_gate: None,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn for_turn(
+        sandbox: &'a Sandbox,
+        secrets: Option<&'a Secrets>,
+        project_id: &'a str,
+        session_id: &'a str,
+        turn_id: &'a str,
+        session_title: &'a str,
+        file_locks: Arc<FileLockRegistry>,
+        write_gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
+    ) -> Self {
+        Self {
+            sandbox,
+            secrets,
+            project_id,
+            session_id,
+            turn_id,
+            session_title,
+            file_locks: Some(file_locks),
+            write_gate,
+        }
+    }
+
+    pub fn with_write_gate(
+        &self,
+        write_gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
+    ) -> Self {
+        Self {
+            sandbox: self.sandbox,
+            secrets: self.secrets,
+            project_id: self.project_id,
+            session_id: self.session_id,
+            turn_id: self.turn_id,
+            session_title: self.session_title,
+            file_locks: self.file_locks.clone(),
+            write_gate,
         }
     }
 }
@@ -144,6 +213,10 @@ impl ToolRegistry {
 
     pub fn definitions(&self, include_web: bool) -> Vec<crate::agent::types::ToolDefinition> {
         self.tools_for_model(ModelId::KimiK26, include_web)
+    }
+
+    pub fn tool_names(&self) -> Vec<&'static str> {
+        self.tools.iter().map(|t| t.name).collect()
     }
 
     pub async fn execute<R: Runtime>(

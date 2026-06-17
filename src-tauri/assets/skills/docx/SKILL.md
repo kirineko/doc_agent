@@ -18,7 +18,7 @@ A .docx file is a ZIP archive containing XML files.
 | Task | Tool |
 |------|------|
 | Read/analyze content | `office_read_to_markdown {"path": "doc.docx"}` |
-| Raw XML access | `ooxml_unpack {"path": "doc.docx", "out_dir": "unpacked/"}` |
+| Raw XML access | `ooxml_unpack {"path": "doc.docx"}`（省略 `out_dir`，用返回路径） |
 | Create new document | `skill_run` + `docx` 库 — see Creating New Documents below |
 | **含数学公式** | 先 `skill_read {"skill":"docx","doc":"math.md"}`，再 `skill_run`（`Math` / `MathRun` / `MathFraction` 等） |
 | **Edit existing document** | 先 `skill_read {"skill":"docx","doc":"editing.md"}`，再 `ooxml_unpack` → edit XML → `ooxml_pack` |
@@ -73,15 +73,15 @@ async function main() {
 
 ### 长脚本失败恢复
 
-`skill_run` 会把 inline `code` 先保存到 `.cache/skill-run/script.js`。若执行失败，目录会保留，错误会指出行列号与引号类型（ASCII `"` vs 弯引号 `“`/`”`）。
+`skill_run` 会把 inline `code` 保存到本 session 的 scratch 目录（工具返回 `script_path`；同一会话内各 turn 路径不变）。若执行失败，目录会保留，错误会指出行列号与引号类型（ASCII `"` vs 弯引号 `“`/`”`）。
 
 **修复**：`fs_read` + `fs_patch` 局部替换（不要用 `fs_write` 整文件重写），然后：
 
 ```json
-{ "path": ".cache/skill-run/script.js", "timeout_secs": 60 }
+{ "path": "<script_path from prior skill_run>", "timeout_secs": 60 }
 ```
 
-**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮结束时若没有未修复的执行失败，`.cache/skill-run/` 会自动清理，无需手动删除。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
+**清理**：生成 `.docx/.pptx/.xlsx` 后脚本在本轮对话内保留，供 `style_warnings` / `office_read_to_markdown` 检查后用 `fs_patch` 修改并以 `path` 重跑；本轮 turn 结束时若没有未修复的执行失败，系统会删除该 session 的 scratch 目录（`.cache/skill-run/<session_key>/`）；失败现场在同 session 下一路径，下轮可继续修复。纯计算脚本（不写交付物）成功后立即清理。含大量中文引号的字符串优先用 JS 单引号 `'...'` 包裹。
 
 ### Validation
 
@@ -541,14 +541,14 @@ sections: [{
 ### Step 1: Unpack
 
 ```json
-ooxml_unpack {"path": "document.docx", "out_dir": "unpacked/"}
+ooxml_unpack {"path": "document.docx"}
 ```
 
-Extracts XML, pretty-prints, merges adjacent runs, and converts smart quotes to XML entities (`&#x201C;` etc.) so they survive editing. Pass `"merge_runs": false` to skip run merging.
+Extracts XML to an auto-generated `out_dir` under `.cache/ooxml/` (returned in tool result). Pretty-prints, merges adjacent runs, and converts smart quotes to XML entities (`&#x201C;` etc.) so they survive editing. Pass `"merge_runs": false` to skip run merging.
 
 ### Step 2: Edit XML
 
-Edit files in `unpacked/word/`. See XML Reference below for patterns.
+Edit files in `<out_dir>/word/`. See XML Reference below for patterns.
 
 两种编辑方式（任选）：
 
@@ -572,9 +572,9 @@ Edit files in `unpacked/word/`. See XML Reference below for patterns.
 **Adding comments:** Use `docx_comment` to handle boilerplate across multiple XML files (text must be pre-escaped XML):
 
 ```json
-docx_comment {"dir": "unpacked/", "id": 0, "text": "Comment text with &amp; and &#x2019;"}
-docx_comment {"dir": "unpacked/", "id": 1, "text": "Reply text", "parent": 0}
-docx_comment {"dir": "unpacked/", "id": 0, "text": "Text", "author": "Custom Author"}
+docx_comment {"dir": "<out_dir>", "id": 0, "text": "Comment text with &amp; and &#x2019;"}
+docx_comment {"dir": "<out_dir>", "id": 1, "text": "Reply text", "parent": 0}
+docx_comment {"dir": "<out_dir>", "id": 0, "text": "Text", "author": "Custom Author"}
 ```
 
 Then add markers to document.xml (see Comments in XML Reference).
@@ -582,7 +582,7 @@ Then add markers to document.xml (see Comments in XML Reference).
 ### Step 3: Pack
 
 ```json
-ooxml_pack {"dir": "unpacked/", "out_path": "output.docx", "original": "document.docx"}
+ooxml_pack {"dir": "<out_dir>", "out_path": "output.docx", "original": "document.docx"}
 ```
 
 Validates with auto-repair, condenses XML, and creates DOCX.

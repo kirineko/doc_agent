@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tool_tests {
     use crate::agent::types::ModelId;
+    use crate::core::cache_paths::{skill_run_dir, skill_run_error, skill_run_script};
     use crate::core::sandbox::Sandbox;
     use crate::tools::ooxml::style_lint::lint_docx;
     use crate::tools::ooxml::validate;
@@ -11,6 +12,18 @@ mod tool_tests {
     use std::io::Read;
     use tempfile::tempdir;
     use zip::ZipArchive;
+
+    fn skill_run_session_dir() -> String {
+        skill_run_dir("test-session")
+    }
+
+    fn skill_run_session_script() -> String {
+        skill_run_script("test-session")
+    }
+
+    fn skill_run_session_error() -> String {
+        skill_run_error("test-session")
+    }
 
     fn assert_valid_ooxml(path: &std::path::Path) {
         validate::roundtrip_check(path)
@@ -539,9 +552,9 @@ async function main() {
         let warnings = out["style_warnings"]["bad.docx"].as_array().unwrap();
         assert!(!warnings.is_empty());
         assert!(out.get("style_hint").is_some());
-        assert_eq!(out["script_path"], ".cache/skill-run/script.js");
+        assert_eq!(out["script_path"], skill_run_session_script());
         assert_eq!(out["script_retain_reason"], "style_warnings");
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
     }
 
     #[test]
@@ -551,7 +564,7 @@ async function main() {
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
         create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
     }
 
     #[test]
@@ -561,24 +574,24 @@ async function main() {
         let ctx = ToolContext::new(&sandbox);
         let registry = ToolRegistry::default_tools();
         create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
 
         let out = exec_tool(
             &registry,
             &ctx,
             "skill_run",
-            json!({ "path": ".cache/skill-run/script.js", "timeout_secs": 60 }),
+            json!({ "path": skill_run_session_script(), "timeout_secs": 60 }),
         )
         .unwrap();
         assert_eq!(out["result"]["ok"], true);
         assert!(
-            dir.path().join(".cache/skill-run/script.js").exists(),
+            dir.path().join(&skill_run_session_script()).exists(),
             "path rerun should keep script for further in-turn fixes"
         );
 
         // Turn 结束兜底：无失败现场 → 清理
         crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
-        assert!(!dir.path().join(".cache/skill-run").exists());
+        assert!(!dir.path().join(skill_run_session_dir()).exists());
     }
 
     #[test]
@@ -597,13 +610,13 @@ async function main() {
             json!({ "code": bad, "timeout_secs": 30 }),
         )
         .unwrap_err();
-        assert!(dir.path().join(".cache/skill-run/error.json").exists());
+        assert!(dir.path().join(&skill_run_session_error()).exists());
 
         // 修复后重跑成功（写出 docx → 保留脚本），error.json 必须被清除
         create_docx_via_skill_run(&ctx, &registry, "report.docx", "标题", "正文");
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
         assert!(
-            !dir.path().join(".cache/skill-run/error.json").exists(),
+            !dir.path().join(&skill_run_session_error()).exists(),
             "successful run must clear stale error.json"
         );
     }
@@ -625,10 +638,10 @@ async function main() {
         )
         .unwrap_err();
 
-        // 失败现场（error.json 存在）→ turn 结束不清理，留给下一 turn 修复
+        // 失败现场（error.json 存在）→ turn 结束不清理；同 session 下一路径，下轮可 fs_patch + path 重跑
         crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
-        assert!(dir.path().join(".cache/skill-run/error.json").exists());
+        assert!(dir.path().join(&skill_run_session_script()).exists());
+        assert!(dir.path().join(&skill_run_session_error()).exists());
     }
 
     #[test]
@@ -1078,8 +1091,8 @@ return { ok: true };
         assert_eq!(out["result"]["ok"], true);
         assert_eq!(out["result"]["n"], 3);
         assert!(
-            !dir.path().join(".cache/skill-run").exists(),
-            "successful skill_run should clean .cache/skill-run"
+            !dir.path().join(skill_run_session_dir()).exists(),
+            "successful skill_run should clean turn scratch dir"
         );
     }
 
@@ -1127,11 +1140,11 @@ return { ok: true };
         .unwrap_err();
         let value = err.to_json_value();
         assert_eq!(value["error"], "JavaScript parse error");
-        assert_eq!(value["script_path"], ".cache/skill-run/script.js");
+        assert_eq!(value["script_path"], skill_run_session_script());
         assert!(value.get("quote_diagnostics").is_some());
-        assert!(dir.path().join(".cache/skill-run/script.js").exists());
-        assert!(dir.path().join(".cache/skill-run/error.json").exists());
-        let saved = fs::read_to_string(dir.path().join(".cache/skill-run/script.js")).unwrap();
+        assert!(dir.path().join(&skill_run_session_script()).exists());
+        assert!(dir.path().join(&skill_run_session_error()).exists());
+        let saved = fs::read_to_string(dir.path().join(&skill_run_session_script())).unwrap();
         assert!(saved.contains("广软"));
     }
 
@@ -1154,16 +1167,16 @@ return { ok: true };
         let fixed = r#"async function main() {
   return { ok: true, text: '简称"广软"）' };
 }"#;
-        fs::write(dir.path().join(".cache/skill-run/script.js"), fixed).unwrap();
+        fs::write(dir.path().join(&skill_run_session_script()), fixed).unwrap();
         let out = exec_tool(
             &registry,
             &ctx,
             "skill_run",
-            json!({ "path": ".cache/skill-run/script.js", "timeout_secs": 30 }),
+            json!({ "path": skill_run_session_script(), "timeout_secs": 30 }),
         )
         .unwrap();
         assert_eq!(out["result"]["ok"], true);
-        assert!(!dir.path().join(".cache/skill-run").exists());
+        assert!(!dir.path().join(skill_run_session_dir()).exists());
     }
 
     #[test]

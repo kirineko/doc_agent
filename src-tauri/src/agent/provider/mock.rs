@@ -60,6 +60,30 @@ impl LlmProvider for MockProvider {
             ));
         }
 
+        if request.messages.iter().rev().any(|m| {
+            m.role == "tool"
+                && m.content
+                    .as_deref()
+                    .is_some_and(|c| c.contains("\"cancelled\"") && c.contains("true"))
+        }) {
+            let answer = "Mock 回复：澄清已取消。".to_string();
+            emit(
+                &mut on_event,
+                AgentEvent::ContentToken {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    delta: answer.clone(),
+                },
+            );
+            return Ok(finish_turn(
+                &request.messages,
+                answer,
+                "收到 clarify 取消后继续回答。",
+                vec![],
+                None,
+            ));
+        }
+
         let wants_clarify =
             user_text.contains("澄清") || user_text.to_lowercase().contains("clarify");
         let wants_list = user_text.contains("列出") || user_text.to_lowercase().contains("list");

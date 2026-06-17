@@ -25,18 +25,20 @@ TBD - created by archiving change unify-project-cache-layout. Update Purpose aft
 | 子目录 | 职责 |
 |--------|------|
 | `attachments/` | 用户粘贴的图片附件；路径写入 `attachments_json` |
-| `skill-run/` | `skill_run` 临时脚本与错误现场；turn 内自动清理 |
+| `skill-run/<session_key>/` | `skill_run` 临时脚本与错误现场；按 session 隔离（8 位 hex，同会话跨 turn 路径不变） |
+| `ooxml/<session_key>/<work_key>/` | `ooxml_unpack` 自动生成的 OOXML 编辑工作区；`work_key = hash(session, turn, source)`，无独立 turn 目录层 |
 | `pdf/<cache_key>/` | PDF 页渲染 PNG 与 manifest；源文件或渲染参数变则失效 |
+| `tmp/<session_key>/<turn_key>/` | **预留**通用 turn-scoped 临时目录（`turn_tmp_dir` helper 已定义，尚无调用方） |
 
-#### Scenario: 附件写入 attachments
-
-- **WHEN** vision 模型下用户粘贴 PNG 并保存
-- **THEN** 文件位于 `.cache/attachments/<uuid>.<ext>`
-
-#### Scenario: skill_run 写入 skill-run
+#### Scenario: skill_run 写入 session-scoped 目录
 
 - **WHEN** Agent 调用 `skill_run` 并传入 inline `code`
-- **THEN** 执行前脚本保存为 `.cache/skill-run/script.js`
+- **THEN** 执行前脚本保存为 `.cache/skill-run/<session_key>/script.js`
+
+#### Scenario: OOXML 自动工作区写入 ooxml
+
+- **WHEN** Agent 调用 `ooxml_unpack {"path":"template.docx"}` 且未传 `out_dir`
+- **THEN** 解包目录位于 `.cache/ooxml/<session_key>/<work_key>/`
 
 #### Scenario: PDF 渲染写入 pdf
 
@@ -45,42 +47,29 @@ TBD - created by archiving change unify-project-cache-layout. Update Purpose aft
 
 ### Requirement: 缓存边界与缺失降级
 
-系统 SHALL 区分可重建派生缓存与会话附件，并在附件文件缺失时降级而不中断会话：
+系统 SHALL 区分可重建派生缓存、系统 scratch 工作区与会话附件：
 
-- **`pdf/`** 与 **`skill-run/`**：视为可重建或临时现场；删除后由下次工具调用重建或不再保留失败现场
-- **`attachments/`**：视为会话附件文件；DB 仅存相对路径，不存 base64
-
-当 `attachments_json` 指向的文件不存在时：
-
-- UI MUST 展示「无法加载」占位，保留消息文本
-- Agent 重建上下文时 MUST 静默跳过缺失附件（不报错、不中断 turn）
-- 当轮新发送的附件若文件缺失 MUST 返回明确错误（与现有 `encode_attachment_data_url` 行为一致）
+- **`pdf/`**：可重建派生缓存；删除后下次工具调用重建
+- **`skill-run/<session_key>/`**：脚本恢复现场；turn 结束无 `error.json` 时删除整个 session scratch 目录；有失败现场则保留至修复或覆盖
+- **`ooxml/<session_key>/`**：系统生成的 OOXML 工作区根；叶子为 `<work_key>/`，MUST 隐藏于普通文件浏览与 `@` 候选
+- **`tmp/<session_key>/<turn_key>/`**：**预留**；helper 已定义，尚无生产调用；未来用于 turn 内中间产物，turn 结束可清理
+- **`attachments/`**：会话附件文件；DB 仅存相对路径，不存 base64
 
 本变更 MUST NOT 提供「清理 cache」UI 或自动 GC。
 
-#### Scenario: 附件文件缺失时 UI 降级
+#### Scenario: cache 目录对用户浏览隐藏
 
-- **WHEN** 历史消息含 `attachments_json` 指向 `.cache/attachments/missing.png` 且磁盘无该文件
-- **THEN** 消息气泡展示「无法加载」缩略图占位，文本内容仍可见
-
-#### Scenario: 附件文件缺失时 Agent 静默跳过
-
-- **WHEN** Agent turn 重建上下文且某条 user 消息的附件文件已不存在
-- **THEN** 该条消息以文本（及空 `image_urls`）送入 LLM，turn 不因缺失附件失败
-
-#### Scenario: 本变更不提供清 cache UI
-
-- **WHEN** 用户打开应用设置或项目菜单
-- **THEN** 不存在「清理项目 cache」或等效批量删除 `.cache/` 的入口
+- **WHEN** 用户打开项目文件浏览或 `@` 文件候选
+- **THEN** `.cache/` 及其子路径 MUST NOT 出现在列表中
 
 ### Requirement: 路径常量集中定义
 
-系统 SHALL 在 `core/cache_paths`（或等效模块）集中定义 `.cache/` 相关相对路径常量；`skill_run_tmp`、`pdf_cache`、`save_upload` 与 `is_upload_attachment_path` MUST 引用该模块，禁止硬编码分散路径字符串。
+系统 SHALL 在 `core/cache_paths`（或等效模块）集中定义 `.cache/` 相关相对路径常量与 helper；`skill_run_tmp`、`pdf_cache`、`ooxml_unpack`、`save_upload` 与 `is_upload_attachment_path` MUST 引用该模块，禁止硬编码分散路径字符串。
 
-#### Scenario: 常量单一来源
+#### Scenario: scratch 路径常量单一来源
 
-- **WHEN** 实现需要写入 skill_run 脚本或用户附件
-- **THEN** 使用 `cache_paths` 模块导出的常量而非字面量 `.skill-run/` 或 `.uploads/`
+- **WHEN** 实现需要写入 skill_run 脚本或 OOXML 自动工作区
+- **THEN** 使用 `cache_paths` 模块导出的 helper，而非手写 `.cache/skill-run/` 或 `.cache/ooxml/`
 
 ### Requirement: 不迁移历史目录
 

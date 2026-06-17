@@ -11,7 +11,7 @@ import { detectSlash, insertSlashPrompt } from "../lib/slash";
 import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
 import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
-import { STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
+import { PARALLEL_LIMIT_MESSAGE, STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
@@ -64,6 +64,7 @@ interface ChatPanelProps {
   supportsVision?: boolean;
   onInvalidImagePick?: () => void;
   runStatus?: SessionRunStatus;
+  parallelAtCapacity?: boolean;
   onCancelTurn?: () => void;
 }
 
@@ -103,6 +104,7 @@ export function ChatPanel({
   supportsVision = false,
   onInvalidImagePick,
   runStatus = "idle",
+  parallelAtCapacity = false,
   onCancelTurn,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -122,6 +124,7 @@ export function ChatPanel({
   const hasActiveClarify = Boolean(activeClarify);
   const showStop = (runStatus === "running" || runStatus === "stopping") && !hasActiveClarify;
   const stopping = runStatus === "stopping";
+  const sendBlockedByParallel = parallelAtCapacity && runStatus === "idle";
   const inputDisabled = busy || initializing || hasActiveClarify;
   const canSend = Boolean(input.trim() || pendingAttachments.length > 0);
   const mention = detectMention(input, cursor);
@@ -408,6 +411,8 @@ export function ChatPanel({
                       ? "请先回答上方澄清问题"
                       : stopping
                         ? `正在停止当前任务…（等待工具结束，最多约 ${STOPPING_TIMEOUT_SECONDS} 秒）`
+                        : sendBlockedByParallel
+                          ? PARALLEL_LIMIT_MESSAGE
                         : busy
                           ? "等待回复中…"
                         : "Enter 发送，Shift+Enter 换行，@ 引用，/ 任务模板，+ 上传文件，可粘贴或选图片"
@@ -454,6 +459,7 @@ export function ChatPanel({
                 slashMenuOpen={slashMenuOpen}
                 canSend={canSend}
                 busy={busy}
+                sendBlockedByParallel={sendBlockedByParallel}
                 showStop={showStop}
                 stopping={stopping}
                 onSend={onSend}

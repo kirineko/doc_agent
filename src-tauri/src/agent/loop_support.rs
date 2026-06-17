@@ -15,8 +15,8 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
 use uuid::Uuid;
 
-pub(super) fn cleanup_skill_run_tmp(sandbox: &Sandbox) {
-    let ctx = ToolContext::new(sandbox);
+pub(super) fn cleanup_skill_run_tmp(sandbox: &Sandbox, session_id: &str, turn_id: &str) {
+    let ctx = ToolContext::with_test_turn(sandbox, "cleanup", session_id, turn_id, "cleanup");
     crate::tools::skill_run_tmp::cleanup_on_turn_end(&ctx);
 }
 
@@ -56,7 +56,8 @@ pub(crate) fn build_working_messages(
                      澄清确认后按创作简报中的「交付格式」分支执行（见 clarify skill）。\
                      读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
                      仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
-                     调用 skill_run 前 MUST 先 skill_read runtime 获取 API 规范；不得凭记忆直接编写 skill_run 代码。\n{}",
+                     调用 skill_run 前 MUST 先 skill_read runtime 获取 API 规范；不得凭记忆直接编写 skill_run 代码。\
+                     多会话并行时：ooxml_unpack 省略 out_dir，必须使用工具返回的 out_dir（.cache/ooxml/ 下短 hash 路径）；skill_run 的 script_path 按 session 隔离（同会话跨 turn 路径不变），失败或修复时用工具返回路径；勿自造共享 unpacked/ 或手写 .cache/ 临时路径。\n{}",
                     crate::core::skills::index_markdown()
                 )),
                 image_urls: vec![],
