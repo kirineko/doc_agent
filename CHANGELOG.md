@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+### OOXML 结构校验（pack 门禁）
+
+- **`ooxml_pack` 结构规则**：解包目录回包前新增 well-formed + 参照 bundled XSD 的结构规则校验（零 native / 无 XSD 引擎）；覆盖 OPC（`opc.ct.*`、`opc.rels.*`、`pkg.rels.01`）、Word（`wml.*`）、PowerPoint（`pml.*`）、Excel（`sml.*`）
+- **错误格式**：`{part}:{line} [{rule_id} {xsd_ref}] {message}`，便于 Agent 按规则 ID 自修 XML
+- **实现**：`validate.rs` 拆为 `validate/` 模块（well-formed、rules、roundtrip）；352 项 Rust 测试全绿
+
 ---
 
 ## [2026.6.18] — 2026-06-18
