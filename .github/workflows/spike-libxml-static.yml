@@ -13,7 +13,6 @@ permissions:
   contents: read
 
 env:
-  VCPKG_ROOT: ${{ github.workspace }}/vcpkg
   VCPKG_DISABLE_METRICS: 1
 
 jobs:
@@ -22,6 +21,7 @@ jobs:
     runs-on: macos-latest
     env:
       LIBXML2_STATIC: 1
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
       VCPKG_DEFAULT_TRIPLET: arm64-osx
       PKG_CONFIG_PATH: ${{ github.workspace }}/vcpkg/installed/arm64-osx/lib/pkgconfig
     steps:
@@ -53,16 +53,17 @@ jobs:
         run: |
           BIN="spikes/libxml-probe/target/debug/libxml-probe"
           otool -L "$BIN"
-          if otool -L "$BIN" | grep -i libxml; then
-            echo "expected static libxml2 (no libxml dylib in otool -L)"
+          if otool -L "$BIN" | grep -E 'libxml2.*\.dylib'; then
+            echo "expected static libxml2 (no libxml2 dylib in otool -L)"
             exit 1
           fi
-          echo "OK: no libxml dylib dependency"
+          echo "OK: no libxml2 dylib dependency"
 
   probe-windows-static:
     name: Windows x64 static (vcpkg)
     runs-on: windows-latest
     env:
+      VCPKG_ROOT: C:\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows-static
     steps:
       - uses: actions/checkout@v4
@@ -72,14 +73,14 @@ jobs:
       - name: Cache vcpkg + libxml2
         uses: actions/cache@v4
         with:
-          path: vcpkg
+          path: C:\vcpkg
           key: vcpkg-libxml2-x64-windows-static-v1
 
       - name: Bootstrap vcpkg and install libxml2
         shell: pwsh
         run: |
           if (-not (Test-Path "$env:VCPKG_ROOT\vcpkg.exe")) {
-            git clone --depth 1 https://github.com/microsoft/vcpkg vcpkg
+            git clone --depth 1 https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
             & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
           }
           & "$env:VCPKG_ROOT\vcpkg.exe" install libxml2:x64-windows-static
