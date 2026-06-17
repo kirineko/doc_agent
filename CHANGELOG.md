@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+---
+
+## [2026.6.19] — 2026-06-19
+
+本版本带来有界并行与文件治理、OOXML pack 门禁结构校验，并让 `skill_run` 成功脚本跨 turn 保留以便续改交付物。
+
+### skill_run 脚本跨 turn 保留
+
+- **保留成功脚本**：`skill_run` 成功执行后保留 `.cache/skill-run/<session_key>/script.js`，下一轮可直接 `fs_read` / `fs_patch` 续改（如修改已生成的 PPT），无需重写全量脚本
+- **失败现场保留**：执行失败保留 `script.js` 并写 `error.json`；成功（含 path 重跑修复成功）后清除 `error.json`
+- **清理时机**：session scratch 目录仅在用户 **cancel turn** 时删除；turn 正常结束或达到 max tool steps 不再清理
+
 ### 有界并行与文件治理
 
 - **全局并行**：应用内最多 3 个 running turn（跨 project/session）；第 4 个 `send_message` / `resume_turn` 在写入消息前拒绝；clarify 等待不占名额
