@@ -10,3 +10,4 @@ path = "src/main.rs"
 
 [dependencies]
 libxml = "0.3.13"
+walkdir = "2"
