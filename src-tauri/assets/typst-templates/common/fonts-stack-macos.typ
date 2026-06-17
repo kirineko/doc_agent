@@ -24,3 +24,8 @@
   "Helvetica Neue",
   "Noto Sans SC",
 )
+
+#let font-mono = (
+  "Menlo",
+  "Courier New",
+)

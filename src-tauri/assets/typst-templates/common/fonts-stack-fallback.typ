@@ -15,3 +15,7 @@
 #let font-sans-en = (
   "Noto Sans SC",
 )
+
+#let font-mono = (
+  "DejaVu Sans Mono",
+)

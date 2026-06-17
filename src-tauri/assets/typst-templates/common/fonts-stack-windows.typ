@@ -23,3 +23,8 @@
   "Helvetica Neue",
   "Noto Sans SC",
 )
+
+#let font-mono = (
+  "Consolas",
+  "Courier New",
+)

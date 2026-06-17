@@ -329,6 +329,32 @@ mod tests {
     }
 
     #[test]
+    fn code_block_with_cjk_compiles_without_font_warnings() {
+        let font_dirs = font_search_paths();
+        assert!(!font_dirs.is_empty(), "Noto fonts dir missing");
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let source = r##"#import "/doc-agent/typst/common/fonts.typ": apply-zh-body
+#import "/doc-agent/typst/common/page.typ": page-a4, footer-page-no
+
+#show: apply-zh-body
+#page-a4()
+#footer-page-no()
+
+= 代码示例
+
+```python
+def greet(name: str) -> str:
+    # 中文注释与 English mixed
+    return f"你好, {name}"
+```
+"##;
+        let output = compile_template(dir.path(), "code.typ", source);
+        assert_no_font_warnings(&output.warnings);
+        assert!(output.pages > 0);
+    }
+
+    #[test]
     fn compile_failure_returns_structured_diagnostics() {
         let dir = tempfile::tempdir().expect("tempdir");
         fs::write(dir.path().join("bad.typ"), "#fillblank()").unwrap();

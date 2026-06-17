@@ -9,12 +9,6 @@
 #let font-emphasis-zh = font-sans-zh
 #let font-emphasis-en = font-sans-en
 #let font-math = "New Computer Modern Math"
-#let font-mono = (
-  "Consolas",
-  "Menlo",
-  "Courier New",
-  "Libertinus Mono",
-)
 
 #let show-themed-heading(it, theme, lang: "zh") = {
   let accent = theme.accent
@@ -100,6 +94,7 @@
   show table.cell.where(y: 0): set table.cell(fill: theme.fill)
   show table.cell.where(y: 0): set text(weight: "bold", fill: theme.accent)
   show math.equation: set text(font: font-math)
+  show raw: set text(font: (..font-mono, ..font-serif-zh))
   body
 }
 
@@ -119,6 +114,7 @@
   show table.cell.where(y: 0): set table.cell(fill: theme.fill)
   show table.cell.where(y: 0): set text(weight: "bold", fill: theme.accent)
   show math.equation: set text(font: font-math)
+  show raw: set text(font: (..font-mono, ..font-serif-zh))
   body
 }
 

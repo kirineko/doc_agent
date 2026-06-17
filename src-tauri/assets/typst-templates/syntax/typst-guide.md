@@ -280,6 +280,8 @@ $ E = m c^2 $ <eq:emc2>
 
 ## 16. 代码块
 
+`apply-zh-body` / `apply-en-body` 已为代码块（`raw`）钉死字体：英文/符号使用平台等宽栈 `font-mono`（Windows：Consolas；macOS：Menlo；其他：DejaVu Sans Mono），中文使用衬线宋体栈 `font-serif-zh`（Windows 宋体、macOS Songti SC、缺失时回退 Noto Serif SC）。**勿手写 `show raw` 覆盖字体**，以免中文回退到隶书等不受控字体。
+
 ````typst
 ```python
 def f(): pass
