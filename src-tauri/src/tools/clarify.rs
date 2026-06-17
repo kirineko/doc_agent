@@ -3,7 +3,7 @@ use crate::agent::types::{ClarifyOption, ClarifyQuestion};
 use serde_json::{json, Map, Value};
 
 const MIN_OPTIONS: usize = 2;
-const MAX_OPTIONS: usize = 6;
+const MAX_OPTIONS: usize = 12;
 
 pub fn ask_tool() -> ToolSpec {
     ToolSpec {
@@ -12,7 +12,8 @@ pub fn ask_tool() -> ToolSpec {
             Use this during the clarify skill flow instead of plain text questions. \
             The agent loop pauses and waits for the user's answer. \
             kind MUST be one of: single, multi, text, confirm_brief. \
-            single/multi require 2-6 options; confirm_brief requires brief.",
+            single/multi require 2-12 options (prefer 2-8 plus allow_custom for 其他); \
+            confirm_brief requires brief.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -25,6 +26,8 @@ pub fn ask_tool() -> ToolSpec {
                 "description": { "type": "string" },
                 "options": {
                     "type": "array",
+                    "minItems": MIN_OPTIONS,
+                    "maxItems": MAX_OPTIONS,
                     "items": {
                         "type": "object",
                         "properties": {

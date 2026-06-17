@@ -782,7 +782,80 @@ return { ok: true };
             }),
         )
         .unwrap_err();
-        assert!(err.to_string().contains("requires 2-6 options"));
+        assert!(err.to_string().contains("requires 2-12 options"));
+    }
+
+    #[test]
+    fn clarify_ask_accepts_ten_options() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let options: Vec<_> = (0..10)
+            .map(|i| {
+                json!({
+                    "id": format!("opt{i}"),
+                    "label": format!("选项{i}")
+                })
+            })
+            .collect();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "ppt_content",
+                "kind": "multi",
+                "prompt": "包含哪些板块？",
+                "min_selections": 1,
+                "max_selections": 10,
+                "options": options
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["options"].as_array().unwrap().len(), 10);
+    }
+
+    #[test]
+    fn clarify_ask_rejects_thirteen_options() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let options: Vec<_> = (0..13)
+            .map(|i| {
+                json!({
+                    "id": format!("opt{i}"),
+                    "label": format!("选项{i}")
+                })
+            })
+            .collect();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "doc_type",
+                "kind": "single",
+                "prompt": "文档类型？",
+                "options": options
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("requires 2-12 options"));
+    }
+
+    #[test]
+    fn clarify_ask_tool_schema_declares_options_bounds() {
+        let registry = ToolRegistry::default_tools();
+        let tool = registry
+            .definitions(false)
+            .into_iter()
+            .find(|t| t.name == "clarify_ask")
+            .expect("clarify_ask registered");
+        let options = &tool.parameters["properties"]["options"];
+        assert_eq!(options["minItems"], 2);
+        assert_eq!(options["maxItems"], 12);
     }
 
     #[test]
