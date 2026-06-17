@@ -52,8 +52,8 @@ impl RuntimeWriteGate {
                 &rel,
             )
             .map_err(|e| e.message)?;
-        held.insert(rel);
         self.turn_locks.hold(guard)?;
+        held.insert(rel);
         Ok(())
     }
 }

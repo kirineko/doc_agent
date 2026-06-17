@@ -282,7 +282,9 @@ fn format_busy(blocker: &HeldLock, path: &str) -> FileBusyError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::runtime::write_gate::RuntimeWriteGate;
     use std::fs;
+    use std::sync::Arc;
     use tempfile::tempdir;
 
     fn sandbox() -> Sandbox {
@@ -562,6 +564,32 @@ mod tests {
                 vec![req("p1", "out.txt", LockMode::Write)]
             )
             .is_ok());
+    }
+
+    #[test]
+    fn runtime_write_gate_does_not_cache_failed_turn_hold() {
+        let dir = tempdir().unwrap();
+        let sandbox = Sandbox::new(dir.path()).unwrap();
+        let turn_locks = TurnFileLockStore::new();
+        let guards = turn_locks.guards.clone();
+        let _ = std::panic::catch_unwind(move || {
+            let _guard = guards.lock().unwrap();
+            panic!("poison turn lock store");
+        });
+        let gate = RuntimeWriteGate::new(
+            Arc::new(FileLockRegistry::new()),
+            turn_locks,
+            &sandbox,
+            "p1".into(),
+            "s1".into(),
+            "t1".into(),
+            "A".into(),
+        );
+
+        let first_err = gate.before_write("out.txt").unwrap_err();
+        assert!(first_err.contains("poison"));
+        let second_err = gate.before_write("out.txt").unwrap_err();
+        assert!(second_err.contains("poison"));
     }
 
     #[test]
