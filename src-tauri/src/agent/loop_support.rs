@@ -1,3 +1,6 @@
+use crate::agent::agents_md::{
+    agents_md_inject_section, profile_init_system_hint, read_agents_md_for_inject,
+};
 use crate::agent::provider::openai_compat::{
     encode_attachment_data_url, messages_from_store, messages_from_store_text,
 };
@@ -27,6 +30,7 @@ pub(crate) fn build_working_messages(
     user_attachments: &[MessageAttachment],
     web_enabled: bool,
     sandbox: Option<&Sandbox>,
+    profile_init: bool,
 ) -> Result<Vec<ChatMessage>, String> {
     let mut messages = if let Some(sandbox) = sandbox {
         messages_from_store(history, tool_calls, Some(sandbox))?
@@ -39,15 +43,11 @@ pub(crate) fn build_working_messages(
         } else {
             ""
         };
-        messages.insert(
-            0,
-            ChatMessage {
-                role: "system".into(),
-                content: Some(format!(
+        let mut system_body = format!(
                     "You are doc-agent, an office document assistant.\n\
                      用户消息中 `@路径` 指代项目内文件，可直接用 fs / office 工具读取。{web_hint}\n\
                      需求不明确时（新建或编辑文档均适用），MUST 先 skill_read clarify 按流程澄清；\
-                     澄清问题 MUST 通过 clarify_ask 工具逐问提出，禁止以纯文本罗列问题。\
+                     澄清问题 MUST 通过 clarify_ask 工具逐问提出，每轮 assistant 仅一次 clarify_ask 调用，禁止同轮并行多个，禁止以纯文本罗列问题；若 system 含 ## 项目配置（AGENTS.md），须 skill_read clarify 并沿用其中规范、勿重复问已规定项。\
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
                      html_to_pdf 可单独使用，不要求先生成报告；\
@@ -59,7 +59,21 @@ pub(crate) fn build_working_messages(
                      调用 skill_run 前 MUST 先 skill_read runtime 获取 API 规范；不得凭记忆直接编写 skill_run 代码。\
                      多会话并行时：ooxml_unpack 省略 out_dir，必须使用工具返回的 out_dir（.cache/ooxml/ 下短 hash 路径）；skill_run 的 script_path 按 session 隔离（同会话跨 turn 路径不变），失败或修复时用工具返回路径；勿自造共享 unpacked/ 或手写 .cache/ 临时路径。\n{}",
                     crate::core::skills::index_markdown()
-                )),
+                );
+        if let Some(sandbox) = sandbox {
+            if let Some(agents_body) = read_agents_md_for_inject(sandbox) {
+                system_body.push('\n');
+                system_body.push_str(&agents_md_inject_section(&agents_body));
+            }
+        }
+        if profile_init {
+            system_body.push_str(profile_init_system_hint());
+        }
+        messages.insert(
+            0,
+            ChatMessage {
+                role: "system".into(),
+                content: Some(system_body),
                 image_urls: vec![],
                 reasoning_content: None,
                 tool_calls: None,
@@ -301,6 +315,9 @@ pub(super) fn emit_assistant_step_done<R: Runtime>(
 mod tests {
     use super::*;
     use crate::agent::types::FunctionCall;
+    use crate::core::sandbox::Sandbox;
+    use std::fs;
+    use tempfile::tempdir;
 
     fn sample_call(id: &str, name: &str) -> ToolCall {
         ToolCall {
@@ -335,5 +352,37 @@ mod tests {
         let mut calls = vec![sample_call("taken", "pdf_read")];
         normalize_tool_call_ids(&mut calls, |id| id == "taken");
         assert_ne!(calls[0].id, "taken");
+    }
+
+    #[test]
+    fn system_includes_agents_md_when_present() {
+        let dir = tempdir().unwrap();
+        let sandbox = Sandbox::new(dir.path().to_str().unwrap()).unwrap();
+        fs::write(sandbox.root().join("AGENTS.md"), "## PPT\n深色商务").unwrap();
+        let messages =
+            build_working_messages(&[], &[], Some("hello"), &[], false, Some(&sandbox), false)
+                .unwrap();
+        let system = messages[0].content.as_ref().unwrap();
+        assert!(system.contains("## 项目配置（AGENTS.md）"));
+        assert!(system.contains("深色商务"));
+    }
+
+    #[test]
+    fn system_skips_agents_md_when_missing() {
+        let dir = tempdir().unwrap();
+        let sandbox = Sandbox::new(dir.path().to_str().unwrap()).unwrap();
+        let messages =
+            build_working_messages(&[], &[], Some("hello"), &[], false, Some(&sandbox), false)
+                .unwrap();
+        let system = messages[0].content.as_ref().unwrap();
+        assert!(!system.contains("## 项目配置（AGENTS.md）"));
+    }
+
+    #[test]
+    fn profile_init_adds_hint() {
+        let messages =
+            build_working_messages(&[], &[], Some("/init"), &[], false, None, true).unwrap();
+        let system = messages[0].content.as_ref().unwrap();
+        assert!(system.contains("skill_read profile"));
     }
 }

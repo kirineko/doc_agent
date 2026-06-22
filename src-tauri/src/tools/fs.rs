@@ -1,4 +1,7 @@
 use super::{ToolContext, ToolError, ToolSpec};
+use crate::agent::agents_md::{
+    guard_agents_md_write, targets_agents_md, validate_agents_md_write, AGENTS_MD_PATH,
+};
 use serde_json::{json, Value};
 use std::fs;
 use walkdir::WalkDir;
@@ -20,7 +23,8 @@ pub fn list_tool() -> ToolSpec {
 pub fn read_tool() -> ToolSpec {
     ToolSpec {
         name: "fs_read",
-        description: "Read a UTF-8 text file inside the project",
+        description: "Read a UTF-8 text file inside the project. \
+            Reading missing AGENTS.md returns exists:false (not an error).",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -127,9 +131,43 @@ fn read_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .get("path")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidArgs("path required".into()))?;
+    if targets_agents_md(ctx.sandbox, path).map_err(ToolError::Sandbox)? {
+        return read_agents_md(ctx, path);
+    }
     let resolved = ctx.sandbox.resolve(path)?;
     let content = fs::read_to_string(&resolved).map_err(|e| ToolError::Execution(e.to_string()))?;
     Ok(json!({ "content": content }))
+}
+
+fn read_agents_md(ctx: &ToolContext, path: &str) -> Result<Value, ToolError> {
+    let resolved = ctx
+        .sandbox
+        .resolve_for_write(path)
+        .map_err(ToolError::Sandbox)?;
+    if !resolved.is_file() {
+        return Ok(json!({
+            "exists": false,
+            "content": "",
+            "info": format!("{AGENTS_MD_PATH} 尚未创建，属正常情况")
+        }));
+    }
+    let content = fs::read_to_string(&resolved).map_err(|e| ToolError::Execution(e.to_string()))?;
+    Ok(json!({ "exists": true, "content": content }))
+}
+
+fn check_agents_md_write(
+    ctx: &ToolContext,
+    path: &str,
+    content: Option<&str>,
+) -> Result<(), ToolError> {
+    guard_agents_md_write(
+        ctx.sandbox,
+        path,
+        ctx.profile_init,
+        ctx.agents_md_confirmed,
+        content,
+    )
+    .map_err(ToolError::InvalidArgs)
 }
 
 fn patch_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
@@ -137,6 +175,7 @@ fn patch_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .get("path")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidArgs("path required".into()))?;
+    check_agents_md_write(ctx, path, None)?;
     let edits = args
         .get("edits")
         .and_then(|v| v.as_array())
@@ -197,6 +236,10 @@ fn patch_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         })));
     }
 
+    if targets_agents_md(ctx.sandbox, path).map_err(ToolError::Sandbox)? {
+        validate_agents_md_write(&content).map_err(ToolError::InvalidArgs)?;
+    }
+
     fs::write(&resolved, &content).map_err(|e| ToolError::Execution(e.to_string()))?;
     Ok(json!({ "path": path, "applied": applied }))
 }
@@ -210,6 +253,7 @@ fn write_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .get("content")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ToolError::InvalidArgs("content required".into()))?;
+    check_agents_md_write(ctx, path, Some(content))?;
     let resolved = ctx.sandbox.resolve_for_write(path)?;
     if let Some(parent) = resolved.parent() {
         fs::create_dir_all(parent).map_err(|e| ToolError::Execution(e.to_string()))?;

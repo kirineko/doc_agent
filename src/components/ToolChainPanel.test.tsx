@@ -64,9 +64,10 @@ describe("ToolChainPanel", () => {
       />,
     );
     expect(screen.getByText("失败")).toBeInTheDocument();
+    expect(screen.getByText("错误详情")).toBeInTheDocument();
     expect(
-      screen.getByText("当前 report.docx 已被会话「周报」占用，请稍后重试。"),
-    ).toBeInTheDocument();
+      screen.queryByText("当前 report.docx 已被会话「周报」占用，请稍后重试。"),
+    ).not.toBeVisible();
   });
 
   it("scrolls to bottom when a new tool card is appended", () => {

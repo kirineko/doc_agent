@@ -60,7 +60,9 @@ async function main() {{
         session: &'a str,
         turn: &'a str,
     ) -> ToolContext<'a> {
-        ToolContext::for_turn(sandbox, None, "p1", session, turn, session, reg, None)
+        ToolContext::for_turn(
+            sandbox, None, "p1", session, turn, session, reg, None, false, false,
+        )
     }
 
     fn exec_tool(
@@ -117,6 +119,8 @@ async function main() {{
                 ctx.session_id.to_string(),
                 ctx.turn_id.to_string(),
                 ctx.session_title.to_string(),
+                ctx.profile_init,
+                ctx.agents_md_confirmed,
             )))
         } else {
             None
@@ -130,6 +134,8 @@ async function main() {{
             ctx.session_title,
             reg.clone(),
             write_gate,
+            ctx.profile_init,
+            ctx.agents_md_confirmed,
         );
         exec_tool(registry, &exec_ctx, name, args).map_err(|e| e.to_json_value().to_string())
     }
@@ -165,6 +171,8 @@ async function main() {{
             "s1".into(),
             "t1".into(),
             "A".into(),
+            false,
+            false,
         );
         let gate_b = RuntimeWriteGate::new(
             reg,
@@ -174,6 +182,8 @@ async function main() {{
             "s2".into(),
             "t2".into(),
             "B".into(),
+            false,
+            false,
         );
         gate_a.before_write("shared/out.txt").unwrap();
         let err = gate_b.before_write("shared/out.txt").unwrap_err();
@@ -191,6 +201,8 @@ async function main() {{
             "s1".into(),
             "t1".into(),
             "A".into(),
+            false,
+            false,
         );
         gate.before_write("out.txt").unwrap();
         gate.before_write("out.txt").unwrap();

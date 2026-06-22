@@ -99,6 +99,20 @@ fn register_write(context: &mut Context, root: PathBuf) -> JsResult<()> {
                 let sb = Sandbox::new(root).map_err(|e| {
                     boa_engine::error::JsNativeError::typ().with_message(e.to_string())
                 })?;
+                if RUNTIME_WRITE_GATE.with(|cell| cell.borrow().is_none())
+                    && crate::agent::agents_md::targets_agents_md(&sb, &path).unwrap_or(false)
+                {
+                    crate::agent::agents_md::guard_agents_md_write(&sb, &path, false, false, None)
+                        .map_err(|e| boa_engine::error::JsNativeError::typ().with_message(e))?;
+                }
+                if crate::agent::agents_md::targets_agents_md(&sb, &path).unwrap_or(false) {
+                    let text = std::str::from_utf8(&bytes).map_err(|_| {
+                        boa_engine::error::JsNativeError::typ()
+                            .with_message("AGENTS.md must be UTF-8 text")
+                    })?;
+                    crate::agent::agents_md::validate_agents_md_write(text)
+                        .map_err(|e| boa_engine::error::JsNativeError::typ().with_message(e))?;
+                }
                 let resolved = sb.resolve_for_write(&path).map_err(|e| {
                     boa_engine::error::JsNativeError::typ().with_message(e.to_string())
                 })?;

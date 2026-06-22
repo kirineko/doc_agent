@@ -258,6 +258,180 @@ async function main() {{
     }
 
     #[test]
+    fn fs_read_missing_agents_md_is_ok() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "fs_read", json!({ "path": "AGENTS.md" })).unwrap();
+        assert_eq!(out["exists"], false);
+        assert_eq!(out["content"], "");
+        assert!(out["info"].as_str().unwrap().contains("AGENTS.md"));
+    }
+
+    #[test]
+    fn fs_read_existing_agents_md_reports_exists() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        fs::write(dir.path().join("AGENTS.md"), "# 项目").unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "fs_read", json!({ "path": "./AGENTS.md" })).unwrap();
+        assert_eq!(out["exists"], true);
+        assert!(out["content"].as_str().unwrap().contains("项目"));
+    }
+
+    #[test]
+    fn fs_write_rejects_agents_md_outside_init() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "fs_write",
+            json!({ "path": "AGENTS.md", "content": "# test" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("AGENTS.md"));
+    }
+
+    #[test]
+    fn fs_write_rejects_dot_agents_md_outside_init() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "fs_write",
+            json!({ "path": "./AGENTS.md", "content": "# test" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("AGENTS.md"));
+    }
+
+    #[test]
+    fn skill_run_blocks_agents_md_via_runtime_write_outside_init() {
+        use crate::core::file_locks::{FileLockRegistry, TurnFileLockStore};
+        use crate::tools::runtime::RuntimeWriteGate;
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let reg = Arc::new(FileLockRegistry::new());
+        let gate = Arc::new(RuntimeWriteGate::new(
+            reg,
+            TurnFileLockStore::new(),
+            &sandbox,
+            "p".into(),
+            "s".into(),
+            "t".into(),
+            "title".into(),
+            false,
+            false,
+        ));
+        let ctx = ToolContext::new(&sandbox).with_write_gate(Some(gate));
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({
+                "code": "function main() { fs.writeFileSync('./AGENTS.md', '# x', 'utf-8'); return { ok: true }; }"
+            }),
+        )
+        .unwrap_err();
+        let detail = err.to_json_value()["detail"]
+            .as_str()
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            detail.contains("AGENTS.md"),
+            "unexpected error detail: {detail}"
+        );
+    }
+
+    #[test]
+    fn runtime_write_gate_blocks_dot_agents_md_outside_init() {
+        use crate::core::file_locks::{FileLockRegistry, TurnFileLockStore};
+        use crate::tools::runtime::RuntimeWriteGate;
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let gate = RuntimeWriteGate::new(
+            Arc::new(FileLockRegistry::new()),
+            TurnFileLockStore::new(),
+            &sandbox,
+            "p".into(),
+            "s".into(),
+            "t".into(),
+            "title".into(),
+            false,
+            false,
+        );
+        let err = gate.before_write("./AGENTS.md").unwrap_err();
+        assert!(err.contains("AGENTS.md"));
+    }
+
+    #[test]
+    fn fs_write_rejects_agents_md_during_init_without_confirm() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext {
+            sandbox: &sandbox,
+            secrets: None,
+            project_id: "p",
+            session_id: "s",
+            turn_id: "t",
+            session_title: "title",
+            file_locks: None,
+            write_gate: None,
+            profile_init: true,
+            agents_md_confirmed: false,
+        };
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "fs_write",
+            json!({ "path": "AGENTS.md", "content": "# 项目 Agent 配置\n\n## PPT\n深色" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("confirm_agents_md"));
+    }
+
+    #[test]
+    fn fs_write_allows_agents_md_during_init() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext {
+            sandbox: &sandbox,
+            secrets: None,
+            project_id: "p",
+            session_id: "s",
+            turn_id: "t",
+            session_title: "title",
+            file_locks: None,
+            write_gate: None,
+            profile_init: true,
+            agents_md_confirmed: true,
+        };
+        let registry = ToolRegistry::default_tools();
+        exec_tool(
+            &registry,
+            &ctx,
+            "fs_write",
+            json!({ "path": "AGENTS.md", "content": "# 项目 Agent 配置\n\n## PPT\n深色" }),
+        )
+        .unwrap();
+        assert!(dir.path().join("AGENTS.md").exists());
+    }
+
+    #[test]
     fn fs_patch_applies_unique_replacements() {
         let dir = tempdir().unwrap();
         fs::write(
@@ -879,6 +1053,50 @@ return { ok: true };
         )
         .unwrap_err();
         assert!(err.to_string().contains("requires brief"));
+    }
+
+    #[test]
+    fn clarify_ask_accepts_confirm_agents_md() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "confirm",
+                "kind": "confirm_agents_md",
+                "prompt": "确认 AGENTS.md",
+                "preview_markdown": "# 项目 Agent 配置\n\n## PPT\n深色",
+                "changelog_summary": "新增 PPT 节"
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["kind"], "confirm_agents_md");
+        assert!(out["preview_markdown"].as_str().unwrap().contains("PPT"));
+    }
+
+    #[test]
+    fn clarify_ask_rejects_empty_confirm_agents_md_preview() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "clarify_ask",
+            json!({
+                "id": "confirm",
+                "kind": "confirm_agents_md",
+                "prompt": "确认",
+                "preview_markdown": "   "
+            }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("preview_markdown"));
     }
 
     #[test]
@@ -2724,7 +2942,7 @@ async function main() {
     }
 
     #[test]
-    fn skills_index_lists_seven_skills() {
+    fn skills_index_lists_eight_skills() {
         let md = crate::core::skills::index_markdown();
         for name in [
             "docx",
@@ -2734,10 +2952,24 @@ async function main() {
             "html-report",
             "clarify",
             "runtime",
+            "profile",
         ] {
             assert!(md.contains(name), "missing {name} in index");
         }
-        assert_eq!(crate::core::skills::available_names().len(), 7);
+        assert_eq!(crate::core::skills::available_names().len(), 8);
+    }
+
+    #[test]
+    fn skill_read_profile_returns_init_guide() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "skill_read", json!({ "skill": "profile" })).unwrap();
+        assert_eq!(out["skill"], "profile");
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("confirm_agents_md"));
+        assert!(content.contains("AGENTS.md"));
     }
 
     #[test]

@@ -44,7 +44,7 @@ export interface ClarifyOption {
   hint?: string | null;
 }
 
-export type ClarifyKind = "single" | "multi" | "text" | "confirm_brief";
+export type ClarifyKind = "single" | "multi" | "text" | "confirm_brief" | "confirm_agents_md";
 
 export interface ClarifyQuestion {
   id: string;
@@ -58,6 +58,8 @@ export interface ClarifyQuestion {
   min_selections?: number | null;
   max_selections?: number | null;
   brief?: Record<string, string> | null;
+  preview_markdown?: string | null;
+  changelog_summary?: string | null;
 }
 
 export interface ClarifyAnswer {
@@ -66,6 +68,7 @@ export interface ClarifyAnswer {
   custom?: string | null;
   display_text: string;
   brief?: Record<string, string> | null;
+  preview_markdown?: string | null;
 }
 
 export interface SubmitClarifyAnswerRequest {

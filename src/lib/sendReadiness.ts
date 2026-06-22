@@ -4,7 +4,8 @@ import { PARALLEL_LIMIT_MESSAGE } from "./sessionRunState";
 export type SendBlocker =
   | { kind: "no_project" }
   | { kind: "no_api_key"; provider: string }
-  | { kind: "parallel_limit" };
+  | { kind: "parallel_limit" }
+  | { kind: "clarify_pending" };
 
 export interface SendReadinessInput {
   activeProjectId?: string;

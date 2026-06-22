@@ -253,6 +253,7 @@ pub async fn compact_session_if_needed<R: Runtime>(
     token_count: u32,
     pending_estimate: u32,
     web_enabled: bool,
+    profile_init: bool,
     cancel: &CancelSignal,
 ) -> Result<(Vec<ChatMessage>, u32, u32, Option<CompactionOutcome>), String> {
     if cancel.is_cancelled() {
@@ -289,7 +290,8 @@ pub async fn compact_session_if_needed<R: Runtime>(
                     max_context,
                     reserved,
                 )?;
-                let working = rebuild_working_messages(state, session_id, web_enabled)?;
+                let working =
+                    rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
                 let after = estimate_chat_messages_tokens(&working);
                 emit_context_compacted(app, session_id, before_tokens, after);
                 emit_context_usage(app, session_id, after, max_context);
@@ -321,7 +323,8 @@ pub async fn compact_session_if_needed<R: Runtime>(
                     max_context,
                     reserved,
                 )?;
-                let working = rebuild_working_messages(state, session_id, web_enabled)?;
+                let working =
+                    rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
                 let after = estimate_chat_messages_tokens(&working);
                 emit_context_compacted(app, session_id, before_tokens, after);
                 emit_context_usage(app, session_id, after, max_context);
@@ -356,7 +359,7 @@ pub async fn compact_session_if_needed<R: Runtime>(
             .map_err(|e| e.to_string())?;
     }
 
-    let working = rebuild_working_messages(state, session_id, web_enabled)?;
+    let working = rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
     let after_tokens = estimate_chat_messages_tokens(&working);
 
     {
@@ -385,6 +388,7 @@ fn rebuild_working_messages(
     state: &AppState,
     session_id: &str,
     web_enabled: bool,
+    profile_init: bool,
 ) -> Result<Vec<ChatMessage>, String> {
     let (history, tool_call_history, project_root) = {
         let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -412,6 +416,7 @@ fn rebuild_working_messages(
         &[],
         web_enabled,
         Some(&sandbox),
+        profile_init,
     )
 }
 

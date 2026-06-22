@@ -959,3 +959,49 @@ Chat 输入区 SHALL 在当前 active session 为 `running` 时展示 **停止**
 - **WHEN** 后台 session A 的 tool_result 含 `changed_paths`
 - **AND** A 属于当前 active project
 - **THEN** 项目文件浏览区按现有规则刷新当前目录或文件索引
+
+### Requirement: Init command blocked during pending clarify
+
+The workspace UI SHALL prevent submitting `/init` while a clarify question is pending for the active session.
+
+#### Scenario: Slash init disabled with pending card
+
+- **WHEN** `clarify_pending` is set for the active session
+- **AND** the user attempts to run the `init` slash command
+- **THEN** the UI SHALL show an error or disabled state explaining that clarification must be completed first
+- **AND** SHALL NOT call `send_message`
+
+#### Scenario: Composer init prefix guarded
+
+- **WHEN** the user manually types a message starting with `/init` while clarify is pending
+- **THEN** send SHALL be blocked client-side with the same message
+- **AND** if bypassed, the backend error from `send_message` SHALL be surfaced
+
+### Requirement: Confirm agents markdown clarify UI
+
+The clarify card SHALL render `confirm_agents_md` questions with a scrollable full-text Markdown preview of `preview_markdown`.
+
+#### Scenario: Preview displays full proposed body
+
+- **WHEN** a pending clarify question has `kind` `confirm_agents_md`
+- **THEN** the card SHALL render `preview_markdown` as Markdown inside a scrollable region
+- **AND** SHALL provide confirm and reject actions consistent with other confirm-style clarify kinds
+
+#### Scenario: Optional changelog hint
+
+- **WHEN** `changelog_summary` is present on a `confirm_agents_md` question
+- **THEN** the card SHALL display it as supplementary text above or below the preview
+
+### Requirement: AGENTS.md status indicator
+
+The workspace UI SHALL indicate whether the active project has a non-empty `AGENTS.md` at project root.
+
+#### Scenario: Indicator reflects file presence
+
+- **WHEN** the user selects a project with `AGENTS.md` present
+- **THEN** the UI SHALL show a visible indicator that project agent profile exists
+
+#### Scenario: Indicator hidden or muted when missing
+
+- **WHEN** the active project has no `AGENTS.md` or an empty file
+- **THEN** the indicator SHALL reflect missing/empty state without blocking chat

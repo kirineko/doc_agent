@@ -533,7 +533,9 @@ mod tests {
         let models = list_models();
         assert!(models.len() >= 6);
         assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
-        assert!(models.iter().any(|m| m.id == "kimi-k2.6" && m.supports_vision));
+        assert!(models
+            .iter()
+            .any(|m| m.id == "kimi-k2.6" && m.supports_vision));
     }
 
     #[test]
@@ -561,13 +563,7 @@ mod tests {
         let session_id = {
             let store = state.store.lock().unwrap();
             store
-                .create_session(
-                    &project_id,
-                    "s1",
-                    "deepseek-v4-flash",
-                    true,
-                    "high",
-                )
+                .create_session(&project_id, "s1", "deepseek-v4-flash", true, "high")
                 .unwrap()
                 .id
         };

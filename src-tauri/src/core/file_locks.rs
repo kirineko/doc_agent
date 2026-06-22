@@ -584,6 +584,8 @@ mod tests {
             "s1".into(),
             "t1".into(),
             "A".into(),
+            false,
+            false,
         );
 
         let first_err = gate.before_write("out.txt").unwrap_err();

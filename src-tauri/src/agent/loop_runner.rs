@@ -1,3 +1,4 @@
+use crate::agent::agents_md::{detect_agents_md_confirmed, is_profile_init_message};
 use crate::agent::compaction::{
     compact_session_if_needed, emit_context_usage, estimate_chat_message_tokens,
     estimate_chat_messages_tokens, MAX_TOOL_STEPS,
@@ -54,6 +55,8 @@ pub struct TurnExecutionContext {
     pub turn_id: String,
     pub session_title: String,
     pub file_locks: TurnFileLockStore,
+    pub profile_init: bool,
+    pub agents_md_confirmed: bool,
 }
 
 pub(crate) struct TurnStart {
@@ -328,6 +331,7 @@ pub async fn run_turn<R: Runtime>(
         let store = state.store.lock().map_err(|e| e.to_string())?;
         crate::core::web_search::is_web_search_active(&state.secrets, &store)?
     };
+    let profile_init = is_profile_init_message(&user_text);
     let mut working_messages = build_working_messages(
         &history,
         &tool_call_history,
@@ -335,6 +339,7 @@ pub async fn run_turn<R: Runtime>(
         &attachments,
         web_enabled,
         Some(&sandbox),
+        profile_init,
     )?;
 
     let turn_start = start_turn(&state, &session_id, &turn_id, &project.id)?;
@@ -362,6 +367,8 @@ pub async fn run_turn<R: Runtime>(
         turn_id: turn_id.clone(),
         session_title,
         file_locks,
+        profile_init,
+        agents_md_confirmed: false,
     };
 
     continue_loop_inner(
@@ -456,6 +463,9 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
         crate::core::web_search::is_web_search_active(&state.secrets, &store)?
     };
     let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let profile_init = is_profile_init_message(&user_text);
+    let agents_md_confirmed =
+        profile_init && detect_agents_md_confirmed(&history, &tool_call_history);
     let mut working_messages = build_working_messages(
         &history,
         &tool_call_history,
@@ -463,6 +473,7 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
         &[],
         web_enabled,
         Some(&sandbox),
+        profile_init,
     )?;
 
     let turn_ctx = TurnExecutionContext {
@@ -471,6 +482,8 @@ pub(crate) async fn resume_loop_from_store<R: Runtime>(
         turn_id: turn_id.clone(),
         session_title,
         file_locks,
+        profile_init,
+        agents_md_confirmed,
     };
 
     continue_loop_inner(
@@ -550,6 +563,7 @@ async fn continue_loop_inner<R: Runtime>(
             token_count,
             pending_estimate,
             web_enabled,
+            turn_ctx.profile_init,
             &cancel,
         )
         .await;

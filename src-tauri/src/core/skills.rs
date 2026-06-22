@@ -76,6 +76,11 @@ static RUNTIME_DOCS: &[SkillDoc] = &[SkillDoc {
     content: include_str!("../../assets/skills/runtime/SKILL.md"),
 }];
 
+static PROFILE_DOCS: &[SkillDoc] = &[SkillDoc {
+    name: "SKILL.md",
+    content: include_str!("../../assets/skills/profile/SKILL.md"),
+}];
+
 pub static SKILLS: &[Skill] = &[
     Skill {
         name: "docx",
@@ -111,6 +116,11 @@ pub static SKILLS: &[Skill] = &[
         name: "runtime",
         description: "skill_run 嵌入式 JS 运行时 API、polyfill 与限制（编写脚本前必读）",
         docs: RUNTIME_DOCS,
+    },
+    Skill {
+        name: "profile",
+        description: "项目 AGENTS.md 配置：/init 澄清流程与写入规范",
+        docs: PROFILE_DOCS,
     },
 ];
 

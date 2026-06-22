@@ -93,6 +93,7 @@ fn system_prompt_includes_clarify_trigger() {
         &[],
         false,
         None,
+        false,
     )
     .unwrap();
     let system = messages[0].content.as_ref().unwrap();

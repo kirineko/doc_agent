@@ -30,6 +30,33 @@ describe("useProjectFiles", () => {
     expect(result.current.fileEntries).toEqual([
       { path: "notes.md", isDir: false, modifiedMs: 42 },
     ]);
+    expect(result.current.filesLoaded).toBe(true);
+  });
+
+  it("sets filesLoaded false until fetch completes", async () => {
+    let resolveFetch: (value: unknown) => void = () => undefined;
+    vi.mocked(invoke).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveFetch = resolve;
+        }),
+    );
+
+    const { result } = renderHook(() => useProjectFiles("project-1"));
+
+    expect(result.current.filesLoaded).toBe(false);
+
+    let loadPromise: Promise<void> = Promise.resolve();
+    await act(async () => {
+      loadPromise = result.current.loadInitial("project-1");
+    });
+    expect(result.current.filesLoaded).toBe(false);
+
+    await act(async () => {
+      resolveFetch({ entries: [] });
+      await loadPromise;
+    });
+    expect(result.current.filesLoaded).toBe(true);
   });
 
   it("merges changed_paths on tool_result without full reload", async () => {
@@ -43,7 +70,6 @@ describe("useProjectFiles", () => {
         session_id: "s1",
         turn_id: "t1",
         id: "call-1",
-        name: "fs_write",
         ok: true,
         summary: "ok",
         duration_ms: 12,

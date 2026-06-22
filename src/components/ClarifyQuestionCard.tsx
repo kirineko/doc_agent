@@ -35,7 +35,9 @@ export function ClarifyQuestionCard({
   const canSubmit = (() => {
     if (readonly) return false;
     if (question.kind === "text") return Boolean(custom.trim());
-    if (question.kind === "confirm_brief") return selected.includes("confirm") || Boolean(custom.trim());
+    if (question.kind === "confirm_brief" || question.kind === "confirm_agents_md") {
+      return selected.includes("confirm") || Boolean(custom.trim());
+    }
     if (question.kind === "multi") {
       if (count < min) return false;
       if (max && count > max) return false;
@@ -72,6 +74,15 @@ export function ClarifyQuestionCard({
         </div>
       )}
 
+      {question.kind === "confirm_agents_md" && question.preview_markdown && (
+        <div className="mt-3 max-h-64 overflow-y-auto rounded-lg border border-border-subtle p-2 text-xs">
+          {question.changelog_summary && (
+            <div className="mb-2 text-fg-muted">{question.changelog_summary}</div>
+          )}
+          <MarkdownView content={question.preview_markdown} variant="compact" />
+        </div>
+      )}
+
       {question.kind === "confirm_brief" && briefEntries.length > 0 && (
         <dl className="mt-3 grid gap-1.5 rounded-lg border border-border-subtle p-2 text-xs">
           {briefEntries.map(([key, value]) => (
@@ -91,7 +102,9 @@ export function ClarifyQuestionCard({
         </div>
       ) : (
         <>
-          {question.kind !== "text" && question.kind !== "confirm_brief" && (
+          {question.kind !== "text" &&
+            question.kind !== "confirm_brief" &&
+            question.kind !== "confirm_agents_md" && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {(question.options ?? []).map((option) => {
                 const active = selected.includes(option.id);
@@ -121,7 +134,7 @@ export function ClarifyQuestionCard({
             </div>
           )}
 
-          {question.kind === "confirm_brief" && (
+          {(question.kind === "confirm_brief" || question.kind === "confirm_agents_md") && (
             <div className="mt-3 flex flex-wrap gap-1.5">
               <button
                 type="button"
@@ -144,12 +157,20 @@ export function ClarifyQuestionCard({
           {allowCustom && (
             <textarea
               className="input-field mt-3 min-h-16 w-full resize-none rounded-lg px-2.5 py-2 text-xs"
-              placeholder={question.custom_placeholder ?? (question.kind === "confirm_brief" ? "如需修改，请写下修改意见" : "其他 / 自定义回答")}
+              placeholder={
+                question.custom_placeholder ??
+                (question.kind === "confirm_brief" || question.kind === "confirm_agents_md"
+                  ? "如需修改，请写下修改意见"
+                  : "其他 / 自定义回答")
+              }
               value={custom}
               disabled={readonly}
               onChange={(e) => {
                 setCustom(e.target.value);
-                if (question.kind === "confirm_brief" && e.target.value.trim()) {
+                if (
+                  (question.kind === "confirm_brief" || question.kind === "confirm_agents_md") &&
+                  e.target.value.trim()
+                ) {
                   setSelected([]);
                 }
               }}

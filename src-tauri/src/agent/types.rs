@@ -190,6 +190,10 @@ pub struct ClarifyQuestion {
     pub max_selections: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brief: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_markdown: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changelog_summary: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -203,6 +207,9 @@ pub struct ClarifyAnswer {
     /// confirm_brief 确认时回传创作简报，保证 tool result 自含结构化 brief
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brief: Option<Value>,
+    /// confirm_agents_md 确认时回传拟写入全文
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview_markdown: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

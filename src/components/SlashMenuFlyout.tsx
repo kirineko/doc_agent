@@ -6,19 +6,26 @@ import {
   type SlashCategory,
 } from "../lib/slashCommands";
 import { SLASH_COMMAND_ROW_CLASS, slashCommandIdClassName } from "../lib/slashCommandRow";
+import type { AgentsMdStatus } from "../lib/agentsMdStatus";
 
 interface SlashMenuFlyoutProps {
   open: boolean;
   onClose: () => void;
   onPick: (commandId: string) => void;
+  agentsMdStatus?: AgentsMdStatus;
 }
 
-export function SlashMenuFlyout({ open, onClose, onPick }: SlashMenuFlyoutProps) {
+export function SlashMenuFlyout({
+  open,
+  onClose,
+  onPick,
+  agentsMdStatus = "idle",
+}: SlashMenuFlyoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const [activeCategory, setActiveCategory] = useState<SlashCategory>("general");
+  const [activeCategory, setActiveCategory] = useState<SlashCategory>("command");
 
   useEffect(() => {
-    if (open) setActiveCategory("general");
+    if (open) setActiveCategory("command");
   }, [open]);
 
   useEffect(() => {
@@ -69,6 +76,15 @@ export function SlashMenuFlyout({ open, onClose, onPick }: SlashMenuFlyoutProps)
           })}
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto py-1">
+          {activeCategory === "command" && agentsMdStatus !== "idle" && (
+            <div className="border-b border-border-subtle px-2 py-1.5 text-[10px] text-fg-muted">
+              {agentsMdStatus === "loaded"
+                ? "AGENTS.md 已就绪，Agent 会自动注入"
+                : agentsMdStatus === "loading"
+                  ? "正在扫描项目文件…"
+                  : "尚无 AGENTS.md，可用 /init 生成"}
+            </div>
+          )}
           {commands.map((command) => (
             <button
               key={command.id}

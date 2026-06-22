@@ -41,10 +41,10 @@ describe("slash", () => {
 });
 
 describe("slashFuzzy", () => {
-  it("returns 22 commands grouped in category order", () => {
+  it("returns 23 commands grouped in category order", () => {
     const groups = searchSlashCommands("");
     const flat = flattenSlashGroups(groups);
-    expect(flat).toHaveLength(22);
+    expect(flat).toHaveLength(23);
     expect(groups.map((g) => g.category)).toEqual(CATEGORY_ORDER);
   });
 
@@ -67,8 +67,20 @@ describe("slashFuzzy", () => {
 });
 
 describe("slashCommands registry", () => {
-  it("keeps prompts within 20–100 characters", () => {
+  it("includes init in command group before general", () => {
+    const groups = searchSlashCommands("");
+    expect(groups[0]?.category).toBe("command");
+    expect(groups.map((g) => g.category)).toEqual(CATEGORY_ORDER);
+    const init = flattenSlashGroups(searchSlashCommands("init")).find(
+      (m) => m.command.id === "init",
+    );
+    expect(init?.command.category).toBe("command");
+    expect(init?.command.kind).toBe("command");
+  });
+
+  it("keeps template prompts within 20–100 characters", () => {
     for (const command of SLASH_COMMANDS) {
+      if (command.kind !== "template") continue;
       const len = command.prompt.length;
       expect(len, `${command.id} prompt length ${len}`).toBeGreaterThanOrEqual(20);
       expect(len, `${command.id} prompt length ${len}`).toBeLessThanOrEqual(100);

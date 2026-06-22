@@ -106,6 +106,7 @@ function App() {
             starterSuggestions={ws.starterSuggestions}
             followupSuggestions={ws.followupSuggestions}
             fileEntries={ws.fileEntries}
+            agentsMdStatus={ws.agentsMdStatus}
             input={ws.input}
             busy={ws.stream.busy}
             contextRatio={ws.contextRatio}

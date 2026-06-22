@@ -31,6 +31,7 @@ import {
   type SessionConfig,
 } from "../lib/sessionConfig";
 import { getSendBlocker, isParallelLimitError, type SendBlocker } from "../lib/sendReadiness";
+import { resolveAgentsMdStatus } from "../lib/agentsMdStatus";
 import { refreshWebSearchState, setWebSearchActive as persistWebSearchActive } from "../lib/webSearch";
 import { createOptimisticUserMessage } from "../lib/workspaceMessages";
 import {
@@ -119,6 +120,15 @@ export function useWorkspace() {
   const [starterSuggestions, setStarterSuggestions] = useState<string[]>([]);
   const [followupSuggestions, setFollowupSuggestions] = useState<string[]>([]);
   const projectFiles = useProjectFiles(activeProjectId);
+  const agentsMdStatus = useMemo(
+    () =>
+      resolveAgentsMdStatus(
+        activeProjectId,
+        projectFiles.filesLoaded,
+        projectFiles.fileEntries,
+      ),
+    [activeProjectId, projectFiles.filesLoaded, projectFiles.fileEntries],
+  );
   const [sendHint, setSendHint] = useState<SendBlocker | null>(null);
   const [highlightProject, setHighlightProject] = useState(false);
   const [highlightApiKeyProvider, setHighlightApiKeyProvider] = useState<string>();
@@ -591,7 +601,7 @@ export function useWorkspace() {
 
   function showSendBlocker(blocker: SendBlocker) {
     setSendHint(blocker);
-    if (blocker.kind === "parallel_limit") {
+    if (blocker.kind === "parallel_limit" || blocker.kind === "clarify_pending") {
       return;
     }
     if (blocker.kind === "no_project") {
@@ -610,7 +620,10 @@ export function useWorkspace() {
       mime,
     }));
     if (!trimmed && attachments.length === 0) return;
-    if (activeClarify) return;
+    if (activeClarify) {
+      setSendHint({ kind: "clarify_pending" });
+      return;
+    }
 
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
     if (attachments.length > 0 && !modelSupportsVision(models, model)) {
@@ -755,7 +768,6 @@ export function useWorkspace() {
     if (!activeSessionRef.current || !activeClarify) return;
     const sessionId = activeSessionRef.current;
     const questionId = activeClarify.question.id;
-    const previousActive = activeClarify;
     // 提交后立即收起底部卡片；若 resume 又触发新 clarify，由 clarify_question 事件恢复
     setActiveClarify(undefined);
     dispatchSessionRuns({ type: "busy_resume", sessionId });
@@ -770,7 +782,12 @@ export function useWorkspace() {
       });
     } catch (error) {
       console.error(error);
-      setActiveClarify(previousActive);
+      // 后端在「删除 pending + 写入 tool result」之后才进入 resume：若失败发生在
+      // resume 阶段（如 LLM 余额不足/繁忙），澄清答案其实已被消费，绝不能盲目恢复
+      // 旧澄清卡片——否则 hasActiveClarify 会永久禁用输入并隐藏 stop 按钮，造成假死。
+      // 以后端真实状态为准：重载消息，由 clarify_pending 决定是否仍需展示澄清卡片；
+      // 重载失败时保持卡片收起并置为 idle，宁可让用户重发也绝不冻结界面。
+      await reloadMessages(sessionId).catch(console.error);
       dispatchSessionRuns({
         type: "event",
         event: {
@@ -1014,6 +1031,8 @@ export function useWorkspace() {
     followupSuggestions,
     fileEntries: projectFiles.fileEntries,
     fileRevision: projectFiles.fileRevision,
+    filesLoaded: projectFiles.filesLoaded,
+    agentsMdStatus,
     sendHint,
     highlightProject,
     highlightApiKeyProvider,

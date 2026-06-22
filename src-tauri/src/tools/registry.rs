@@ -41,6 +41,8 @@ pub struct ToolContext<'a> {
     pub session_title: &'a str,
     pub file_locks: Option<Arc<FileLockRegistry>>,
     pub write_gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
+    pub profile_init: bool,
+    pub agents_md_confirmed: bool,
 }
 
 impl<'a> ToolContext<'a> {
@@ -58,6 +60,8 @@ impl<'a> ToolContext<'a> {
             session_title: "test",
             file_locks: None,
             write_gate: None,
+            profile_init: false,
+            agents_md_confirmed: false,
         }
     }
 
@@ -77,6 +81,8 @@ impl<'a> ToolContext<'a> {
             session_title,
             file_locks: None,
             write_gate: None,
+            profile_init: false,
+            agents_md_confirmed: false,
         }
     }
 
@@ -90,6 +96,8 @@ impl<'a> ToolContext<'a> {
         session_title: &'a str,
         file_locks: Arc<FileLockRegistry>,
         write_gate: Option<Arc<crate::tools::runtime::write_gate::RuntimeWriteGate>>,
+        profile_init: bool,
+        agents_md_confirmed: bool,
     ) -> Self {
         Self {
             sandbox,
@@ -100,6 +108,8 @@ impl<'a> ToolContext<'a> {
             session_title,
             file_locks: Some(file_locks),
             write_gate,
+            profile_init,
+            agents_md_confirmed,
         }
     }
 
@@ -116,6 +126,8 @@ impl<'a> ToolContext<'a> {
             session_title: self.session_title,
             file_locks: self.file_locks.clone(),
             write_gate,
+            profile_init: self.profile_init,
+            agents_md_confirmed: self.agents_md_confirmed,
         }
     }
 }

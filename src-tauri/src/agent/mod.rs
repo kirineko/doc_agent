@@ -1,3 +1,4 @@
+pub mod agents_md;
 pub mod clarify_interaction;
 pub mod compaction;
 pub mod loop_runner;

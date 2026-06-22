@@ -33,6 +33,19 @@ export function applySlash(
   return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
 }
 
+/** 将 /query 替换为斜杠 command 文本（如 /init ） */
+export function applySlashCommand(
+  text: string,
+  state: SlashState,
+  commandId: string,
+  acceptsTail = false,
+): { text: string; cursor: number; selectionEnd: number } {
+  const inserted = acceptsTail ? `/${commandId} ` : `/${commandId}`;
+  const next = `${text.slice(0, state.start)}${inserted}${text.slice(state.end)}`;
+  const cursorPos = state.start + inserted.length;
+  return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
+}
+
 /** 在光标处插入斜杠命令 prompt；若存在活跃 /query 则替换 */
 export function insertSlashPrompt(
   text: string,

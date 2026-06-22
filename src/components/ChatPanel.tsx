@@ -1,15 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AgentsMdIndicator } from "./AgentsMdIndicator";
 import {
   readClipboardImageFile,
   type PendingAttachment,
 } from "../lib/attachments";
+import { type AgentsMdStatus } from "../lib/agentsMdStatus";
 import type { MentionFileEntry } from "../lib/projectFiles";
 import { orderMentionFileMatchesForDisplay, searchMentionFiles } from "../lib/mentionFiles";
 import { applyMention, detectMention, expandMentionDirectory } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
-import { detectSlash, insertSlashPrompt } from "../lib/slash";
+import { detectSlash, insertSlashPrompt, applySlashCommand } from "../lib/slash";
 import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
-import { SLASH_COMMANDS } from "../lib/slashCommands";
+import { SLASH_COMMANDS, isSlashCommandEntry, isSlashTemplate } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { PARALLEL_LIMIT_MESSAGE, STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
 import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
@@ -41,6 +43,7 @@ interface ChatPanelProps {
   starterSuggestions?: string[];
   followupSuggestions?: string[];
   fileEntries?: MentionFileEntry[];
+  agentsMdStatus?: AgentsMdStatus;
   input: string;
   busy: boolean;
   contextRatio?: number;
@@ -81,6 +84,7 @@ export function ChatPanel({
   starterSuggestions = [],
   followupSuggestions = [],
   fileEntries = [],
+  agentsMdStatus = "idle",
   input,
   busy,
   contextRatio,
@@ -245,9 +249,30 @@ export function ChatPanel({
   async function pickSlashCommand(commandId: string) {
     const command = SLASH_COMMANDS.find((item) => item.id === commandId);
     if (!command) return;
+    if (activeClarify && isSlashCommandEntry(command)) {
+      showSendBlocker?.({ kind: "clarify_pending" });
+      return;
+    }
     if (projectId && ensureActiveSession) {
       await ensureActiveSession();
     }
+    if (isSlashCommandEntry(command)) {
+      const slashState = detectSlash(input, cursor);
+      const result = slashState
+        ? applySlashCommand(input, slashState, command.id, command.acceptsTail)
+        : {
+            text: command.acceptsTail ? `/${command.id} ` : `/${command.id}`,
+            cursor: command.acceptsTail ? command.id.length + 2 : command.id.length + 1,
+            selectionEnd: command.acceptsTail ? command.id.length + 2 : command.id.length + 1,
+          };
+      onInputChange(result.text);
+      setCursor(result.selectionEnd);
+      setSlashDismissed(false);
+      setSlashMenuOpen(false);
+      focusTextareaAt(result.cursor, result.selectionEnd);
+      return;
+    }
+    if (!isSlashTemplate(command)) return;
     const result = insertSlashPrompt(input, cursor, command.prompt);
     onInputChange(result.text);
     setCursor(result.selectionEnd);
@@ -301,7 +326,10 @@ export function ChatPanel({
   return (
     <section className="panel flex h-full min-h-0 flex-col p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="text-xs font-medium text-fg-heading">会话</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="text-xs font-medium text-fg-heading">会话</div>
+          <AgentsMdIndicator status={agentsMdStatus} variant="labeled" />
+        </div>
         <ContextUsageIndicator ratio={contextRatio ?? 0} hidden={!projectId} />
       </div>
       <div
@@ -397,6 +425,7 @@ export function ChatPanel({
               open={slashMenuOpen && !composerDisabled && !showMentionPopup}
               onClose={() => setSlashMenuOpen(false)}
               onPick={pickSlashCommand}
+              agentsMdStatus={agentsMdStatus}
             />
             <div className="input-field flex min-h-[7.5rem] flex-col overflow-hidden rounded-lg">
               <textarea

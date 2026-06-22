@@ -13,6 +13,7 @@ const FILE_INDEX_DEBOUNCE_MS = 500;
 export function useProjectFiles(projectId: string | undefined) {
   const [fileEntries, setFileEntries] = useState<MentionFileEntry[]>([]);
   const [fileRevision, setFileRevision] = useState(0);
+  const [filesLoaded, setFilesLoaded] = useState(false);
   const projectIdRef = useRef(projectId);
   const fileEntriesRef = useRef<MentionFileEntry[]>([]);
   const refreshSeqRef = useRef(0);
@@ -39,6 +40,10 @@ export function useProjectFiles(projectId: string | undefined) {
         }
       } catch (error) {
         console.error(error);
+      } finally {
+        if (seq === refreshSeqRef.current && id === projectIdRef.current) {
+          setFilesLoaded(true);
+        }
       }
     },
     [applyFileEntries],
@@ -52,6 +57,7 @@ export function useProjectFiles(projectId: string | undefined) {
     }
     applyFileEntries([]);
     setFileRevision(0);
+    setFilesLoaded(false);
   }, [applyFileEntries]);
 
   const loadInitial = useCallback(
@@ -96,6 +102,7 @@ export function useProjectFiles(projectId: string | undefined) {
   return {
     fileEntries,
     fileRevision,
+    filesLoaded,
     loadInitial,
     reset,
     onAgentEvent,

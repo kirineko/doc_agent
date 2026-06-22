@@ -37,14 +37,13 @@
 
 ## 高优先级 — 产品能力（P1）
 
-### BL-006 项目级 AGENTS.md / profile 注入
+### BL-006 项目级 AGENTS.md / profile 注入 — 已实现（`openspec/changes/project-agent-profile`）
 
-- **现状**：全库无 `AGENTS.md`、`.doc-agent/profile.md` 或等效实现；会话间 deliberately 隔离，无项目级可编辑偏好。
-- **目标**：用户可在项目目录维护偏好（公文风格、公司模板路径、语言习惯、命名规范）；注入 system prompt，**不破坏**会话上下文隔离。
-- **init**：新建项目时可生成模板文件（空 profile / AGENTS.md 骨架），引导用户填写。
-- **对比**：优于默认开启「跨会话 LLM memory」——可控、可审计、可版本管理（git）。
-- **建议 change**：`project-agent-profile`
-- **关联**：`project-session/spec.md`（会话隔离原则）、`agent/loop_support.rs`
+- **现状**：已实现项目根 `AGENTS.md` 每 turn 读盘注入；`/init` 真斜杠 command + `confirm_agents_md` clarify。
+- **能力 A**：存在即注入（≤3000 字符）；手写/外部编辑生效，无需 `/init`。
+- **能力 B**：`/init` → `send_message` 占 turn → `profile` skill + clarify → 写 `AGENTS.md`；clarify pending 时禁止；仅 init turn 允许 Agent 写该文件。
+- **代码**：`agent/agents_md.rs`、`loop_support.rs`、`assets/skills/profile/SKILL.md`、`slashCommands.ts`（`kind: command`）
+- **关联**：`project-agent-profile`、`clarify-interaction`、`slash-commands`
 
 ### BL-007 Agent 文件变更 diff / 撤销（构建产物信任）
 

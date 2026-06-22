@@ -54,12 +54,18 @@ pub async fn submit_clarify_answer<R: Runtime>(
         } else {
             None
         };
+        let preview_markdown = if question.kind == "confirm_agents_md" && confirmed {
+            question.preview_markdown.clone()
+        } else {
+            None
+        };
         let result = ClarifyAnswer {
             question_id: answer.question_id,
             selected: answer.selected,
             custom: answer.custom,
             display_text,
             brief,
+            preview_markdown,
         };
         let result_json = serde_json::to_string(&result).map_err(|e| e.to_string())?;
         store
@@ -277,6 +283,14 @@ fn validate_clarify_answer(
             }
         }
         "confirm_brief" => {
+            if answer.selected.iter().any(|v| v == "confirm") {
+                return Ok(());
+            }
+            if custom.is_empty() {
+                return Err("请确认或填写修改意见".into());
+            }
+        }
+        "confirm_agents_md" => {
             if answer.selected.iter().any(|v| v == "confirm") {
                 return Ok(());
             }

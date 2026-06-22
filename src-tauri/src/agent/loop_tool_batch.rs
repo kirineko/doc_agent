@@ -239,7 +239,10 @@ pub async fn run_tool_batch<R: Runtime>(
                 }
             }
             Ok(_) => {
-                let value = json!({ "error": "一次只允许一个澄清问题" });
+                let value = json!({
+                    "deferred": true,
+                    "info": "本回合已有澄清问题待用户回答；每轮 assistant 仅允许一个 clarify_ask，请在用户回复后的下一轮单独提出此问题"
+                });
                 emit_tool_call(app, session_id, turn_id, plan, plan.args.clone(), "running");
                 persist_tool_result(
                     state,
@@ -247,7 +250,7 @@ pub async fn run_tool_batch<R: Runtime>(
                     session_id,
                     turn_id,
                     &plan.call,
-                    false,
+                    true,
                     value.to_string(),
                     0,
                     Vec::new(),
@@ -417,6 +420,8 @@ fn build_tool_context<'a>(
         &turn_ctx.session_title,
         state.file_locks.clone(),
         write_gate,
+        turn_ctx.profile_init,
+        turn_ctx.agents_md_confirmed,
     )
 }
 
@@ -486,6 +491,8 @@ async fn execute_one<R: Runtime>(
             turn_ctx.session_id.clone(),
             turn_ctx.turn_id.clone(),
             turn_ctx.session_title.clone(),
+            turn_ctx.profile_init,
+            turn_ctx.agents_md_confirmed,
         )))
     } else {
         None
@@ -648,6 +655,8 @@ mod tests {
             turn_id: "t-a".into(),
             session_title: "A".into(),
             file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+            profile_init: false,
+            agents_md_confirmed: false,
         };
 
         let outcome_a = execute_one(
@@ -678,6 +687,8 @@ mod tests {
             turn_id: "t-b".into(),
             session_title: "B".into(),
             file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+            profile_init: false,
+            agents_md_confirmed: false,
         };
         let blocked = execute_one(
             &app.handle(),
@@ -777,6 +788,8 @@ mod tests {
             turn_id: "turn-1".into(),
             session_title: "Test".into(),
             file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+            profile_init: false,
+            agents_md_confirmed: false,
         };
 
         let outcome = run_tool_batch(
@@ -893,6 +906,8 @@ mod tests {
             turn_id: "turn-1".into(),
             session_title: "Test".into(),
             file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+            profile_init: false,
+            agents_md_confirmed: false,
         };
 
         let fs_outcome = execute_one(
@@ -971,5 +986,126 @@ mod tests {
             .filter(|m| m.role == "tool")
             .collect();
         assert_eq!(tool_messages.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn second_clarify_in_same_batch_is_deferred_not_failed() {
+        let dir = tempdir().unwrap();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let sandbox = Sandbox::new(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let session = store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap();
+            let assistant = store
+                .add_message(&session.id, "assistant", Some(""), None, None, None)
+                .unwrap();
+            let q1 = json!({
+                "id": "q1",
+                "kind": "single",
+                "prompt": "问题一",
+                "options": [
+                    { "id": "a", "label": "A" },
+                    { "id": "b", "label": "B" }
+                ]
+            });
+            let q2 = json!({
+                "id": "q2",
+                "kind": "single",
+                "prompt": "问题二",
+                "options": [
+                    { "id": "a", "label": "A" },
+                    { "id": "b", "label": "B" }
+                ]
+            });
+            store
+                .add_tool_call(&assistant.id, "call_q1", "clarify_ask", &q1.to_string())
+                .unwrap();
+            store
+                .add_tool_call(&assistant.id, "call_q2", "clarify_ask", &q2.to_string())
+                .unwrap();
+            session.id
+        };
+        let q = |id: &str, prompt: &str| {
+            json!({
+                "id": id,
+                "kind": "single",
+                "prompt": prompt,
+                "options": [
+                    { "id": "a", "label": "A" },
+                    { "id": "b", "label": "B" }
+                ]
+            })
+        };
+        let tool_calls = vec![
+            ToolCall {
+                id: "call_q1".into(),
+                call_type: "function".into(),
+                function: FunctionCall {
+                    name: "clarify_ask".into(),
+                    arguments: q("q1", "问题一").to_string(),
+                },
+            },
+            ToolCall {
+                id: "call_q2".into(),
+                call_type: "function".into(),
+                function: FunctionCall {
+                    name: "clarify_ask".into(),
+                    arguments: q("q2", "问题二").to_string(),
+                },
+            },
+        ];
+        let turn_ctx = TurnExecutionContext {
+            project_id: "p1".into(),
+            session_id: session_id.clone(),
+            turn_id: "turn-1".into(),
+            session_title: "Test".into(),
+            file_locks: crate::core::file_locks::TurnFileLockStore::new(),
+            profile_init: false,
+            agents_md_confirmed: false,
+        };
+        let mut working_messages = Vec::new();
+        let mut pending_estimate = 0;
+        let cancel = CancelSignal::new();
+
+        let outcome = run_tool_batch(
+            &app.handle(),
+            &state,
+            &sandbox,
+            &turn_ctx,
+            ModelId::Mock,
+            &tool_calls,
+            &[0, 1],
+            false,
+            &mut working_messages,
+            &mut pending_estimate,
+            &cancel,
+        )
+        .await
+        .unwrap();
+
+        assert!(outcome.has_pending_clarify);
+        let store = state.store.lock().unwrap();
+        let calls = store.list_tool_calls_for_session(&session_id).unwrap();
+        assert_eq!(calls.len(), 2);
+        let first = calls.iter().find(|c| c.id == "call_q1").unwrap();
+        assert_eq!(first.status, "awaiting_user");
+        let second = calls.iter().find(|c| c.id == "call_q2").unwrap();
+        assert_eq!(second.status, "done");
+        assert!(
+            second
+                .result_json
+                .as_deref()
+                .is_some_and(|json| json.contains("deferred")),
+            "second clarify should be deferred, not failed: {:?}",
+            second.result_json
+        );
     }
 }

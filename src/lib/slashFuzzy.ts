@@ -4,11 +4,11 @@ import {
   CATEGORY_ORDER,
   SLASH_COMMANDS,
   type SlashCategory,
-  type SlashCommand,
+  type SlashEntry,
 } from "./slashCommands";
 
 export interface SlashCommandMatch {
-  command: SlashCommand;
+  command: SlashEntry;
   score: number;
   labelPositions: number[];
 }
@@ -19,14 +19,14 @@ export interface SlashCommandGroup {
   items: SlashCommandMatch[];
 }
 
-function commandSearchText(command: SlashCommand): string {
+function commandSearchText(command: SlashEntry): string {
   const categoryLabel = CATEGORY_LABELS[command.category];
   return [command.id, command.label, command.description, categoryLabel, ...command.keywords].join(
     " ",
   );
 }
 
-function matchCommand(command: SlashCommand, query: string): SlashCommandMatch | null {
+function matchCommand(command: SlashEntry, query: string): SlashCommandMatch | null {
   const q = query.trim();
   if (!q) {
     return { command, score: 0, labelPositions: [] };

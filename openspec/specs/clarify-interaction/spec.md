@@ -5,7 +5,7 @@ TBD - created by archiving change add-clarify-interaction. Update Purpose after 
 ## Requirements
 ### Requirement: clarify_ask 工具
 
-系统 SHALL 提供 `clarify_ask` 工具，供 Agent 在需求澄清流程中发起结构化问题。工具参数 MUST 符合 `ClarifyQuestion` schema（`id`、`kind`、`prompt` 必填；`kind` 为 `single` | `multi` | `text` | `confirm_brief`）。`single`/`multi` MUST 携带 2–12 个 `options`；工具 JSON Schema 的 `options` 数组 MUST 声明 `minItems: 2` 与 `maxItems: 12`。clarify skill 推荐 Agent 使用 2–8 个选项并配合 `allow_custom` 承接「其他」。`confirm_brief` MUST 携带 `brief` 字段；`allow_custom` 默认为 true。
+系统 SHALL 提供 `clarify_ask` 工具，供 Agent 在需求澄清流程中发起结构化问题。工具参数 MUST 符合 `ClarifyQuestion` schema（`id`、`kind`、`prompt` 必填；`kind` 为 `single` | `multi` | `text` | `confirm_brief` | `confirm_agents_md`）。`single`/`multi` MUST 携带 2–12 个 `options`；工具 JSON Schema 的 `options` 数组 MUST 声明 `minItems: 2` 与 `maxItems: 12`。clarify skill 推荐 Agent 使用 2–8 个选项并配合 `allow_custom` 承接「其他」。`confirm_brief` MUST 携带 `brief` 字段；`confirm_agents_md` MUST 携带非空 `preview_markdown`，MAY 携带 `changelog_summary`，且 `brief` 非必填；`allow_custom` 默认为 true。
 
 #### Scenario: Agent 发起单选澄清题
 
@@ -21,6 +21,17 @@ TBD - created by archiving change add-clarify-interaction. Update Purpose after 
 
 - **WHEN** Agent 调用 `clarify_ask` 且 `kind=confirm_brief`，`brief` 含创作简报字段
 - **THEN** 前端展示简报预览与确认/修改交互
+
+#### Scenario: confirm_agents_md 题型
+
+- **WHEN** Agent 调用 `clarify_ask` 且 `kind=confirm_agents_md`，`preview_markdown` 含拟写入的 AGENTS.md 正文
+- **THEN** 前端展示可滚动 Markdown 预览与确认/修改交互
+- **AND** 用户确认后 tool result 含 `preview_markdown`，供 init turn 写盘使用
+
+#### Scenario: confirm_agents_md 拒绝空 preview
+
+- **WHEN** Agent 调用 `clarify_ask` 且 `kind=confirm_agents_md` 但 `preview_markdown` 为空或缺失
+- **THEN** 返回结构化校验错误，不进入 pending
 
 ---
 

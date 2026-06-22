@@ -8,7 +8,9 @@
 
 ### Requirement: 静态斜杠命令注册表
 
-系统 SHALL 在前端内置静态斜杠命令注册表，每条命令 MUST 包含：`id`、`category`（`general` | `word` | `ppt` | `excel` | `pdf` | `web`）、`label`、`description`、`keywords`、`prompt`（20–100 个字符，含标点与占位符）。
+系统 SHALL 在前端内置静态斜杠命令注册表，每条命令 MUST 包含：`id`、`kind`（`template` | `command`）、`category`（`general` | `word` | `ppt` | `excel` | `pdf` | `web`）、`label`、`description`、`keywords`、`prompt`（20–100 个字符，含标点与占位符；`kind=command` 时 prompt 可为空或占位，实际发送 composer 原文）。
+
+`kind=template` 时选中后仅填入 prompt、不自动发送；`kind=command` 时 Enter 提交 MUST 将 composer 全文作为 user message 调用 `send_message`。
 
 `id` 命名规则：**`category` 为 `general` 时 `id` MUST NOT 带 `general:` 前缀**（如 `read`、`clarify`）；其余分类 MUST 使用 `{category}:{action}`（如 `word:create`）。**MUST NOT** 在 `id` 内使用 `/`，以免与触发符 `/` 冲突。
 
@@ -110,3 +112,22 @@
 
 - **WHEN** 用户选择 `excel:check-formula`
 - **THEN** prompt 仅要求检查并列出公式错误位置
+
+### Requirement: Init slash command registration
+
+The registry SHALL include a command entry for project profile initialization.
+
+#### Scenario: Init command metadata
+
+- **WHEN** the slash menu is loaded
+- **THEN** an entry with id `init`, `kind: "command"`, label describing project agent configuration, and keywords including `init` and `agents` SHALL be present
+
+#### Scenario: Init accepts optional tail
+
+- **WHEN** the user types `/init 固化PPT风格` and submits
+- **THEN** the full string SHALL be sent as the user message content
+
+#### Scenario: Init blocked while clarify pending
+
+- **WHEN** the active session has a pending clarify question
+- **THEN** submitting `/init` from slash menu or composer SHALL be blocked with user-visible error

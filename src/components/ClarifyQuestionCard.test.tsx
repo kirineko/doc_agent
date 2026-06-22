@@ -160,4 +160,23 @@ describe("ClarifyQuestionCard", () => {
     expect(screen.getByText("已回答：商务深色")).toBeInTheDocument();
     expect(screen.queryByText("提交回答")).not.toBeInTheDocument();
   });
+
+  it("renders confirm_agents_md preview and submits confirm", async () => {
+    const onSubmit = vi.fn();
+    const question: ClarifyQuestion = {
+      id: "agents-md",
+      kind: "confirm_agents_md",
+      prompt: "请确认项目配置",
+      preview_markdown: "## PPT\n深色商务",
+      changelog_summary: "新增 PPT 风格",
+    };
+    render(<ClarifyQuestionCard question={question} onSubmit={onSubmit} />);
+
+    expect(screen.getByText("新增 PPT 风格")).toBeInTheDocument();
+    expect(screen.getByText("深色商务")).toBeInTheDocument();
+    await userEvent.click(screen.getByText("确认继续"));
+    await userEvent.click(screen.getByText("提交回答"));
+
+    expect(onSubmit).toHaveBeenCalledWith({ selected: ["confirm"], custom: null });
+  });
 });

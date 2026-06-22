@@ -13,7 +13,9 @@ export function SendHintBanner({ blocker, onDismiss }: SendHintBannerProps) {
       ? "请先选择或创建项目目录"
       : blocker.kind === "parallel_limit"
         ? PARALLEL_LIMIT_MESSAGE
-        : `请先配置 ${providerLabel(blocker.provider)} API Key`;
+        : blocker.kind === "clarify_pending"
+          ? "请先完成当前澄清问题，再发送新消息"
+          : `请先配置 ${providerLabel(blocker.provider)} API Key`;
 
   return (
     <div

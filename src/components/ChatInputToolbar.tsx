@@ -150,8 +150,8 @@ export function ChatInputToolbar({
           <ImageIcon className={TOOLBAR_ICON_CLASS} />
         </ToolbarIconButton>
         <ToolbarIconButton
-          label="任务模板菜单"
-          title={projectSelected ? "任务模板" : "请先选择项目"}
+          label="斜杠命令"
+          title={projectSelected ? "斜杠命令（/init 等可执行命令）" : "请先选择项目"}
           disabled={actionsDisabled}
           active={slashMenuOpen}
           onMouseDown={(event) => {

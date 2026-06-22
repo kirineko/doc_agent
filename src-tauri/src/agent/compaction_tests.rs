@@ -114,11 +114,34 @@ fn compacted_token_estimate_includes_summary_prefix() {
 }
 
 #[test]
+fn compaction_rebuild_preserves_profile_init_hint() {
+    let messages = crate::agent::loop_support::build_working_messages(
+        &[],
+        &[],
+        Some("/init"),
+        &[],
+        false,
+        None,
+        true,
+    )
+    .unwrap();
+    let system = messages[0].content.as_ref().unwrap();
+    assert!(system.contains("skill_read profile"));
+}
+
+#[test]
 fn working_messages_after_compaction_include_system_tokens() {
     let history = vec![msg("m1", "user", "recent")];
-    let working =
-        crate::agent::loop_support::build_working_messages(&history, &[], None, &[], false, None)
-            .unwrap();
+    let working = crate::agent::loop_support::build_working_messages(
+        &history,
+        &[],
+        None,
+        &[],
+        false,
+        None,
+        false,
+    )
+    .unwrap();
     let compact_only = super::estimate_compacted_tokens(
         &super::build_summary_message_content("summary"),
         &[],

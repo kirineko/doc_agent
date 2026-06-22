@@ -1,6 +1,7 @@
-export type SlashCategory = "general" | "word" | "ppt" | "excel" | "pdf" | "web";
+export type SlashCategory = "command" | "general" | "word" | "ppt" | "excel" | "pdf" | "web";
 
-export interface SlashCommand {
+export interface SlashTemplate {
+  kind: "template";
   id: string;
   category: SlashCategory;
   label: string;
@@ -9,7 +10,23 @@ export interface SlashCommand {
   prompt: string;
 }
 
+export interface SlashCommandEntry {
+  kind: "command";
+  id: string;
+  category: SlashCategory;
+  label: string;
+  description: string;
+  keywords: string[];
+  acceptsTail?: boolean;
+}
+
+export type SlashEntry = SlashTemplate | SlashCommandEntry;
+
+/** @deprecated Use SlashEntry */
+export type SlashCommand = SlashEntry;
+
 export const CATEGORY_ORDER: SlashCategory[] = [
+  "command",
   "general",
   "word",
   "ppt",
@@ -19,6 +36,7 @@ export const CATEGORY_ORDER: SlashCategory[] = [
 ];
 
 export const CATEGORY_LABELS: Record<SlashCategory, string> = {
+  command: "命令",
   general: "通用",
   word: "Word",
   ppt: "PPT",
@@ -27,8 +45,10 @@ export const CATEGORY_LABELS: Record<SlashCategory, string> = {
   web: "Web",
 };
 
+type SlashTemplateSeed = Omit<SlashTemplate, "kind">;
+
 /** 用户需替换的部分使用 {{提示文字}} 占位符 */
-export const SLASH_COMMANDS: SlashCommand[] = [
+const SLASH_TEMPLATE_SEEDS: SlashTemplateSeed[] = [
   {
     id: "read",
     category: "general",
@@ -207,3 +227,31 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     prompt: "请把 {{HTML路径}}（HTML 文件或报告目录）导出为 PDF。",
   },
 ];
+
+/** 可执行斜杠命令（Enter 直接发送，非 prompt 模板）；新 command 追加于此 */
+const SLASH_COMMAND_ENTRIES: SlashCommandEntry[] = [
+  {
+    kind: "command",
+    id: "init",
+    category: "command",
+    label: "初始化 AGENTS.md",
+    description: "澄清并生成/更新 AGENTS.md",
+    keywords: ["init", "agents", "配置", "profile", "偏好", "agents.md"],
+    acceptsTail: true,
+  },
+];
+
+const SLASH_TEMPLATES: SlashTemplate[] = SLASH_TEMPLATE_SEEDS.map((seed) => ({
+  ...seed,
+  kind: "template" as const,
+}));
+
+export const SLASH_COMMANDS: SlashEntry[] = [...SLASH_COMMAND_ENTRIES, ...SLASH_TEMPLATES];
+
+export function isSlashTemplate(entry: SlashEntry): entry is SlashTemplate {
+  return entry.kind === "template";
+}
+
+export function isSlashCommandEntry(entry: SlashEntry): entry is SlashCommandEntry {
+  return entry.kind === "command";
+}

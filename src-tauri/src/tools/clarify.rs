@@ -11,16 +11,16 @@ pub fn ask_tool() -> ToolSpec {
         description: "Ask the user one structured clarification question. \
             Use this during the clarify skill flow instead of plain text questions. \
             The agent loop pauses and waits for the user's answer. \
-            kind MUST be one of: single, multi, text, confirm_brief. \
+            kind MUST be one of: single, multi, text, confirm_brief, confirm_agents_md. \
             single/multi require 2-12 options (prefer 2-8 plus allow_custom for 其他); \
-            confirm_brief requires brief.",
+            confirm_brief requires brief; confirm_agents_md requires preview_markdown.",
         parameters: json!({
             "type": "object",
             "properties": {
                 "id": { "type": "string" },
                 "kind": {
                     "type": "string",
-                    "enum": ["single", "multi", "text", "confirm_brief"]
+                    "enum": ["single", "multi", "text", "confirm_brief", "confirm_agents_md"]
                 },
                 "prompt": { "type": "string" },
                 "description": { "type": "string" },
@@ -49,6 +49,14 @@ pub fn ask_tool() -> ToolSpec {
                     "additionalProperties": {
                         "type": "string"
                     }
+                },
+                "preview_markdown": {
+                    "type": "string",
+                    "description": "confirm_agents_md 必填。拟写入 AGENTS.md 的全文预览"
+                },
+                "changelog_summary": {
+                    "type": "string",
+                    "description": "confirm_agents_md 可选。简短变更摘要"
                 }
             },
             "required": ["id", "kind", "prompt"]
@@ -80,6 +88,8 @@ pub fn parse_question(args: Value) -> Result<ClarifyQuestion, ToolError> {
         None => None,
         Some(value) => Some(normalize_brief(value.clone())?),
     };
+    let preview_markdown = optional_string(&args, "preview_markdown");
+    let changelog_summary = optional_string(&args, "changelog_summary");
 
     match kind.as_str() {
         "single" | "multi" => validate_options(&kind, &options)?,
@@ -98,9 +108,19 @@ pub fn parse_question(args: Value) -> Result<ClarifyQuestion, ToolError> {
                 return Err(invalid("confirm_brief brief must not be empty"));
             }
         }
+        "confirm_agents_md" => {
+            let Some(preview) = preview_markdown.as_deref() else {
+                return Err(invalid("confirm_agents_md requires preview_markdown"));
+            };
+            if preview.trim().is_empty() {
+                return Err(invalid(
+                    "confirm_agents_md preview_markdown must not be empty",
+                ));
+            }
+        }
         _ => {
             return Err(invalid(
-                "kind must be one of: single, multi, text, confirm_brief",
+                "kind must be one of: single, multi, text, confirm_brief, confirm_agents_md",
             ))
         }
     }
@@ -130,6 +150,8 @@ pub fn parse_question(args: Value) -> Result<ClarifyQuestion, ToolError> {
         min_selections,
         max_selections,
         brief,
+        preview_markdown,
+        changelog_summary,
     })
 }
 
