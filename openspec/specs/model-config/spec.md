@@ -1,7 +1,8 @@
 # model-config Specification
 
 ## Purpose
-TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after archive.
+
+定义会话级模型选择、思考模式/强度、API Key 与应用数据目录中的密钥持久化，以及模型目录与流式 token 用量采集。密钥采用 `config.toml` 文件存储（非 OS keychain），供 Header「密钥与服务」Drawer 配置并在全应用按 provider 复用。
 ## Requirements
 ### Requirement: 多模型选择
 系统 SHALL 允许用户为**尚无 chat 消息的会话**（含草稿态 pending 配置）选择模型，至少支持 DeepSeek V4 Flash、DeepSeek V4 Pro、Kimi K2.6、MiMo v2.5、MiMo v2.5 Pro、MiMo v2.5 Pro Ultraspeed，并通过统一的 OpenAI 兼容 Provider 抽象接入。已有 chat 消息的会话 MUST NOT 允许切换模型。
@@ -41,11 +42,23 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** UI 不显示思考强度选项，请求中不包含 `reasoning_effort`
 
 ### Requirement: API Key 安全存储
-系统 SHALL 将各模型 API Key 存储于操作系统密钥链，不以明文写入数据库或日志。Key 在 Header「密钥与服务」Drawer 中配置，供所有会话按 provider 复用。
+系统 SHALL 将各模型与 Tavily 的 API Key 存储于应用数据目录下的 `config.toml`（`[api_keys]` 表，provider 为 key），MUST NOT 写入 SQLite 会话库（`doc_agent.db`）或应用日志。Key 在 Header「密钥与服务」Drawer 中配置，供所有会话按 provider 复用。保存后 UI MUST NOT 回显完整明文（折叠/摘要展示）；后端请求时从 `config.toml` 读取。
+
+在 Unix（macOS / Linux 开发环境）上，应用数据目录 MUST 设为 `0o700`，`config.toml` MUST 设为 `0o600`。Windows 上依赖标准 `%APPDATA%` 用户目录隔离；当前实现不对 Windows 文件 ACL 做额外限制。
 
 #### Scenario: 配置并使用密钥
 - **WHEN** 用户在 Header 密钥 Drawer 输入某 provider 的 API Key 并保存
-- **THEN** 密钥存入 OS keychain，该 provider 下所有会话发起请求时从 keychain 读取，界面与日志不回显明文
+- **THEN** 密钥写入 `{app_data_dir}/config.toml` 的 `[api_keys]` 条目
+- **AND** 该 provider 下所有会话发起请求时从该文件读取
+- **AND** 界面与日志不回显完整明文
+
+#### Scenario: 密钥不进入会话数据库
+- **WHEN** 用户保存 DeepSeek API Key
+- **THEN** `doc_agent.db` 中 MUST NOT 含 API Key 字段或明文
+
+#### Scenario: Unix 文件权限
+- **WHEN** 在 macOS 上首次保存 API Key
+- **THEN** `config.toml` 文件权限为 `0o600`，父目录为 `0o700`
 
 ### Requirement: API Key 全局配置入口
 系统 SHALL 在应用 Header 提供与会话、项目均无关的「密钥」入口，打开「密钥与服务」Drawer；至少覆盖 DeepSeek、Kimi 与 MiMo。已保存的 Key MUST 默认以折叠/摘要形式展示以降低视觉干扰，未配置时展开输入。Key 配置 MUST NOT 依赖 activeProject 或 activeSession 存在才可访问。

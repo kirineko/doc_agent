@@ -936,7 +936,7 @@ Chat 输入区 SHALL 在当前 active session 为 `running` 时展示 **停止**
 
 ### Requirement: 文件占用错误展示
 
-前端 SHALL 能展示后端文件锁冲突错误。错误文案 MUST 包含被占用路径；当后端提供 blocking session 标题或 id 时，前端 SHOULD 展示「当前 xxx 已被会话 yyy 占用，请稍后重试」。
+前端 SHALL 能展示后端文件锁冲突错误。错误文案 MUST 包含被占用路径；当后端提供 blocking session 标题或 id 时，前端 SHOULD 展示「当前 xxx 已被会话 yyy 占用，请稍后重试」。工具链卡片在 `tool_result.ok=false` 时 MUST 解析 `summary` 中的 `file_busy` JSON 并以醒目样式展示 `message`（或等价格式化文案）。
 
 #### Scenario: 工具结果 file_busy
 

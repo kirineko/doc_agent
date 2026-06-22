@@ -23,6 +23,17 @@ CI 与 release 的 check job 另含 `npm run bundle:js`；发版规范见 `.curs
 - `types.ts`：与 Rust 序列化结构对齐的类型定义
 - 禁止在 `App.tsx` 堆超过 ~200 行逻辑，应拆 hook/组件
 
+## 测试要求（强制）
+
+**新增或修改 TypeScript/TSX 代码 MUST 附带或更新 Vitest 测试**；无测试的 PR 不得合并（纯样式/注释/format 除外）。
+
+| 代码类型 | 最低要求 |
+|----------|----------|
+| `src/lib/**` | 纯函数与 reducer 单元测试（与源文件同目录 `*.test.ts`） |
+| `src/hooks/**` | 每个 hook 至少 1 个 `renderHook` 测试（mock invoke/event） |
+| `src/components/**` | 关键 UI（Markdown、工具链、输入区）组件测试 |
+| IPC 契约 | types 与 event payload 形状与 Rust 一致；变更时同步更新测试 |
+
 ## 测试范围
 
 - 工具函数、hooks：单元测试
@@ -32,8 +43,8 @@ CI 与 release 的 check job 另含 `npm run bundle:js`；发版规范见 `.curs
 ## 示例
 
 ```tsx
-// ✅ 事件处理抽到 hook
+// ✅ 事件处理抽到 hook 并单测
 const { liveTools, streamingContent } = useAgentEvents(sessionId);
 
-// ❌ 在组件内 300+ 行 listen + invoke + setState
+// ❌ 在组件内 300+ 行 listen + invoke + setState 且无 hook 测试
 ```

@@ -519,3 +519,67 @@ pub async fn pick_project_directory(app: AppHandle) -> Result<Option<String>, St
     let path = app.dialog().file().blocking_pick_folder();
     Ok(path.map(|p| p.to_string()))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::provider::openai_compat::{is_upload_attachment_path, validate_attachments};
+    use crate::agent::types::MessageAttachment;
+    use crate::state::AppState;
+    use tempfile::tempdir;
+
+    #[test]
+    fn list_models_exposes_public_catalog() {
+        let models = list_models();
+        assert!(models.len() >= 6);
+        assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
+        assert!(models.iter().any(|m| m.id == "kimi-k2.6" && m.supports_vision));
+    }
+
+    #[test]
+    fn read_attachment_preview_rejects_non_cache_path() {
+        let attachment = MessageAttachment {
+            path: "report.docx".into(),
+            mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document".into(),
+        };
+        assert!(!is_upload_attachment_path(&attachment.path));
+        assert!(validate_attachments(&[attachment]).is_err());
+    }
+
+    #[test]
+    fn message_bundle_shape_for_empty_session() {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().to_path_buf()).unwrap();
+        let project_id = {
+            let store = state.store.lock().unwrap();
+            store
+                .create_project("demo", dir.path().join("root").to_str().unwrap())
+                .unwrap()
+                .id
+        };
+        std::fs::create_dir_all(dir.path().join("root")).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            store
+                .create_session(
+                    &project_id,
+                    "s1",
+                    "deepseek-v4-flash",
+                    true,
+                    "high",
+                )
+                .unwrap()
+                .id
+        };
+
+        let store = state.store.lock().unwrap();
+        let bundle = MessageBundle {
+            messages: store.list_messages(&session_id).unwrap(),
+            tool_calls: store.list_tool_calls_for_session(&session_id).unwrap(),
+            clarify_pending: store.get_clarify_pending(&session_id).unwrap(),
+        };
+        assert!(bundle.messages.is_empty());
+        assert!(bundle.tool_calls.is_empty());
+        assert!(bundle.clarify_pending.is_none());
+    }
+}

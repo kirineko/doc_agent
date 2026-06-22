@@ -1,7 +1,8 @@
 # office-tools Specification
 
 ## Purpose
-TBD - created by archiving change add-document-skills-runtime. Update Purpose after archive.
+
+定义 Agent 对 Word、Excel、PPT 的读取、写入与编辑能力，含旧版 Office 转换入口。PPT 生成与模板编辑经 Document Skills（`skill_run` + pptxgenjs / OOXML 解包回包）实现；任意 Office 格式均可读取为 Markdown 供模型理解。
 ## Requirements
 ### Requirement: PPT 生成与编辑
 系统 SHALL 支持在项目目录内生成新 PPT（经脚本运行时 pptxgenjs）及基于既有 PPT 模板的内容编辑（经 OOXML 解包 / 回包），产物 MUST 为可被 Office 打开的合法 OOXML。
@@ -45,13 +46,6 @@ TBD - created by archiving change add-document-skills-runtime. Update Purpose af
 #### Scenario: 写入单元格并保存
 - **WHEN** Agent 请求在某工作表写入若干单元格并保存
 - **THEN** 系统生成 / 更新 `.xlsx`，文件为可被 Office 打开的合法 OOXML
-
-### Requirement: PPT 生成排除在 MVP 之外
-系统 SHALL NOT 在本 MVP 中提供 PPT 生成 / 编辑工具；PPT 仅支持读取为 Markdown。
-
-#### Scenario: 不暴露 PPT 生成工具
-- **WHEN** Agent 试图生成 PPT
-- **THEN** 系统不提供该工具能力（PPT 生成留待后续 Document Skill 处理）
 
 ### Requirement: 旧版 Office 经 Agent 工具转换
 系统 SHALL 在 `office-tools` 能力域注册 `office_convert` 工具（详见 `legacy-office-convert` 能力），供 Agent 将 `.doc/.xls/.ppt` 转为现代 OOXML；输出文件名 MUST 带 `-converted` 后缀以区别于用户手动另存为的文件。

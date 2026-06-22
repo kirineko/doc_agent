@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { formatToolResultError } from "../lib/fileBusy";
 import { formatToolArgs, toolLabel } from "../lib/toolLabels";
 import { PanelSectionHeader } from "./PanelSectionHeader";
 
@@ -8,6 +9,7 @@ export interface LiveToolCall {
   args: unknown;
   status: string;
   argsChars?: number;
+  summary?: string;
 }
 
 interface ToolChainPanelProps {
@@ -115,6 +117,14 @@ export function ToolChainPanel({
                 {statusLabel(item.status)}
               </div>
             </div>
+            {item.status === "error" && item.summary ? (
+              <div
+                className="mt-1 rounded border border-rose-500/25 bg-rose-500/10 px-1.5 py-1 text-[10px] leading-4 text-rose-700 dark:text-rose-300"
+                role="alert"
+              >
+                {formatToolResultError(item.summary)}
+              </div>
+            ) : null}
             {item.status === "streaming" ? (
               <div className="mt-1 text-[10px] text-fg-secondary">
                 正在接收参数… 已收到 {formatCharCount(item.argsChars ?? 0)}

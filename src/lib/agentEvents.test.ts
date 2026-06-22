@@ -80,6 +80,46 @@ describe("applyAgentEvent", () => {
 
     expect(state.liveTools).toHaveLength(1);
     expect(state.liveTools[0].status).toBe("done");
+    expect(state.liveTools[0].summary).toBe('{"entries":[]}');
+  });
+
+  it("stores file_busy summary on failed tool result", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    const busySummary = JSON.stringify({
+      error: "file_busy",
+      path: "report.docx",
+      message: "当前 report.docx 已被会话「周报」占用，请稍后重试。",
+      blocking_session_id: "sess-1",
+    });
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_2",
+        name: "fs_write",
+        args: { path: "report.docx" },
+        status: "running",
+      },
+      sessionId,
+    );
+    state = applyAgentEvent(
+      state,
+      {
+        kind: "tool_result",
+        session_id: sessionId,
+        turn_id: "t1",
+        id: "call_2",
+        ok: false,
+        summary: busySummary,
+        duration_ms: 3,
+      },
+      sessionId,
+    );
+
+    expect(state.liveTools[0].status).toBe("error");
+    expect(state.liveTools[0].summary).toBe(busySummary);
   });
 
   it("shows streaming placeholder while tool args are being generated", () => {

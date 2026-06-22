@@ -116,6 +116,7 @@ export function applyAgentEvent(
             ? {
                 ...item,
                 status: event.ok ? "done" : "error",
+                summary: event.summary,
               }
             : item,
         ),

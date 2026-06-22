@@ -13,7 +13,9 @@ alwaysApply: false
 - `tools/`：每个工具一个文件，经 `registry` 注册
 - `ipc/`：仅 Tauri command/event，业务逻辑下沉到 agent/core/tools
 
-## 测试要求
+## 测试要求（强制）
+
+**新增或修改 Rust 代码 MUST 附带或更新自动化测试**；无测试的 PR 不得合并（纯注释/文档/format 除外）。
 
 每个模块至少具备一类验证：
 
@@ -21,9 +23,10 @@ alwaysApply: false
 |------|----------|
 | `core/sandbox` | 越界、`..`、路径校验单元测试 |
 | `core/store` | CRUD 与 `reasoning_content` 持久化测试 |
+| `core/secrets` | config.toml 读写与权限相关测试 |
 | `agent/loop` | Mock Provider 多轮工具调用测试 |
 | `tools/*` | 工具 handler 测试；Office 输出做 OOXML 结构校验 |
-| `ipc` | 关键 command 集成测试（可选 e2e） |
+| `ipc/` | 关键 command 契约测试（`list_models`、附件路径校验、`MessageBundle` 形状等） |
 
 ## 示例
 
