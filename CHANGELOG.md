@@ -8,6 +8,40 @@
 
 ## [Unreleased]
 
+本批次（尚未 push）包含项目级 Agent 配置、并行文件占用提示、澄清流程修复，以及 PPT OOXML 斜杠命令与手动上下文压缩。
+
+### PPT OOXML 精准修改与手动上下文压缩
+
+- **斜杠 `ppt:edit-ooxml`**：OOXML 解包 → 编辑 `ppt/slides/slide{N}.xml` → 回包；`ppt:edit` 明确为 PptxGenJS 脚本路径
+- **`/compact` 命令**：手动触发上下文压缩（`compact_session` IPC），不写 `/compact` 用户消息；与自动压缩共享摘要管线
+- **压缩 UX**：进行中提示（自动「正在压缩较早的对话历史…」/ 手动「请稍候…」）；完成后按 `trigger` 区分自动/手动文案；进行中提示不自动 5 秒消失
+- **后端**：`compaction_started` / `context_compacted(trigger)` 事件；手动压缩占用全局 run slot；UTF-8 安全截断修复摘要输入 panic
+
+### 项目级 AGENTS.md 与 `/init`
+
+- **每 turn 自动注入**：项目根存在非空 `AGENTS.md` 时，system 提示词追加 `## 项目配置（AGENTS.md）` 段（≤3000 字符）；手写或外部编辑后下一轮即生效，无需重新初始化
+- **`/init` 斜杠命令**：真发送用户消息并占一轮 turn；通过内置 `profile` skill + clarify 生成或更新 `AGENTS.md`；可选尾部说明（如 `/init 固化PPT风格`）
+- **`confirm_agents_md` 澄清题型**：init 流程中展示拟写入的 Markdown 全文预览，确认后再 `fs_write`
+- **写入门禁**：非 init turn 禁止 Agent 写 `AGENTS.md`；init turn 须先通过 `confirm_agents_md` 确认
+- **UI 指示**：Chat 区显示项目 `AGENTS.md` 状态（缺失 / 已加载）；clarify pending 时禁止 `/init`
+- **`fs_read AGENTS.md`**：文件不存在时返回 `exists: false`（非错误），便于 Agent 判断
+
+### 需求澄清（clarify）
+
+- **与 AGENTS.md 协作**：clarify skill 先读项目配置，跳过已在 `AGENTS.md` 中写明的样式/规范，只问本次任务仍缺的信息
+- **同轮多问降级**：同一 assistant 轮次内第二个及以后的 `clarify_ask` 返回 `deferred` 提示（非红色失败），引导下一轮单独提问
+- **resume 失败不再假死**：澄清答案已提交但 LLM 调用失败（如余额不足、API 繁忙）时，不再错误恢复已消费的澄清卡片；输入框与停止按钮可正常使用
+
+### 工具链与并行文件占用
+
+- **file_busy 友好提示**：工具链面板识别文件占用错误，展示简短中文说明（含占用会话信息）
+- **工具错误默认折叠**：工具调用失败时「错误详情」默认折叠，减少技术 JSON 刷屏
+
+### 维护与规范（开发者）
+
+- **project-backlog**：OpenSpec 维护待办与优先级（BL-006 等项目级配置已标记完成）
+- **AGENTS.md / Codex skills**：仓库贡献约定与 OpenSpec 工作流 skill 镜像至 `.codex/skills/`
+
 ---
 
 ## [2026.6.19] — 2026-06-19

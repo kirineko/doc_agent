@@ -1,4 +1,8 @@
 import { LiveToolCall } from "../components/ToolChainPanel";
+import {
+  compactionInProgressNotice,
+  isCompactionInProgressNotice,
+} from "./compactionNotice";
 import { AgentEvent } from "../types";
 
 export interface AgentStreamState {
@@ -130,6 +134,9 @@ export function applyAgentEvent(
       return {
         ...clearStreamingBuffers(state, false),
         liveTools: dropStreamingPlaceholders(state.liveTools),
+        compactionNotice: isCompactionInProgressNotice(state.compactionNotice)
+          ? null
+          : state.compactionNotice,
       };
     case "turn_awaiting_user":
       return {
@@ -140,15 +147,26 @@ export function applyAgentEvent(
       return clearStreamingBuffers(state);
     case "context_usage":
       return state;
+    case "compaction_started":
+      return {
+        ...state,
+        compactionNotice: compactionInProgressNotice(event.trigger),
+      };
     case "context_compacted":
       return {
         ...state,
-        compactionNotice: "已自动压缩较早的对话历史以节省上下文",
+        compactionNotice:
+          event.trigger === "manual"
+            ? "已手动压缩对话历史"
+            : "已自动压缩较早的对话历史以节省上下文",
       };
     case "error":
       return {
         ...state,
         busy: false,
+        compactionNotice: isCompactionInProgressNotice(state.compactionNotice)
+          ? null
+          : state.compactionNotice,
         streamingContent: `${state.streamingContent}\n\n> ${event.message}`,
       };
     default:

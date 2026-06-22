@@ -93,6 +93,13 @@ export function applyEventToSessionRuns(
     case "error":
       status = "idle";
       break;
+    case "context_compacted":
+      if (event.trigger === "manual") {
+        status = "idle";
+      } else if (status === "idle" && startsRunning(event)) {
+        status = "running";
+      }
+      break;
     default:
       if (status === "idle" && (nextStream.busy || startsRunning(event))) {
         status = "running";
@@ -106,6 +113,9 @@ export function applyEventToSessionRuns(
       [sessionId]: {
         ...nextStream,
         status,
+        ...(event.kind === "context_compacted" && event.trigger === "manual"
+          ? { busy: false }
+          : {}),
       },
     },
   };
@@ -118,7 +128,9 @@ function startsRunning(event: AgentEvent): boolean {
     event.kind === "tool_call_stream" ||
     event.kind === "tool_call" ||
     event.kind === "assistant_step_done" ||
-    event.kind === "context_compacted"
+    // Auto compaction fires mid-turn (already running); manual /compact runs
+    // outside any turn and MUST NOT flip an idle session to running.
+    (event.kind === "context_compacted" && event.trigger !== "manual")
   );
 }
 
@@ -194,6 +206,27 @@ export function forceSessionIdle(
   };
 }
 
+/** End a frontend-only busy spell without clearing compaction notice. */
+export function markSessionIdle(
+  state: SessionRunsState,
+  sessionId: string,
+): SessionRunsState {
+  const current = getOrCreate(state, sessionId);
+  return {
+    bySession: {
+      ...state.bySession,
+      [sessionId]: {
+        ...current,
+        status: "idle",
+        busy: false,
+        streamingReasoning: "",
+        streamingContent: "",
+        liveTools: [],
+      },
+    },
+  };
+}
+
 export function clearCompactionNotice(
   state: SessionRunsState,
   sessionId: string,
@@ -206,6 +239,23 @@ export function clearCompactionNotice(
       [sessionId]: {
         ...current,
         compactionNotice: null,
+      },
+    },
+  };
+}
+
+export function setCompactionNotice(
+  state: SessionRunsState,
+  sessionId: string,
+  message: string,
+): SessionRunsState {
+  const current = getOrCreate(state, sessionId);
+  return {
+    bySession: {
+      ...state.bySession,
+      [sessionId]: {
+        ...current,
+        compactionNotice: message,
       },
     },
   };

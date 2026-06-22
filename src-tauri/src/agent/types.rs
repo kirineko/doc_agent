@@ -212,6 +212,13 @@ pub struct ClarifyAnswer {
     pub preview_markdown: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CompactionTrigger {
+    Auto,
+    Manual,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentEvent {
@@ -291,6 +298,11 @@ pub enum AgentEvent {
         session_id: String,
         before_tokens: u32,
         after_tokens: u32,
+        trigger: CompactionTrigger,
+    },
+    CompactionStarted {
+        session_id: String,
+        trigger: CompactionTrigger,
     },
     SessionTitleUpdated {
         session_id: String,

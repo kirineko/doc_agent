@@ -4,9 +4,11 @@ import {
   clearCompactionNotice,
   forceSessionIdle,
   initialSessionRunsState,
+  markSessionIdle,
   markSessionResuming,
   markSessionRunning,
   markSessionStopping,
+  setCompactionNotice,
   type SessionRunsState,
 } from "./sessionRunState";
 
@@ -16,7 +18,9 @@ export type StreamAction =
   | { type: "stopping"; sessionId: string }
   | { type: "busy_resume"; sessionId: string }
   | { type: "force_idle"; sessionId: string }
-  | { type: "clear_compaction_notice"; sessionId: string };
+  | { type: "idle"; sessionId: string }
+  | { type: "clear_compaction_notice"; sessionId: string }
+  | { type: "compaction_notice"; sessionId: string; message: string };
 
 export function sessionRunsReducer(
   state: SessionRunsState,
@@ -33,8 +37,12 @@ export function sessionRunsReducer(
       return markSessionResuming(state, action.sessionId);
     case "force_idle":
       return forceSessionIdle(state, action.sessionId);
+    case "idle":
+      return markSessionIdle(state, action.sessionId);
     case "clear_compaction_notice":
       return clearCompactionNotice(state, action.sessionId);
+    case "compaction_notice":
+      return setCompactionNotice(state, action.sessionId, action.message);
     default:
       return state;
   }

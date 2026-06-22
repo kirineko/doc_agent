@@ -3107,8 +3107,8 @@ async function main() {
     #[test]
     fn clarify_skill_defines_standard_and_minimal_paths() {
         let content = crate::core::skills::read("clarify", None).unwrap();
-        assert!(content.contains("4–6"));
-        assert!(content.contains("1–2"));
+        assert!(content.contains("2–4"));
+        assert!(content.contains("0–2"));
         assert!(content.contains("逐问澄清"));
     }
 

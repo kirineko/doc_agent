@@ -2,11 +2,13 @@ use crate::agent::loop_support::build_working_messages;
 use crate::agent::provider::provider_for;
 use crate::agent::turn_control::{CancelSignal, TURN_CANCELLED};
 use crate::agent::types::{
-    AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort,
+    AgentEvent, ChatMessage, ChatRequest, CompactionTrigger, ModelId, ThinkingConfig,
+    ThinkingEffort,
 };
 use crate::core::sandbox::Sandbox;
 use crate::core::store::{Message, ToolCallRecord};
 use crate::state::AppState;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
 pub const COMPACTION_TRIGGER_RATIO: f64 = 0.85;
@@ -20,6 +22,30 @@ pub struct CompactionOutcome {
     pub compacted: bool,
     pub before_tokens: u32,
     pub after_tokens: u32,
+}
+
+pub const NOTHING_TO_COMPACT: &str = "nothing_to_compact";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompactSessionResponse {
+    pub compacted: bool,
+    pub before_tokens: u32,
+    pub after_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PrepareNoneAction {
+    TruncateFallback,
+    NoOp,
+}
+
+struct CompactSessionOptions {
+    skip_threshold: bool,
+    prepare_none_action: PrepareNoneAction,
+    profile_init: bool,
+    trigger: CompactionTrigger,
 }
 
 pub fn reserved_context_size(max_context: u32) -> u32 {
@@ -216,18 +242,29 @@ fn build_compact_input(to_compact: &[Message], tool_calls: &[ToolCallRecord]) ->
     body
 }
 
-fn truncate_for_compaction_input(body: &mut String, max_chars: usize) {
-    if body.len() <= max_chars {
+/// Truncate at or before `byte_index` so the index lies on a UTF-8 char boundary.
+fn floor_char_boundary(s: &str, byte_index: usize) -> usize {
+    let mut at = byte_index.min(s.len());
+    while at > 0 && !s.is_char_boundary(at) {
+        at -= 1;
+    }
+    at
+}
+
+fn truncate_for_compaction_input(body: &mut String, max_bytes: usize) {
+    if body.len() <= max_bytes {
         return;
     }
-    let head = max_chars / 2;
-    let tail = max_chars - head - 64;
-    let omitted = body.len() - head - tail;
+    let head_limit = max_bytes / 2;
+    let tail_limit = max_bytes - head_limit - 64;
+    let head = floor_char_boundary(body, head_limit);
     let suffix = body.split_off(head);
+    let tail_start = floor_char_boundary(&suffix, suffix.len().saturating_sub(tail_limit));
+    let omitted = tail_start;
     body.push_str("\n\n[... omitted ");
     body.push_str(&omitted.to_string());
     body.push_str(" chars ...]\n\n");
-    body.push_str(&suffix[suffix.len().saturating_sub(tail)..]);
+    body.push_str(&suffix[tail_start..]);
 }
 
 pub fn build_summary_message_content(summary: &str) -> String {
@@ -243,7 +280,7 @@ pub fn estimate_compacted_tokens(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub async fn compact_session_if_needed<R: Runtime>(
+async fn compact_session_core<R: Runtime>(
     app: &AppHandle<R>,
     state: &AppState,
     session_id: &str,
@@ -253,7 +290,7 @@ pub async fn compact_session_if_needed<R: Runtime>(
     token_count: u32,
     pending_estimate: u32,
     web_enabled: bool,
-    profile_init: bool,
+    options: CompactSessionOptions,
     cancel: &CancelSignal,
 ) -> Result<(Vec<ChatMessage>, u32, u32, Option<CompactionOutcome>), String> {
     if cancel.is_cancelled() {
@@ -262,7 +299,9 @@ pub async fn compact_session_if_needed<R: Runtime>(
     let effective = token_count.saturating_add(pending_estimate);
     let max_context = model.max_context_size();
     let reserved = reserved_context_size(max_context);
-    if !should_auto_compact(effective, max_context, COMPACTION_TRIGGER_RATIO, reserved) {
+    if !options.skip_threshold
+        && !should_auto_compact(effective, max_context, COMPACTION_TRIGGER_RATIO, reserved)
+    {
         return Ok((Vec::new(), token_count, pending_estimate, None));
     }
 
@@ -281,41 +320,54 @@ pub async fn compact_session_if_needed<R: Runtime>(
     let prepared =
         match prepare_compaction_split(&history, &tool_call_history, MAX_PRESERVED_MESSAGES) {
             Some(prepared) => prepared,
-            None => {
-                truncate_fallback(
-                    state,
-                    session_id,
-                    &history,
-                    &tool_call_history,
-                    max_context,
-                    reserved,
-                )?;
-                let working =
-                    rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
-                let after = estimate_chat_messages_tokens(&working);
-                emit_context_compacted(app, session_id, before_tokens, after);
-                emit_context_usage(app, session_id, after, max_context);
-                return Ok((
-                    working,
-                    after,
-                    0,
-                    Some(CompactionOutcome {
-                        compacted: true,
-                        before_tokens,
-                        after_tokens: after,
-                    }),
-                ));
-            }
+            None => match options.prepare_none_action {
+                PrepareNoneAction::TruncateFallback => {
+                    let archived = truncate_fallback(
+                        state,
+                        session_id,
+                        &history,
+                        &tool_call_history,
+                        max_context,
+                        reserved,
+                    )?;
+                    if !archived {
+                        return Ok((Vec::new(), token_count, pending_estimate, None));
+                    }
+                    let working = rebuild_working_messages(
+                        state,
+                        session_id,
+                        web_enabled,
+                        options.profile_init,
+                    )?;
+                    let after = estimate_chat_messages_tokens(&working);
+                    emit_context_compacted(app, session_id, before_tokens, after, options.trigger);
+                    emit_context_usage(app, session_id, after, max_context);
+                    return Ok((
+                        working,
+                        after,
+                        0,
+                        Some(CompactionOutcome {
+                            compacted: true,
+                            before_tokens,
+                            after_tokens: after,
+                        }),
+                    ));
+                }
+                PrepareNoneAction::NoOp => {
+                    return Ok((Vec::new(), token_count, pending_estimate, None));
+                }
+            },
         };
 
     let compact_input = build_compact_input(prepared.to_compact, &tool_call_history);
+    emit_compaction_started(app, session_id, options.trigger);
     let summary =
         match run_compaction_llm(session_id, turn_id, model, api_key, &compact_input, cancel).await
         {
             Ok(summary) => summary,
             Err(err) if err == TURN_CANCELLED => return Err(err),
-            Err(_) => {
-                truncate_fallback_compact_only(
+            Err(err) => {
+                let archived = truncate_fallback_compact_only(
                     state,
                     session_id,
                     prepared.to_compact,
@@ -323,10 +375,17 @@ pub async fn compact_session_if_needed<R: Runtime>(
                     max_context,
                     reserved,
                 )?;
+                if !archived {
+                    // Summarizer failed and the token-based fallback removed
+                    // nothing (e.g. manual /compact below the auto target), so
+                    // history is unchanged. Surface the original LLM error
+                    // instead of masking it as a harmless no-op.
+                    return Err(err);
+                }
                 let working =
-                    rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
+                    rebuild_working_messages(state, session_id, web_enabled, options.profile_init)?;
                 let after = estimate_chat_messages_tokens(&working);
-                emit_context_compacted(app, session_id, before_tokens, after);
+                emit_context_compacted(app, session_id, before_tokens, after, options.trigger);
                 emit_context_usage(app, session_id, after, max_context);
                 return Ok((
                     working,
@@ -359,7 +418,7 @@ pub async fn compact_session_if_needed<R: Runtime>(
             .map_err(|e| e.to_string())?;
     }
 
-    let working = rebuild_working_messages(state, session_id, web_enabled, profile_init)?;
+    let working = rebuild_working_messages(state, session_id, web_enabled, options.profile_init)?;
     let after_tokens = estimate_chat_messages_tokens(&working);
 
     {
@@ -369,7 +428,13 @@ pub async fn compact_session_if_needed<R: Runtime>(
             .map_err(|e| e.to_string())?;
     }
 
-    emit_context_compacted(app, session_id, before_tokens, after_tokens);
+    emit_context_compacted(
+        app,
+        session_id,
+        before_tokens,
+        after_tokens,
+        options.trigger,
+    );
     emit_context_usage(app, session_id, after_tokens, max_context);
 
     Ok((
@@ -382,6 +447,145 @@ pub async fn compact_session_if_needed<R: Runtime>(
             after_tokens,
         }),
     ))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn compact_session_if_needed<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    session_id: &str,
+    turn_id: &str,
+    model: ModelId,
+    api_key: Option<&str>,
+    token_count: u32,
+    pending_estimate: u32,
+    web_enabled: bool,
+    profile_init: bool,
+    cancel: &CancelSignal,
+) -> Result<(Vec<ChatMessage>, u32, u32, Option<CompactionOutcome>), String> {
+    compact_session_core(
+        app,
+        state,
+        session_id,
+        turn_id,
+        model,
+        api_key,
+        token_count,
+        pending_estimate,
+        web_enabled,
+        CompactSessionOptions {
+            skip_threshold: false,
+            prepare_none_action: PrepareNoneAction::TruncateFallback,
+            profile_init,
+            trigger: CompactionTrigger::Auto,
+        },
+        cancel,
+    )
+    .await
+}
+
+pub async fn force_compact_session<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    session_id: &str,
+) -> Result<CompactSessionResponse, String> {
+    if state.turns.is_session_busy(session_id) {
+        return Err("当前会话正在执行任务，请等待完成或先停止。".into());
+    }
+
+    let (model, web_enabled, effective, api_key, project_id) = {
+        let store = state.store.lock().map_err(|e| e.to_string())?;
+        if store
+            .get_clarify_pending(session_id)
+            .map_err(|e| e.to_string())?
+            .is_some()
+        {
+            return Err("请先回答当前澄清问题，再发送新消息。".into());
+        }
+        let session = store
+            .get_session(session_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "session not found".to_string())?;
+        let model = crate::agent::provider::openai_compat::model_from_str(&session.model);
+        let web_enabled = crate::core::web_search::is_web_search_active(&state.secrets, &store)?;
+        let history = store
+            .list_active_messages(session_id)
+            .map_err(|e| e.to_string())?;
+        let tool_call_history = store
+            .list_tool_calls_for_session(session_id)
+            .map_err(|e| e.to_string())?;
+        let token_count = store
+            .get_session_token_count(session_id)
+            .map_err(|e| e.to_string())?
+            .unwrap_or(0);
+        let effective = if token_count > 0 {
+            token_count
+        } else {
+            estimate_store_messages_tokens(&history, &tool_call_history)
+        };
+        let api_key = if model == ModelId::Mock {
+            None
+        } else {
+            state
+                .secrets
+                .get_api_key(model.provider_key())
+                .map_err(|e| e.to_string())?
+        };
+        (model, web_enabled, effective, api_key, session.project_id)
+    };
+
+    // Manual compaction must honor the same global parallel cap as normal
+    // turns, otherwise stale-state /compact invokes can exceed the 3-run limit.
+    let _run_slot = state.run_limiter.acquire(
+        session_id.to_string(),
+        "manual-compact".into(),
+        project_id.clone(),
+    )?;
+
+    let cancel =
+        state
+            .turns
+            .register(session_id.to_string(), "manual-compact".into(), project_id)?;
+
+    let compact_result = compact_session_core(
+        app,
+        state,
+        session_id,
+        "manual-compact",
+        model,
+        api_key.as_deref(),
+        effective,
+        0,
+        web_enabled,
+        CompactSessionOptions {
+            skip_threshold: true,
+            prepare_none_action: PrepareNoneAction::NoOp,
+            profile_init: false,
+            trigger: CompactionTrigger::Manual,
+        },
+        &cancel,
+    )
+    .await;
+
+    state.turns.unregister(session_id);
+
+    let (_, after_tokens, _, outcome) = compact_result?;
+
+    if let Some(outcome) = outcome {
+        return Ok(CompactSessionResponse {
+            compacted: true,
+            before_tokens: outcome.before_tokens,
+            after_tokens: outcome.after_tokens,
+            reason: None,
+        });
+    }
+
+    Ok(CompactSessionResponse {
+        compacted: false,
+        before_tokens: effective,
+        after_tokens: after_tokens.max(effective),
+        reason: Some(NOTHING_TO_COMPACT.into()),
+    })
 }
 
 fn rebuild_working_messages(
@@ -502,7 +706,7 @@ fn truncate_fallback(
     tool_calls: &[ToolCallRecord],
     max_context: u32,
     reserved: u32,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let preserve_start = fallback_preserve_start(history, tool_calls);
     truncate_from_candidates(
         state,
@@ -522,7 +726,7 @@ fn truncate_fallback_compact_only(
     tool_calls: &[ToolCallRecord],
     max_context: u32,
     reserved: u32,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     truncate_from_candidates(
         state,
         session_id,
@@ -575,7 +779,7 @@ fn truncate_from_candidates(
     preserve_start: usize,
     max_context: u32,
     reserved: u32,
-) -> Result<(), String> {
+) -> Result<bool, String> {
     let target = max_context.saturating_sub(reserved);
     let mut remaining = estimate_store_messages_tokens(candidates, tool_calls);
     let mut to_archive = Vec::new();
@@ -592,7 +796,7 @@ fn truncate_from_candidates(
     to_archive =
         expand_archive_ids_for_tool_pairs(candidates, tool_calls, preserve_start, to_archive);
     if to_archive.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let store = state.store.lock().map_err(|e| e.to_string())?;
     store
@@ -601,7 +805,7 @@ fn truncate_from_candidates(
     store
         .set_session_token_count(session_id, target.min(remaining))
         .map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(true)
 }
 
 pub fn emit_context_usage<R: Runtime>(
@@ -631,6 +835,7 @@ pub fn emit_context_compacted<R: Runtime>(
     session_id: &str,
     before_tokens: u32,
     after_tokens: u32,
+    trigger: CompactionTrigger,
 ) {
     let _ = app.emit(
         "agent-event",
@@ -638,6 +843,21 @@ pub fn emit_context_compacted<R: Runtime>(
             session_id: session_id.to_string(),
             before_tokens,
             after_tokens,
+            trigger,
+        },
+    );
+}
+
+pub fn emit_compaction_started<R: Runtime>(
+    app: &AppHandle<R>,
+    session_id: &str,
+    trigger: CompactionTrigger,
+) {
+    let _ = app.emit(
+        "agent-event",
+        AgentEvent::CompactionStarted {
+            session_id: session_id.to_string(),
+            trigger,
         },
     );
 }

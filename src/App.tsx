@@ -120,6 +120,7 @@ function App() {
             onPasteImage={ws.addPastedImage}
             onRemoveAttachment={ws.removePendingAttachment}
             onDismissVisionToast={ws.dismissVisionToast}
+            onNotifyToast={ws.notifyToast}
             onSubmitClarify={(payload) => void ws.submitClarifyAnswer(payload)}
             onInitStarter={() => void ws.handleInitStarter()}
             onDismissSendHint={ws.dismissSendHint}

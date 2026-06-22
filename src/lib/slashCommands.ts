@@ -141,10 +141,19 @@ const SLASH_TEMPLATE_SEEDS: SlashTemplateSeed[] = [
   {
     id: "ppt:edit",
     category: "ppt",
-    label: "编辑 PPT",
-    description: "修改已有 .pptx",
-    keywords: ["ppt", "修改", "编辑"],
-    prompt: "请修改 {{文件名.pptx}}：{{改动说明}}（如改文案、换图、增删页）。",
+    label: "脚本编辑 PPT",
+    description: "用 PptxGenJS 脚本修改已有 .pptx",
+    keywords: ["ppt", "修改", "脚本", "pptxgenjs"],
+    prompt: "请用脚本修改 {{文件名.pptx}}：{{改动说明}}。先读 pptx/pptxgenjs.md 再 skill_run。",
+  },
+  {
+    id: "ppt:edit-ooxml",
+    category: "ppt",
+    label: "精准修改 PPT",
+    description: "OOXML 解包改 slide XML 再回包",
+    keywords: ["ppt", "ooxml", "xml", "精准", "修改"],
+    prompt:
+      "请精准修改 {{文件名.pptx}}：{{改动说明}}。务必走 OOXML：用 ooxml_unpack 解包，编辑 ppt/slides/slide{N}.xml，再 ooxml_pack 回包并保留版式；禁用 skill_run / PptxGenJS。",
   },
   {
     id: "excel:create",
@@ -238,6 +247,14 @@ const SLASH_COMMAND_ENTRIES: SlashCommandEntry[] = [
     description: "澄清并生成/更新 AGENTS.md",
     keywords: ["init", "agents", "配置", "profile", "偏好", "agents.md"],
     acceptsTail: true,
+  },
+  {
+    kind: "command",
+    id: "compact",
+    category: "command",
+    label: "压缩上下文",
+    description: "手动摘要较早对话以释放上下文空间",
+    keywords: ["compact", "压缩", "上下文", "摘要", "token"],
   },
 ];
 

@@ -1,3 +1,4 @@
+use crate::agent::compaction::{force_compact_session, CompactSessionResponse};
 use crate::agent::model_catalog::ModelCatalog;
 use crate::agent::provider::openai_compat::{
     encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path, model_from_str,
@@ -381,6 +382,15 @@ pub fn save_upload(
         path: relative_path,
         mime: req.mime,
     })
+}
+
+#[tauri::command]
+pub async fn compact_session(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    session_id: String,
+) -> Result<CompactSessionResponse, String> {
+    force_compact_session(&app, state.inner(), &session_id).await
 }
 
 #[tauri::command]

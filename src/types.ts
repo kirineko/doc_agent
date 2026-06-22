@@ -130,6 +130,13 @@ export interface ClarifyPending {
   created_at: string;
 }
 
+export interface CompactSessionResponse {
+  compacted: boolean;
+  before_tokens: number;
+  after_tokens: number;
+  reason?: string | null;
+}
+
 export type AgentEvent =
   | { kind: "reasoning_token"; session_id: string; turn_id: string; delta: string }
   | { kind: "content_token"; session_id: string; turn_id: string; delta: string }
@@ -167,6 +174,12 @@ export type AgentEvent =
       session_id: string;
       before_tokens: number;
       after_tokens: number;
+      trigger: "auto" | "manual";
+    }
+  | {
+      kind: "compaction_started";
+      session_id: string;
+      trigger: "auto" | "manual";
     }
   | { kind: "error"; session_id: string; turn_id: string; message: string }
   | { kind: "session_title_updated"; session_id: string; title: string };

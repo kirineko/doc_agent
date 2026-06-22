@@ -50,6 +50,8 @@ import {
   parseClarifyQuestion,
 } from "../lib/clarifyBrief";
 import { loadModels, modelSupportsVision } from "../lib/models";
+import { isCompactMessage } from "../lib/compactMessage";
+import { COMPACTION_MANUAL_IN_PROGRESS_NOTICE } from "../lib/compactionNotice";
 import {
   blobToBase64,
   extensionForMime,
@@ -61,6 +63,7 @@ import {
 import {
   API_PROVIDERS,
   type AgentEvent,
+  type CompactSessionResponse,
   type Message,
   type MessageBundle,
   type MessageAttachment,
@@ -625,6 +628,82 @@ export function useWorkspace() {
       return;
     }
 
+    if (isCompactMessage(trimmed)) {
+      const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
+      const blocker = getSendBlocker({
+        activeProjectId: activeProjectRef.current,
+        model,
+        apiKeyStatus,
+        models,
+        parallelAtCapacity: isParallelAtCapacity(sessionRunsRef.current),
+      });
+      if (blocker) {
+        showSendBlocker(blocker);
+        return;
+      }
+      const sessionId = await ensureActiveSession();
+      if (!sessionId) {
+        showSendBlocker({ kind: "no_project" });
+        return;
+      }
+      const runStatus = sessionRunStatus(sessionRunsRef.current, sessionId);
+      if (runStatus === "running" || runStatus === "stopping") {
+        notifyToast("当前会话正在执行任务，请等待完成或先停止。");
+        return;
+      }
+      try {
+        setInput("");
+        setSendHint(null);
+        dispatchSessionRuns({ type: "busy", sessionId });
+        dispatchSessionRuns({
+          type: "compaction_notice",
+          sessionId,
+          message: COMPACTION_MANUAL_IN_PROGRESS_NOTICE,
+        });
+        const result = await invoke<CompactSessionResponse>("compact_session", { sessionId });
+        if (!result.compacted) {
+          dispatchSessionRuns({ type: "idle", sessionId });
+          if (!isStaleSessionResult(sessionId, activeSessionRef.current)) {
+            dispatchSessionRuns({
+              type: "compaction_notice",
+              sessionId,
+              message: "当前上下文较短，无需压缩",
+            });
+          }
+          return;
+        }
+        if (!isStaleSessionResult(sessionId, activeSessionRef.current)) {
+          await reloadMessages(sessionId);
+          if (isStaleSessionResult(sessionId, activeSessionRef.current)) {
+            // Stale: backend compacted event is dropped too, so clear the
+            // in-progress notice to avoid a stale "please wait" on return.
+            dispatchSessionRuns({ type: "idle", sessionId });
+            dispatchSessionRuns({ type: "clear_compaction_notice", sessionId });
+            return;
+          }
+          const usage = await invoke<{ ratio: number }>("get_session_context_usage", {
+            sessionId,
+          });
+          if (isStaleSessionResult(sessionId, activeSessionRef.current)) {
+            dispatchSessionRuns({ type: "idle", sessionId });
+            dispatchSessionRuns({ type: "clear_compaction_notice", sessionId });
+            return;
+          }
+          setContextRatio(usage.ratio);
+        }
+        // Manual compact is not a turn — always clear local busy for this session.
+        dispatchSessionRuns({ type: "idle", sessionId });
+      } catch (error) {
+        console.error(error);
+        dispatchSessionRuns({ type: "idle", sessionId });
+        dispatchSessionRuns({ type: "clear_compaction_notice", sessionId });
+        if (!isStaleSessionResult(sessionId, activeSessionRef.current)) {
+          setVisionToast(String(error));
+        }
+      }
+      return;
+    }
+
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
     if (attachments.length > 0 && !modelSupportsVision(models, model)) {
       setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
@@ -758,6 +837,10 @@ export function useWorkspace() {
 
   const dismissVisionToast = useCallback(() => {
     setVisionToast(null);
+  }, []);
+
+  const notifyToast = useCallback((message: string) => {
+    setVisionToast(message);
   }, []);
 
   const notifyInvalidImagePick = useCallback(() => {
@@ -1017,6 +1100,7 @@ export function useWorkspace() {
     addPastedImage,
     removePendingAttachment,
     dismissVisionToast,
+    notifyToast,
     notifyInvalidImagePick,
     stream,
     sessionRunStatuses,

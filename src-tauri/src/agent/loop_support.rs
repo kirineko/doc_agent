@@ -375,7 +375,9 @@ mod tests {
             build_working_messages(&[], &[], Some("hello"), &[], false, Some(&sandbox), false)
                 .unwrap();
         let system = messages[0].content.as_ref().unwrap();
-        assert!(!system.contains("## 项目配置（AGENTS.md）"));
+        assert!(read_agents_md_for_inject(&sandbox).is_none());
+        // Base system prompt references the heading in clarify rules; injection adds a second occurrence.
+        assert_eq!(system.matches("## 项目配置（AGENTS.md）").count(), 1);
     }
 
     #[test]

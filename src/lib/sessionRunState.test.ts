@@ -93,6 +93,42 @@ describe("sessionRunState", () => {
     expect(deriveActiveStream(state, sessionId).busy).toBe(true);
   });
 
+  it("keeps idle session idle on manual compaction but runs on auto", () => {
+    const sessionId = "session-a";
+    const manual = applyEventToSessionRuns(initialSessionRunsState, {
+      kind: "context_compacted",
+      session_id: sessionId,
+      before_tokens: 100,
+      after_tokens: 40,
+      trigger: "manual",
+    });
+    expect(manual.bySession[sessionId]?.status).toBe("idle");
+
+    const auto = applyEventToSessionRuns(initialSessionRunsState, {
+      kind: "context_compacted",
+      session_id: sessionId,
+      before_tokens: 100,
+      after_tokens: 40,
+      trigger: "auto",
+    });
+    expect(auto.bySession[sessionId]?.status).toBe("running");
+  });
+
+  it("clears manual compact busy state on context_compacted", () => {
+    const sessionId = "session-a";
+    let state = markSessionRunning(initialSessionRunsState, sessionId);
+    state = applyEventToSessionRuns(state, {
+      kind: "context_compacted",
+      session_id: sessionId,
+      before_tokens: 100,
+      after_tokens: 40,
+      trigger: "manual",
+    });
+    expect(state.bySession[sessionId]?.status).toBe("idle");
+    expect(state.bySession[sessionId]?.busy).toBe(false);
+    expect(state.bySession[sessionId]?.compactionNotice).toContain("手动");
+  });
+
   it("counts running and stopping sessions toward parallel capacity", () => {
     let state = initialSessionRunsState;
     for (let i = 0; i < MAX_PARALLEL_TURNS; i++) {

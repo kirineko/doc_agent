@@ -58,6 +58,7 @@ pub fn run() {
             ipc::get_session_context_usage,
             ipc::save_upload,
             ipc::list_messages,
+            ipc::compact_session,
             ipc::send_message,
             ipc::submit_clarify_answer,
             ipc::cancel_clarify,

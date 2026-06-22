@@ -10,6 +10,7 @@ import { orderMentionFileMatchesForDisplay, searchMentionFiles } from "../lib/me
 import { applyMention, detectMention, expandMentionDirectory } from "../lib/mention";
 import { isVisibleMessage } from "../lib/messages";
 import { detectSlash, insertSlashPrompt, applySlashCommand } from "../lib/slash";
+import { isCompactionInProgressNotice } from "../lib/compactionNotice";
 import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
 import { SLASH_COMMANDS, isSlashCommandEntry, isSlashTemplate } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
@@ -69,6 +70,7 @@ interface ChatPanelProps {
   runStatus?: SessionRunStatus;
   parallelAtCapacity?: boolean;
   onCancelTurn?: () => void;
+  onNotifyToast?: (message: string) => void;
 }
 
 export function ChatPanel({
@@ -110,6 +112,7 @@ export function ChatPanel({
   runStatus = "idle",
   parallelAtCapacity = false,
   onCancelTurn,
+  onNotifyToast,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -208,6 +211,7 @@ export function ChatPanel({
 
   useEffect(() => {
     if (!compactionNotice) return;
+    if (isCompactionInProgressNotice(compactionNotice)) return;
     const timer = window.setTimeout(() => {
       onDismissCompactionNotice?.();
     }, 5000);
@@ -253,6 +257,13 @@ export function ChatPanel({
       showSendBlocker?.({ kind: "clarify_pending" });
       return;
     }
+    if (
+      command.id === "compact" &&
+      (runStatus === "running" || runStatus === "stopping")
+    ) {
+      onNotifyToast?.("当前会话正在执行任务，请等待完成或先停止。");
+      return;
+    }
     if (projectId && ensureActiveSession) {
       await ensureActiveSession();
     }
@@ -267,7 +278,7 @@ export function ChatPanel({
           };
       onInputChange(result.text);
       setCursor(result.selectionEnd);
-      setSlashDismissed(false);
+      setSlashDismissed(true);
       setSlashMenuOpen(false);
       focusTextareaAt(result.cursor, result.selectionEnd);
       return;
@@ -383,7 +394,13 @@ export function ChatPanel({
         )}
 
         {compactionNotice && (
-          <div className="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-fg-secondary">
+          <div
+            className={
+              isCompactionInProgressNotice(compactionNotice)
+                ? "rounded-lg border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300"
+                : "rounded-lg border border-border bg-surface px-3 py-2 text-xs text-fg-secondary"
+            }
+          >
             {compactionNotice}
           </div>
         )}

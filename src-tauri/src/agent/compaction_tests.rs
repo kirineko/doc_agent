@@ -3,6 +3,7 @@ use super::{
     MAX_PRESERVED_MESSAGES,
 };
 use crate::core::store::{Message, ToolCallRecord};
+use crate::state::AppState;
 
 #[test]
 fn deepseek_ratio_triggers_first() {
@@ -222,4 +223,147 @@ fn expand_archive_includes_tools_for_archived_assistant() {
     assert_eq!(expanded.len(), 2);
     assert!(expanded.contains(&"m2".to_string()));
     assert!(expanded.contains(&"m3".to_string()));
+}
+
+#[test]
+fn force_compact_short_history_is_noop() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let session = store
+                .create_session(&project.id, "s1", "mock", false, "high")
+                .unwrap();
+            store
+                .add_message(&session.id, "user", Some("hi"), None, None, None)
+                .unwrap();
+            store
+                .add_message(&session.id, "assistant", Some("hello"), None, None, None)
+                .unwrap();
+            session.id
+        };
+        let resp = super::force_compact_session(&app.handle(), &state, &session_id)
+            .await
+            .unwrap();
+        assert!(!resp.compacted);
+        assert_eq!(resp.reason.as_deref(), Some(super::NOTHING_TO_COMPACT));
+    });
+}
+
+#[test]
+fn force_compact_rejects_busy_session() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let (session_id, project_id) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", dir.path().join("project").to_str().unwrap())
+                .unwrap();
+            std::fs::create_dir_all(&project.root_path).unwrap();
+            let session = store
+                .create_session(&project.id, "s1", "mock", false, "high")
+                .unwrap();
+            (session.id, project.id)
+        };
+        state
+            .turns
+            .register(session_id.clone(), "t1".into(), project_id)
+            .unwrap();
+        let err = super::force_compact_session(&app.handle(), &state, &session_id)
+            .await
+            .unwrap_err();
+        assert!(err.contains("正在执行任务"));
+    });
+}
+
+#[test]
+fn truncate_fallback_reports_false_when_nothing_archived() {
+    // History far below the truncate target must archive nothing and report
+    // false, so manual /compact does not falsely claim success.
+    let dir = tempfile::tempdir().unwrap();
+    let state = AppState::new(dir.path().join("data")).unwrap();
+    let candidates = vec![msg("m1", "user", "hi"), msg("m2", "assistant", "hello")];
+    let archived = super::truncate_fallback_compact_only(
+        &state,
+        "s1",
+        &candidates,
+        &[],
+        1_000_000,
+        super::reserved_context_size(1_000_000),
+    )
+    .unwrap();
+    assert!(!archived);
+}
+
+#[test]
+fn force_compact_rejects_when_run_limiter_full() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", dir.path().join("project").to_str().unwrap())
+                .unwrap();
+            std::fs::create_dir_all(&project.root_path).unwrap();
+            let session = store
+                .create_session(&project.id, "s1", "mock", false, "high")
+                .unwrap();
+            store
+                .add_message(&session.id, "user", Some("hi"), None, None, None)
+                .unwrap();
+            store
+                .add_message(&session.id, "assistant", Some("hello"), None, None, None)
+                .unwrap();
+            session.id
+        };
+        let _g0 = state
+            .run_limiter
+            .acquire("other-0".into(), "t0".into(), "p".into())
+            .unwrap();
+        let _g1 = state
+            .run_limiter
+            .acquire("other-1".into(), "t1".into(), "p".into())
+            .unwrap();
+        let _g2 = state
+            .run_limiter
+            .acquire("other-2".into(), "t2".into(), "p".into())
+            .unwrap();
+        let err = super::force_compact_session(&app.handle(), &state, &session_id)
+            .await
+            .unwrap_err();
+        assert_eq!(err, crate::agent::run_limiter::GLOBAL_PARALLEL_FULL_MSG);
+    });
+}
+
+#[test]
+fn truncate_for_compaction_input_handles_utf8_without_panic() {
+    // 全中文内容（3 字节/字符），按字节切 head 会落在字符中间，必须回退到字符边界
+    let mut body = "汉".repeat(150_000);
+    assert!(body.len() > 200_000);
+    super::truncate_for_compaction_input(&mut body, 200_000);
+    assert!(body.contains("[... omitted"));
+    assert!(body.len() <= 200_000 + 128);
 }

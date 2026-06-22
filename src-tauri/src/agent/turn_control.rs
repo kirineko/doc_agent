@@ -157,6 +157,12 @@ impl TurnRegistry {
             .ok()
             .is_some_and(|g| g.active.contains_key(session_id))
     }
+
+    pub fn is_session_busy(&self, session_id: &str) -> bool {
+        self.inner.lock().ok().is_some_and(|g| {
+            g.active.contains_key(session_id) || g.reserved.contains_key(session_id)
+        })
+    }
 }
 
 pub fn is_session_busy_user_error(err: &str) -> bool {

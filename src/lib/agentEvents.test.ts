@@ -421,9 +421,72 @@ describe("applyAgentEvent", () => {
         session_id: sessionId,
         before_tokens: 90_000,
         after_tokens: 30_000,
+        trigger: "auto",
       },
       sessionId,
     );
-    expect(next.compactionNotice).toContain("压缩");
+    expect(next.compactionNotice).toContain("自动");
+  });
+
+  it("shows in-progress notice from compaction_started", () => {
+    const auto = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "compaction_started",
+        session_id: sessionId,
+        trigger: "auto",
+      },
+      sessionId,
+    );
+    expect(auto.compactionNotice).toBe("正在压缩较早的对话历史…");
+
+    const manual = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "compaction_started",
+        session_id: sessionId,
+        trigger: "manual",
+      },
+      sessionId,
+    );
+    expect(manual.compactionNotice).toBe("正在压缩上下文，请稍候…");
+  });
+
+  it("clears in-progress notice on error", () => {
+    const busy = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "compaction_started",
+        session_id: sessionId,
+        trigger: "auto",
+      },
+      sessionId,
+    );
+    const next = applyAgentEvent(
+      busy,
+      {
+        kind: "error",
+        session_id: sessionId,
+        turn_id: "t1",
+        message: "quota exceeded",
+      },
+      sessionId,
+    );
+    expect(next.compactionNotice).toBeNull();
+  });
+
+  it("shows manual compaction notice", () => {
+    const next = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "context_compacted",
+        session_id: sessionId,
+        before_tokens: 90_000,
+        after_tokens: 30_000,
+        trigger: "manual",
+      },
+      sessionId,
+    );
+    expect(next.compactionNotice).toContain("手动");
   });
 });
