@@ -18,6 +18,7 @@ import { hasAnyLlmKey } from "./lib/credentials";
 function App() {
   const ws = useWorkspace();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelFlyoutOpen, setModelFlyoutOpen] = useState(false);
   useAppUpdater();
 
   const showCredentialsHint = useMemo(
@@ -90,6 +91,7 @@ function App() {
             onSessionConfigChange={(patch) => void ws.updateSessionConfig(patch)}
             onEnableWebSearch={() => void ws.enableWebSearch()}
             onDisableWebSearch={() => void ws.disableWebSearch()}
+            onModelFlyoutOpenChange={setModelFlyoutOpen}
           />
         }
         chat={
@@ -135,6 +137,11 @@ function App() {
             }
             parallelAtCapacity={ws.parallelAtCapacity}
             onCancelTurn={() => void ws.cancelTurn()}
+            composerFocusBlockers={{
+              settingsOpen,
+              credentialsOpen: ws.credentialsOpen,
+              modelFlyoutOpen,
+            }}
           />
         }
         right={

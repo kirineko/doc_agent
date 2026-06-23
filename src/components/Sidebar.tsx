@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { pathBasename } from "../lib/pathUtils";
 import { type SessionConfig } from "../lib/sessionConfig";
 import type { SessionRunStatus } from "../lib/sessionRunState";
@@ -31,6 +31,7 @@ interface SidebarProps {
   onSessionConfigChange: (patch: Partial<SessionConfig>) => void;
   onEnableWebSearch: () => void;
   onDisableWebSearch: () => void;
+  onModelFlyoutOpenChange?: (open: boolean) => void;
 }
 
 export function Sidebar({
@@ -55,9 +56,22 @@ export function Sidebar({
   onSessionConfigChange,
   onEnableWebSearch,
   onDisableWebSearch,
+  onModelFlyoutOpenChange,
 }: SidebarProps) {
   const modelTriggerRef = useRef<HTMLButtonElement>(null);
   const [modelFlyoutOpen, setModelFlyoutOpen] = useState(false);
+
+  useEffect(() => {
+    onModelFlyoutOpenChange?.(modelFlyoutOpen);
+  }, [modelFlyoutOpen, onModelFlyoutOpenChange]);
+
+  function closeModelFlyout() {
+    setModelFlyoutOpen(false);
+  }
+
+  function toggleModelFlyout() {
+    setModelFlyoutOpen((open) => !open);
+  }
 
   async function pickProject() {
     const selected = await open({ directory: true, multiple: false });
@@ -154,7 +168,7 @@ export function Sidebar({
             type="button"
             className="config-surface w-full rounded-md px-2.5 py-2 text-left text-xs text-fg hover:border-border-hover"
             aria-expanded={modelFlyoutOpen}
-            onClick={() => setModelFlyoutOpen((open) => !open)}
+            onClick={toggleModelFlyout}
           >
             <div>{modelSummary}</div>
             <div className="mt-0.5 text-[10px] text-fg-muted">
@@ -168,7 +182,7 @@ export function Sidebar({
             config={sessionConfig}
             locked={modelLocked}
             apiKeyStatus={apiKeyStatus}
-            onClose={() => setModelFlyoutOpen(false)}
+            onClose={closeModelFlyout}
             onChange={onSessionConfigChange}
           />
         </div>

@@ -51,6 +51,13 @@
 - **project-backlog**：OpenSpec 维护待办与优先级（BL-006 等项目级配置已标记完成）
 - **AGENTS.md / Codex skills**：仓库贡献约定与 OpenSpec 工作流 skill 镜像至 `.codex/skills/`
 
+### Chat 输入区焦点策略
+
+- **回合结束 refocus**：Agent 回合结束、composer 从 disabled 恢复可编辑时，自动聚焦 textarea，无需手动点击即可继续输入（不再因焦点停在侧栏而跳过）
+- **切换会话 refocus**：侧栏切换或新建会话后自动聚焦输入框
+- **Overlay 抑制**：Settings/Credentials 抽屉、图片预览、斜杠/@ 弹层、Model Flyout、更新遮罩打开，或未选项目、composer 不可编辑时，不自动抢焦点
+- **IME 守卫**：composer 内使用输入法组合输入时，按 Enter 确认候选词不再误触发发送（`isComposing` / `keyCode === 229` 时不拦截按键）
+
 ---
 
 ## [2026.6.19] — 2026-06-19

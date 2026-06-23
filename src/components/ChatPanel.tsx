@@ -12,6 +12,8 @@ import { isVisibleMessage } from "../lib/messages";
 import { detectSlash, insertSlashPrompt, applySlashCommand } from "../lib/slash";
 import { isCompactionInProgressNotice } from "../lib/compactionNotice";
 import { handleChatInputKeyDown } from "../lib/chatInputKeyDown";
+import type { ComposerFocusBlockers } from "../lib/composerFocusPolicy";
+import { useComposerFocus } from "../hooks/useComposerFocus";
 import { SLASH_COMMANDS, isSlashCommandEntry, isSlashTemplate } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { PARALLEL_LIMIT_MESSAGE, STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
@@ -71,6 +73,10 @@ interface ChatPanelProps {
   parallelAtCapacity?: boolean;
   onCancelTurn?: () => void;
   onNotifyToast?: (message: string) => void;
+  composerFocusBlockers?: Pick<
+    ComposerFocusBlockers,
+    "settingsOpen" | "credentialsOpen" | "modelFlyoutOpen"
+  >;
 }
 
 export function ChatPanel({
@@ -113,6 +119,7 @@ export function ChatPanel({
   parallelAtCapacity = false,
   onCancelTurn,
   onNotifyToast,
+  composerFocusBlockers,
 }: ChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -249,6 +256,36 @@ export function ChatPanel({
   const composerDisabled = inputDisabled || importing;
   const showSlashPopup = Boolean(slash && !slashDismissed && !composerDisabled && !slashMenuOpen);
   const showMentionPopup = Boolean(mention && !mentionDismissed && fileEntries.length > 0 && !composerDisabled);
+
+  const focusBlockers = useMemo(
+    () => ({
+      settingsOpen: composerFocusBlockers?.settingsOpen,
+      credentialsOpen: composerFocusBlockers?.credentialsOpen,
+      modelFlyoutOpen: composerFocusBlockers?.modelFlyoutOpen,
+      imagePreviewOpen: previewImageSrc !== null,
+      slashMenuOpen,
+      mentionPopupOpen: showMentionPopup,
+      slashPopupOpen: showSlashPopup,
+    }),
+    [
+      composerFocusBlockers?.settingsOpen,
+      composerFocusBlockers?.credentialsOpen,
+      composerFocusBlockers?.modelFlyoutOpen,
+      previewImageSrc,
+      slashMenuOpen,
+      showMentionPopup,
+      showSlashPopup,
+    ],
+  );
+
+  useComposerFocus({
+    textareaRef,
+    projectId,
+    sessionId,
+    composerDisabled,
+    importing,
+    blockers: focusBlockers,
+  });
 
   async function pickSlashCommand(commandId: string) {
     const command = SLASH_COMMANDS.find((item) => item.id === commandId);

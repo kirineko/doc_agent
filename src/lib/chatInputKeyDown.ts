@@ -34,6 +34,10 @@ export function handleChatInputKeyDown(
   event: KeyboardEvent<HTMLTextAreaElement>,
   ctx: ChatInputKeyDownContext,
 ): void {
+  // IME 组合中（中文/日文输入法选词）不拦截任何键，交给浏览器原生处理，
+  // 否则 Enter 确认候选词会误触发发送、Backspace 误删占位符等。
+  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+
   if (event.key === "Backspace" && !event.shiftKey) {
     const deletedPh = deletePlaceholderBeforeCursor(ctx.input, ctx.cursor);
     if (deletedPh) {
