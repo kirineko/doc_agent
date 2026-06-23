@@ -42,8 +42,8 @@
 
 ## 7. 验收与对齐
 
-- [ ] 7.1 `npm run dev` 手测：跑一轮 skill_run 产出 docx+xlsx，产物 Tab 列出三项、徽标为 3、打开与定位均生效
-- [ ] 7.2 手测：`ooxml_unpack`→`ooxml_pack` 流程，产物列表只含最终 docx，不含 `.cache/ooxml/` 中间目录
-- [ ] 7.3 手测：Tab 切换不改上下布局；折叠工具链时 Tab 栏收起
-- [ ] 7.4 手测：新消息发送后产物清空、徽标归零；刷新后产物丢失（符合 MVP-0 预期）
+- [x] 7.1 `npm run dev` 手测：跑一轮 skill_run 产出 docx+xlsx，产物 Tab 列出三项、徽标为 3、打开与定位均生效
+- [x] 7.2 手测：`ooxml_unpack`→`ooxml_pack` 流程，产物列表只含最终 docx，不含 `.cache/ooxml/` 中间目录
+- [x] 7.3 手测：Tab 切换不改上下布局；折叠工具链时 Tab 栏收起
+- [x] 7.4 手测：新消息发送后产物清空、徽标归零；刷新后产物丢失（符合 MVP-0 预期）
 - [x] 7.5 更新 `openspec/specs/project-backlog/spec.md` BL-007：标注「MVP 列表+打开已实现（build-artifacts-panel）」，diff/undo 仍开放

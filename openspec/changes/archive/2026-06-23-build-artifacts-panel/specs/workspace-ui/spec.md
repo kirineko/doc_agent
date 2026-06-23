@@ -26,7 +26,7 @@
 
 ### Requirement: 本轮构建产物列表
 
-系统 SHALL 在「构建产物」Tab 内展示「本轮」Agent 产生或修改的项目相对路径列表。产物列表 MUST 按当前 turn 累积：新 turn（用户发送新消息）开始时清空。产物路径 MUST 去重。每个产物项 SHALL 标注其来源工具调用（工具中文名）。无产物时 MUST 展示空态文案。
+系统 SHALL 在「构建产物」Tab 内展示「本轮」Agent 产生或修改的项目相对路径列表。产物列表 MUST 按当前 turn 累积：新 turn（用户发送新消息）开始时清空。产物路径 MUST 去重。每个产物项 SHALL 标注其来源工具调用（工具中文名）。无产物时 MUST 展示空态文案。产物状态 MUST 按 `session_id` 维护于前端内存（与 per-session 工具调用链 `liveTools` 一致）；切换 `activeSessionId` 时 MUST 恢复该 session 的 `turnArtifacts`，MUST NOT 写入数据库或 `localStorage`。
 
 #### Scenario: 累积本轮产物
 
@@ -48,10 +48,15 @@
 - **WHEN** 本轮 Agent 未产生或修改任何文件（如纯对话或仅只读工具）
 - **THEN** 「构建产物」Tab 展示空态文案（如「本轮没有产生或修改文件」），徽标为 0
 
-#### Scenario: 仅当前会话本轮可见
+#### Scenario: 切换会话保留该 session 的产物
 
-- **WHEN** 用户刷新应用或切换会话后返回
-- **THEN** 产物列表为空（不持久化）；空态文案不暗示历史产物可恢复
+- **WHEN** session A 在本轮已累积产物，用户切换到 session B 后再切回 A
+- **THEN** A 的「构建产物」Tab 恢复展示切换前累积的产物列表与徽标（与 per-session 工具调用链行为一致）
+
+#### Scenario: 刷新应用后产物不持久化
+
+- **WHEN** 用户刷新应用或重启进程
+- **THEN** 各 session 的产物列表为空；MUST NOT 从磁盘恢复历史产物
 
 #### Scenario: 不显示 .cache 中间产物
 
