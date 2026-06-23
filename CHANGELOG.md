@@ -6,18 +6,29 @@
 
 ---
 
-## [2026.6.23] — 2026-06-23
-
-本版本带来项目级 Agent 配置、并行文件占用提示、澄清流程修复，PPT OOXML 斜杠命令与手动上下文压缩，以及右侧「构建产物」面板。
+## [Unreleased]
 
 ### 构建产物面板（BL-007 MVP）
 
 - **Tab 切换**：右侧上半区新增「工具调用链 / 构建产物」Tab；徽标显示本轮去重产物数；切换 Tab 不影响上下分栏布局与折叠状态
-- **本轮产物列表**：从 `tool_result.changed_paths` 按 turn 累积、按路径去重，标注来源工具中文名；新消息发送时清空；按 session 内存保留（切换会话可恢复，与工具调用链一致）；刷新/重启后不持久化
+- **本轮产物列表**：从 `tool_result.changed_paths` 按 turn 累积、按路径去重，标注来源工具中文名；新消息发送时清空；按 session 内存保留（切换会话可恢复，与工具调用链一致）；刷新/重启后清空
 - **打开与定位**：每项支持「打开」（默认程序）与「定位」（系统文件管理器）；目录与文件统一支持
 - **中间产物过滤**：后端 `extract_changed_paths` 过滤 `.cache/` 路径，产物列表不展示 OOXML 解包等中间目录
 - **手动压缩不清空产物**：`/compact` 使用独立 `busy_compact` 路径，不丢失当前 turn 产物列表
 - **Non-Goals（留待后续）**：diff 预览、撤销/回滚、历史会话产物持久化
+
+### Chat 输入区焦点策略
+
+- **回合结束 refocus**：Agent 回合结束、composer 从 disabled 恢复可编辑时，自动聚焦 textarea，无需手动点击即可继续输入（不再因焦点停在侧栏而跳过）
+- **切换会话 refocus**：侧栏切换或新建会话后自动聚焦输入框
+- **Overlay 抑制**：Settings/Credentials 抽屉、图片预览、斜杠/@ 弹层、Model Flyout、更新遮罩打开，或未选项目、composer 不可编辑时，不自动抢焦点
+- **IME 守卫**：composer 内使用输入法组合输入时，按 Enter 确认候选词不再误触发发送（`isComposing` / `keyCode === 229` 时不拦截按键）
+
+---
+
+## [2026.6.23] — 2026-06-23
+
+本版本带来项目级 Agent 配置、并行文件占用提示、澄清流程修复，以及 PPT OOXML 斜杠命令与手动上下文压缩。
 
 ### PPT OOXML 精准修改与手动上下文压缩
 
@@ -50,13 +61,6 @@
 
 - **project-backlog**：OpenSpec 维护待办与优先级（BL-006 等项目级配置已标记完成）
 - **AGENTS.md / Codex skills**：仓库贡献约定与 OpenSpec 工作流 skill 镜像至 `.codex/skills/`
-
-### Chat 输入区焦点策略
-
-- **回合结束 refocus**：Agent 回合结束、composer 从 disabled 恢复可编辑时，自动聚焦 textarea，无需手动点击即可继续输入（不再因焦点停在侧栏而跳过）
-- **切换会话 refocus**：侧栏切换或新建会话后自动聚焦输入框
-- **Overlay 抑制**：Settings/Credentials 抽屉、图片预览、斜杠/@ 弹层、Model Flyout、更新遮罩打开，或未选项目、composer 不可编辑时，不自动抢焦点
-- **IME 守卫**：composer 内使用输入法组合输入时，按 Enter 确认候选词不再误触发发送（`isComposing` / `keyCode === 229` 时不拦截按键）
 
 ---
 
