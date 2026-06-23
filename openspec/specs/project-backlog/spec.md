@@ -47,10 +47,10 @@
 
 ### BL-007 Agent 文件变更 diff / 撤销（构建产物信任）
 
-- **现状**：`tool_result.changed_paths` 已回填；无 UI 展示本 turn 改了哪些文件，无 diff、无回滚。
-- **目标**：办公场景信任感——用户可见「本 turn 构建产物/变更列表」，MVP 为列表 + 在系统文件管理器中定位；进阶为 diff 预览与一键撤销（需快照策略）。
-- **建议 change**：`file-change-diff-undo`（MVP 范围在 proposal 明确）
-- **关联**：`workspace-ui/spec.md`、`agent/loop_tool_batch.rs`、`useProjectFiles.ts`
+- **现状**：MVP 列表+打开已实现（change `build-artifacts-panel`，2026-06-23）。右侧栏上半区新增「构建产物」Tab（与工具调用链切换），按 turn 累积 `changed_paths` 去重展示交付物（`.cache` 中间产物已过滤）；每项支持「用默认程序打开」（复用 `open_project_file`）与「在文件夹中显示」（新增 `reveal_project_file` IPC）。纯前端累积，刷新/重载后丢失。
+- **目标**：办公场景信任感——用户可见「本 turn 构建产物/变更列表」，MVP（列表+定位）已完成；进阶为 diff 预览与一键撤销（需快照策略，留待后续 change）。
+- **建议 change**：`file-change-diff-undo`（diff/undo 范围在 proposal 明确；MVP 已由 `build-artifacts-panel` 覆盖）
+- **关联**：`workspace-ui/spec.md`、`agent/loop_tool_batch.rs`、`useProjectFiles.ts`、`tools/changed_paths.rs`
 
 ### BL-008 侧栏会话标题 inline 编辑
 
@@ -269,6 +269,7 @@
 | 2026.6.19 | skill_run 脚本跨 turn 保留 | 成功脚本保留于 `.cache/skill-run/<session_key>/`，便于续改构建产物 |
 | 2026-06-22 | BL-001 file_busy UI | 工具链卡片展示文件占用错误 |
 | 2026-06-22 | Spec 与实现对齐 | API Key → `config.toml`；office-tools PPT 条款更新 |
+| 2026-06-23 | BL-007 构建产物面板 MVP | 右侧栏「构建产物」Tab，按 turn 累积 changed_paths（过滤 `.cache`）；打开 + reveal；change `build-artifacts-panel` |
 
 ---
 

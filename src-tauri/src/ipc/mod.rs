@@ -146,9 +146,7 @@ pub fn open_project_file(
     let project = project_by_id(&state, &project_id)?;
     let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
     let resolved = sandbox.resolve(&relative_path).map_err(|e| e.to_string())?;
-    if resolved.is_dir() {
-        return Err("cannot open a directory".into());
-    }
+    // 文件用默认关联程序打开；目录用系统文件管理器打开。
     tauri_plugin_opener::open_path(&resolved, None::<&str>).map_err(|e| e.to_string())
 }
 
@@ -493,6 +491,65 @@ pub fn open_project_root(state: State<AppState>, project_id: String) -> Result<(
     tauri_plugin_opener::open_path(sandbox.root(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// 在系统文件管理器中定位（选中）项目内的某个文件。
+/// macOS `open -R`、Windows `explorer /select,`、Linux 降级为打开父目录。
+#[tauri::command]
+pub fn reveal_project_file(
+    state: State<AppState>,
+    project_id: String,
+    relative_path: String,
+) -> Result<(), String> {
+    let project = project_by_id(&state, &project_id)?;
+    let sandbox = Sandbox::new(&project.root_path).map_err(|e| e.to_string())?;
+    let resolved = sandbox.resolve(&relative_path).map_err(|e| e.to_string())?;
+    reveal_in_file_manager(&resolved).map_err(|e| e.to_string())
+}
+
+/// 平台相关：在文件管理器中定位文件。无统一 select 语义时打开父目录。
+fn reveal_in_file_manager(path: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .status()?;
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "在文件管理器中定位失败（open -R 退出码 {status}）"
+            )));
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // explorer.exe /select 即使成功也常返回非零退出码，故不校验退出状态，
+        // 仅在进程无法启动时（status() 返回 Err）上报错误。
+        std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .status()?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let target = if path.is_file() {
+            path.parent().unwrap_or(path)
+        } else {
+            path
+        };
+        let status = std::process::Command::new("xdg-open")
+            .arg(target)
+            .status()?;
+        if !status.success() {
+            return Err(std::io::Error::other(format!(
+                "在文件管理器中定位失败（xdg-open 退出码 {status}）"
+            )));
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", unix)))]
+    {
+        let _ = path;
+    }
+    Ok(())
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ImportProjectFileRequest {
     pub project_id: String,
@@ -587,5 +644,21 @@ mod tests {
         assert!(bundle.messages.is_empty());
         assert!(bundle.tool_calls.is_empty());
         assert!(bundle.clarify_pending.is_none());
+    }
+
+    /// reveal_project_file / open_project_file 的越界保护完全委托给 Sandbox::resolve。
+    /// 此处验证该委托点对路径逃逸返回错误，避免重复构造 Tauri State。
+    #[test]
+    fn reveal_and_open_reject_path_escape_via_sandbox() {
+        let dir = tempdir().unwrap();
+        let root = dir.path().join("root");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("report.docx"), b"x").unwrap();
+        let sandbox = Sandbox::new(&root).unwrap();
+        // 逃逸项目根的相对路径必须被拒绝
+        assert!(sandbox.resolve("../../etc/passwd").is_err());
+        assert!(sandbox.resolve("../secret").is_err());
+        // 项目内存在的合法文件通过
+        assert!(sandbox.resolve("report.docx").is_ok());
     }
 }

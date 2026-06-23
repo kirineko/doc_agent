@@ -10,12 +10,15 @@ export interface LiveToolCall {
   status: string;
   argsChars?: number;
   summary?: string;
+  changed_paths?: string[];
 }
 
 interface ToolChainPanelProps {
   items: LiveToolCall[];
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** 由外层 Tab 容器提供标题时，隐藏本组件自带标题。 */
+  hideHeader?: boolean;
 }
 
 function statusLabel(status: string): string {
@@ -61,6 +64,7 @@ export function ToolChainPanel({
   items,
   collapsed = false,
   onToggleCollapse,
+  hideHeader = false,
 }: ToolChainPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -85,17 +89,19 @@ export function ToolChainPanel({
     scrollToBottom();
   }, [items.length]);
 
+  const header = hideHeader ? null : onToggleCollapse ? (
+    <PanelSectionHeader
+      title="工具调用链"
+      collapsed={collapsed}
+      onToggleCollapse={onToggleCollapse}
+    />
+  ) : (
+    <div className="mb-1.5 shrink-0 text-xs font-medium text-fg-heading">工具调用链</div>
+  );
+
   return (
     <section className="flex h-full min-h-0 flex-col">
-      {onToggleCollapse ? (
-        <PanelSectionHeader
-          title="工具调用链"
-          collapsed={collapsed}
-          onToggleCollapse={onToggleCollapse}
-        />
-      ) : (
-        <div className="mb-1.5 shrink-0 text-xs font-medium text-fg-heading">工具调用链</div>
-      )}
+      {header}
       {!collapsed && (
       <div
         ref={scrollRef}

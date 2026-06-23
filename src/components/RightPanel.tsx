@@ -20,15 +20,18 @@ import {
 } from "../lib/workspaceLayout";
 import { ProjectFileExplorer } from "./ProjectFileExplorer";
 import { PanelSeparator } from "./PanelSeparator";
-import { LiveToolCall, ToolChainPanel } from "./ToolChainPanel";
+import { LiveToolCall } from "./ToolChainPanel";
+import { ToolchainTabArea } from "./ToolchainTabArea";
+import { TurnArtifact } from "../lib/agentEvents";
 
 interface RightPanelProps {
   liveTools: LiveToolCall[];
+  turnArtifacts: TurnArtifact[];
   projectId?: string;
   fileRevision?: number;
 }
 
-export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelProps) {
+export function RightPanel({ liveTools, turnArtifacts, projectId, fileRevision }: RightPanelProps) {
   const groupRef = useGroupRef();
   const toolchainRef = usePanelRef();
   const filesRef = usePanelRef();
@@ -149,8 +152,10 @@ export function RightPanel({ liveTools, projectId, fileRevision }: RightPanelPro
           collapsible
           className="min-h-0"
         >
-          <ToolChainPanel
-            items={liveTools}
+          <ToolchainTabArea
+            liveTools={liveTools}
+            turnArtifacts={turnArtifacts}
+            projectId={projectId}
             collapsed={toolchainCollapsed}
             onToggleCollapse={toggleToolchain}
           />

@@ -489,4 +489,102 @@ describe("applyAgentEvent", () => {
     );
     expect(next.compactionNotice).toContain("手动");
   });
+
+  function runToolWithResult(
+    state: ReturnType<typeof markAgentBusy>,
+    id: string,
+    name: string,
+    changedPaths?: string[],
+    ok = true,
+  ) {
+    let next = applyAgentEvent(
+      state,
+      {
+        kind: "tool_call",
+        session_id: sessionId,
+        turn_id: "t1",
+        id,
+        name,
+        args: {},
+        status: "running",
+      },
+      sessionId,
+    );
+    next = applyAgentEvent(
+      next,
+      {
+        kind: "tool_result",
+        session_id: sessionId,
+        turn_id: "t1",
+        id,
+        ok,
+        summary: "{}",
+        duration_ms: 5,
+        changed_paths: changedPaths,
+      },
+      sessionId,
+    );
+    return next;
+  }
+
+  it("accumulates changed_paths into turnArtifacts per tool", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "skill_run", ["report.docx", "data.xlsx"]);
+    state = runToolWithResult(state, "c2", "fs_write", ["notes.md"]);
+
+    expect(state.turnArtifacts.map((a) => a.path)).toEqual([
+      "report.docx",
+      "data.xlsx",
+      "notes.md",
+    ]);
+    expect(state.turnArtifacts[0].sourceToolLabel).toBe("运行 Skill");
+    expect(state.turnArtifacts[2].sourceToolLabel).toBe("写入文件");
+  });
+
+  it("dedupes identical paths across tools keeping first source", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "skill_run", ["report.docx"]);
+    state = runToolWithResult(state, "c2", "fs_write", ["report.docx", "notes.md"]);
+
+    const paths = state.turnArtifacts.map((a) => a.path);
+    expect(paths).toEqual(["report.docx", "notes.md"]);
+    // report.docx 保留首个来源（skill_run），不被 fs_write 覆盖
+    expect(state.turnArtifacts[0].sourceToolCallId).toBe("c1");
+  });
+
+  it("does not accumulate artifacts on failed tool results", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "fs_write", ["report.docx"], false);
+
+    expect(state.turnArtifacts).toHaveLength(0);
+  });
+
+  it("markAgentBusy clears turnArtifacts for a new turn", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "skill_run", ["report.docx"]);
+    expect(state.turnArtifacts).toHaveLength(1);
+
+    state = markAgentBusy(state);
+    expect(state.turnArtifacts).toHaveLength(0);
+  });
+
+  it("clarify resume (markAgentResuming) keeps turnArtifacts", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "skill_run", ["report.docx"]);
+
+    const resumed = markAgentResuming(state);
+    expect(resumed.turnArtifacts).toHaveLength(1);
+    expect(resumed.turnArtifacts[0].path).toBe("report.docx");
+  });
+
+  it("keeps turnArtifacts after turn_complete for review", () => {
+    let state = markAgentBusy(initialAgentStreamState);
+    state = runToolWithResult(state, "c1", "skill_run", ["report.docx"]);
+    state = applyAgentEvent(
+      state,
+      { kind: "turn_complete", session_id: sessionId, turn_id: "t1" },
+      sessionId,
+    );
+    expect(state.turnArtifacts).toHaveLength(1);
+  });
 });

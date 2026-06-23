@@ -140,6 +140,7 @@ function App() {
         right={
           <RightPanel
             liveTools={ws.stream.liveTools}
+            turnArtifacts={ws.stream.turnArtifacts}
             projectId={ws.activeProjectId}
             fileRevision={ws.fileRevision}
           />

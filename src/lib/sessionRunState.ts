@@ -70,6 +70,7 @@ export function deriveActiveStream(
     streamingReasoning: run.streamingReasoning,
     streamingContent: run.streamingContent,
     liveTools: run.liveTools,
+    turnArtifacts: run.turnArtifacts,
     busy: run.status === "running" || run.status === "stopping",
     compactionNotice: run.compactionNotice ?? null,
   };
@@ -156,6 +157,27 @@ export function markSessionRunning(
         ...markAgentBusy(current),
         status: "running",
         compactionNotice: null,
+      },
+    },
+  };
+}
+
+/**
+ * 手动 /compact 不是新 turn：标记忙碌以显示「压缩中」，但 MUST NOT 清空
+ * turnArtifacts（产物仅在用户发送新消息时清空，见 workspace-ui spec）。
+ */
+export function markSessionCompacting(
+  state: SessionRunsState,
+  sessionId: string,
+): SessionRunsState {
+  const current = getOrCreate(state, sessionId);
+  return {
+    bySession: {
+      ...state.bySession,
+      [sessionId]: {
+        ...current,
+        status: "running",
+        busy: true,
       },
     },
   };

@@ -3,12 +3,21 @@ import {
   compactionInProgressNotice,
   isCompactionInProgressNotice,
 } from "./compactionNotice";
+import { toolLabel } from "./toolLabels";
 import { AgentEvent } from "../types";
+
+/** 本轮由 Agent 产生或修改的交付物（已去重）。 */
+export interface TurnArtifact {
+  path: string;
+  sourceToolCallId: string;
+  sourceToolLabel: string;
+}
 
 export interface AgentStreamState {
   streamingReasoning: string;
   streamingContent: string;
   liveTools: LiveToolCall[];
+  turnArtifacts: TurnArtifact[];
   busy: boolean;
   compactionNotice?: string | null;
 }
@@ -17,6 +26,7 @@ export const initialAgentStreamState: AgentStreamState = {
   streamingReasoning: "",
   streamingContent: "",
   liveTools: [],
+  turnArtifacts: [],
   busy: false,
   compactionNotice: null,
 };
@@ -112,19 +122,44 @@ export function applyAgentEvent(
         ],
       };
     }
-    case "tool_result":
-      return {
-        ...state,
-        liveTools: state.liveTools.map((item) =>
-          item.id === event.id
-            ? {
-                ...item,
-                status: event.ok ? "done" : "error",
-                summary: event.summary,
-              }
-            : item,
-        ),
-      };
+    case "tool_result": {
+      // tool_result 事件不带 name，从 liveTools 查出来源工具标签
+      const source = state.liveTools.find((item) => item.id === event.id);
+      const liveTools = state.liveTools.map((item) =>
+        item.id === event.id
+          ? {
+              ...item,
+              status: event.ok ? "done" : "error",
+              summary: event.summary,
+              changed_paths: event.changed_paths,
+            }
+          : item,
+      );
+      // 把成功工具的 changed_paths 累积成本轮产物（按 path 去重，保留首个来源工具）
+      if (event.ok && event.changed_paths?.length) {
+        const sourceLabel = toolLabel(source?.name ?? "");
+        const existing = new Set(state.turnArtifacts.map((a) => a.path));
+        const added: TurnArtifact[] = [];
+        for (const path of event.changed_paths) {
+          if (path && !existing.has(path)) {
+            existing.add(path);
+            added.push({
+              path,
+              sourceToolCallId: event.id,
+              sourceToolLabel: sourceLabel,
+            });
+          }
+        }
+        if (added.length > 0) {
+          return {
+            ...state,
+            liveTools,
+            turnArtifacts: [...state.turnArtifacts, ...added],
+          };
+        }
+      }
+      return { ...state, liveTools };
+    }
     case "turn_complete":
       return {
         ...clearStreamingBuffers(state, false),
@@ -174,12 +209,13 @@ export function applyAgentEvent(
   }
 }
 
-/** 新用户消息开始新 turn：清空工具链与流式缓冲 */
+/** 新用户消息开始新 turn：清空工具链、产物列表与流式缓冲 */
 export function markAgentBusy(state: AgentStreamState): AgentStreamState {
   return {
     ...state,
     busy: true,
     liveTools: [],
+    turnArtifacts: [],
     streamingReasoning: "",
     streamingContent: "",
   };

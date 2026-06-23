@@ -4,6 +4,7 @@ import {
   clearCompactionNotice,
   forceSessionIdle,
   initialSessionRunsState,
+  markSessionCompacting,
   markSessionIdle,
   markSessionResuming,
   markSessionRunning,
@@ -15,6 +16,7 @@ import {
 export type StreamAction =
   | { type: "event"; event: AgentEvent }
   | { type: "busy"; sessionId: string }
+  | { type: "busy_compact"; sessionId: string }
   | { type: "stopping"; sessionId: string }
   | { type: "busy_resume"; sessionId: string }
   | { type: "force_idle"; sessionId: string }
@@ -31,6 +33,8 @@ export function sessionRunsReducer(
       return applyEventToSessionRuns(state, action.event);
     case "busy":
       return markSessionRunning(state, action.sessionId);
+    case "busy_compact":
+      return markSessionCompacting(state, action.sessionId);
     case "stopping":
       return markSessionStopping(state, action.sessionId);
     case "busy_resume":

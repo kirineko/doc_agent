@@ -654,7 +654,7 @@ export function useWorkspace() {
       try {
         setInput("");
         setSendHint(null);
-        dispatchSessionRuns({ type: "busy", sessionId });
+        dispatchSessionRuns({ type: "busy_compact", sessionId });
         dispatchSessionRuns({
           type: "compaction_notice",
           sessionId,
