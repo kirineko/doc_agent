@@ -9,6 +9,7 @@ const EXPECTED_TOOLS = [
   "fs_patch",
   "fs_search",
   "image_read",
+  "image_download",
   "clarify_ask",
   "office_read_to_markdown",
   "office_convert",

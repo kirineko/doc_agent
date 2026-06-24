@@ -110,6 +110,16 @@ pub fn plan_tool_io(
         "image_read" => {
             add_read_paths_array(ctx, args, "paths", &mut plan)?;
         }
+        "image_download" => {
+            // 输出目录（缺省 images）整体排他写，避免同项目并发会话写花同一目录。
+            // 外部图片 URL 不参与文件锁——它们是网络资源，不是沙箱路径。
+            // 与 handler 共用 normalize_output_dir，确保两侧对 dir（trim/空串/
+            // 越界/项目根/.cache）的处理一致。
+            let dir = crate::tools::image_download::normalize_output_dir(
+                args.get("dir").and_then(|v| v.as_str()),
+            )?;
+            add_subtree_write_path(ctx, &dir, &mut plan)?;
+        }
         other => {
             return Err(ToolError::Execution(format!(
                 "io_plan missing for tool: {other}"
@@ -155,6 +165,9 @@ fn minimal_args_for(tool_name: &str) -> Value {
         }
         "skill_run" => serde_json::json!({ "code": "async function main(){}" }),
         "image_read" => serde_json::json!({ "paths": [".cache/attachments/x.png"] }),
+        "image_download" => {
+            serde_json::json!({ "urls": ["https://example.com/a.png"], "dir": "images" })
+        }
         _ => serde_json::json!({}),
     }
 }
@@ -429,6 +442,49 @@ mod tests {
         let plan = plan_tool_io(&ctx, "ooxml_unpack", &json!({ "path": "a.docx" })).unwrap();
         assert_eq!(plan.locks.len(), 2);
         assert!(plan.locks.iter().any(|l| l.mode == LockMode::SubtreeWrite));
+    }
+
+    #[test]
+    fn image_download_uses_subtree_write_on_dir() {
+        let (_dir, sb) = sandbox_with_files();
+        let ctx = ctx(&sb);
+        let plan = plan_tool_io(
+            &ctx,
+            "image_download",
+            &json!({ "urls": ["https://example.com/a.png"] }),
+        )
+        .unwrap();
+        // 缺省 dir 为 images，整体排他写；URL 不参与文件锁
+        assert_eq!(plan.locks.len(), 1);
+        assert_eq!(plan.locks[0].mode, LockMode::SubtreeWrite);
+        assert_eq!(plan.locks[0].resource.path, "images");
+        assert!(!plan.dynamic_writes);
+    }
+
+    #[test]
+    fn image_download_normalizes_and_rejects_bad_dir_consistently() {
+        let (_dir, sb) = sandbox_with_files();
+        let ctx = ctx(&sb);
+        // 空白/空串归一到 images（与 handler 一致，不再因 sandbox 路径非法而失败）
+        let plan = plan_tool_io(
+            &ctx,
+            "image_download",
+            &json!({ "urls": ["https://example.com/a.png"], "dir": "   " }),
+        )
+        .unwrap();
+        assert_eq!(plan.locks[0].resource.path, "images");
+        // 项目根、.cache、越界路径在 io_plan 阶段即拒绝（与 handler 同口径）
+        for bad in [".", ".cache", ".cache/imgs", "../escape"] {
+            assert!(
+                plan_tool_io(
+                    &ctx,
+                    "image_download",
+                    &json!({ "urls": ["https://example.com/a.png"], "dir": bad }),
+                )
+                .is_err(),
+                "dir {bad:?} should be rejected in io_plan"
+            );
+        }
     }
 
     #[test]

@@ -53,6 +53,7 @@ pub(crate) fn build_working_messages(
                      html_to_pdf 可单独使用，不要求先生成报告；\
                      Typst PDF（新建或大改 .typ）：guide → list → 场景模板 → 写 .typ → typst_to_pdf（完整步骤见 clarify skill 与 typst 工具说明）。不得跳过 guide 或凭记忆臆造 Typst 语法。\
                      公式密集文档优先 typst_to_pdf；图文 HTML 报告可用 html_to_pdf。\
+                     插入网络图片：先用 image_download(urls, dir) 把图片下载到项目目录，再在 skill_run / typst / html 中按返回的本地相对路径引用（skill_run 运行时无法联网取图）。\
                      澄清确认后按创作简报中的「交付格式」分支执行（见 clarify skill）。\
                      读取 PDF 内容：默认 pdf_read({{\"path\":\"...\"}})（所有模型；vision 模型内部 Judge，纯文本书快速返回文本）；\
                      仅当明确只要 PDFium 纯文本、跳过 Judge 时用 office_read_to_markdown。pdf_read 仅 path/pages/dpi。\
@@ -386,5 +387,14 @@ mod tests {
             build_working_messages(&[], &[], Some("/init"), &[], false, None, true).unwrap();
         let system = messages[0].content.as_ref().unwrap();
         assert!(system.contains("skill_read profile"));
+    }
+
+    #[test]
+    fn system_includes_image_download_localization_hint() {
+        // 无条件指示：不依赖 Web 开关
+        let messages =
+            build_working_messages(&[], &[], Some("hello"), &[], false, None, false).unwrap();
+        let system = messages[0].content.as_ref().unwrap();
+        assert!(system.contains("image_download"));
     }
 }

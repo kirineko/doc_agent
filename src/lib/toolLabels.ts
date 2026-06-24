@@ -5,6 +5,7 @@ export const TOOL_LABELS: Record<string, string> = {
   fs_patch: "局部修改文件",
   fs_search: "搜索文件",
   image_read: "读取图片",
+  image_download: "下载图片",
   clarify_ask: "需求澄清",
   office_read_to_markdown: "读取文档",
   office_convert: "转换 Office 格式",

@@ -435,6 +435,17 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **WHEN** Agent 调用 `web_search` 或 `web_extract`
 - **THEN** 右侧工具链卡片显示对应中文标签（非原始英文名）
 
+### Requirement: 图片下载工具中文标签
+系统 SHALL 为 `image_download` 提供中文工具链标签（如「下载图片」），并在工具名注册列表测试（`toolLabels.test.ts` 的 `EXPECTED_TOOLS`）中保持同步。
+
+#### Scenario: 工具链展示中文标签
+- **WHEN** 右侧工具链渲染一次 `image_download` 调用卡片
+- **THEN** 卡片显示对应中文标签（非原始英文名 `image_download`）
+
+#### Scenario: 标签注册表与后端工具一致
+- **WHEN** 运行前端工具标签测试
+- **THEN** `REGISTERED_TOOL_NAMES` 包含 `image_download`，与后端 `default_tools` 工具名集合一致
+
 ### Requirement: 顶栏主题切换 Toggle
 
 系统 SHALL 在应用顶栏右上角提供主题切换 **toggle** 控件，用于在 `dark` 与 `light` 两档主题间切换；该控件 MUST 位于顶栏最右侧（`Doc Agent` 品牌与项目名区域保持在左侧），且 MUST NOT 遮挡或替换现有 Logo 与标题展示。

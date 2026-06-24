@@ -187,6 +187,7 @@ impl ToolRegistry {
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
                 crate::tools::image_read::tool(),
+                crate::tools::image_download::tool(),
             ],
         }
     }
@@ -242,6 +243,7 @@ impl ToolRegistry {
         match name {
             "web_search" => crate::tools::web::search_handler(ctx, args).await,
             "web_extract" => crate::tools::web::extract_handler(ctx, args).await,
+            "image_download" => crate::tools::image_download::handler(ctx, args).await,
             "html_to_pdf" => crate::tools::html_export::handler(ctx, app, args).await,
             "typst_to_pdf" => crate::tools::typst_export::typst_to_pdf_handler(ctx, args).await,
             "image_read" => crate::tools::image_read::handler(ctx, args, model_id).await,

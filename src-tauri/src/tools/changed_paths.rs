@@ -54,6 +54,16 @@ pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> V
                 }
             }
         }
+        "image_download" => {
+            // 逐个上报成功下载的本地文件，便于 @ 引用具体图片
+            if let Some(items) = result.get("downloaded").and_then(|v| v.as_array()) {
+                for item in items {
+                    if let Some(path) = item.get("path").and_then(|v| v.as_str()) {
+                        push_normalized(&mut paths, path);
+                    }
+                }
+            }
+        }
         _ => {}
     }
     // 过滤 .cache/ 下的中间产物（解包工作目录、渲染缓存等），仅保留交付物。
@@ -175,6 +185,24 @@ mod tests {
             &json!({ "result": "ok", "written_paths": ["out.xlsx", "out.xlsx", "sub\\a.txt"] }),
         );
         assert_eq!(paths, vec!["out.xlsx", "sub/a.txt"]);
+    }
+
+    #[test]
+    fn image_download_reports_downloaded_file_paths() {
+        let paths = extract_changed_paths(
+            "image_download",
+            &json!({ "urls": ["https://example.com/a.png"], "dir": "images" }),
+            &json!({
+                "dir": "images",
+                "downloaded": [
+                    { "url": "https://example.com/a.png", "path": "images/a.png" },
+                    { "url": "https://example.com/b.jpg", "path": "images/b.jpg" }
+                ],
+                "failed": [],
+                "count": 2
+            }),
+        );
+        assert_eq!(paths, vec!["images/a.png", "images/b.jpg"]);
     }
 
     #[test]
