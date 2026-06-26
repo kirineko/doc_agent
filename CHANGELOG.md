@@ -8,6 +8,26 @@
 
 ## [Unreleased]
 
+本版本重构工作区信息架构与视觉：侧栏改为项目折叠树、中间区空态居中 Composer、右侧 Inspector 三 Tab，并支持冷启动恢复上次项目与会话。
+
+### 工作区 UX 重构（refine-workspace-ux）
+
+- **侧栏项目树**：Cursor 式「项目 → 会话」折叠导航，仅展开 active 项目；顶部动作区含「新建会话」（⌘N / Ctrl+N）、「搜索」（⌘K / Ctrl+K）；「添加项目目录」改为 ghost 入口
+- **项目行操作**：hover `[+]` 在对应项目下新建会话（非 active 时先切换项目）；`···` 菜单支持在 Finder / 文件管理器中打开根目录、从列表移除
+- **Composer 上下文条**：项目切换、模型 Flyout、AGENTS.md 状态、上下文占用 % 集中于输入区上方；**模型选择迁出侧栏**；顶栏不再重复项目名
+- **空态居中 Composer**：无消息时会话区垂直居中展示输入框与 Init 胶囊；首条消息后平滑过渡至底部 dock，保留草稿与光标
+- **右侧 Inspector 三 Tab**：「项目文件 | 工具调用链 | 构建产物」Tab 切换，默认「项目文件」；移除右侧上下垂直分栏
+- **智能 Tab 切换**：Agent 首个工具进入 running 时自动切至工具链 Tab；本 turn 内用户手动切换后暂停 auto-switch；新 turn 清除 pin
+- **命令面板**：⌘K / Ctrl+K 或侧栏「搜索」打开；fuzzy 搜索项目、会话、斜杠命令与快捷操作（新建会话、添加项目等）
+- **Notion 风格视觉**：侧栏 flat hover/active、composer 大圆角浅阴影、减少卡片嵌套与 uppercase 分区标题
+
+### 冷启动恢复工作区（restore-last-active-workspace）
+
+- **记住上次项目与会话**：`localStorage` 持久化 active 项目 / 会话 id；启动并完成 `list_projects` 后自动恢复
+- **失效回退**：缓存会话已删除时选中该项目最近更新会话；项目已移除时清除缓存并保持空态
+- **草稿态**：有效项目无可用会话时进入草稿态（不强制选中历史会话）
+- **Inspector Tab 不持久化**：每次启动默认「项目文件」Tab
+
 ---
 
 ## [2026.6.26] — 2026-06-26

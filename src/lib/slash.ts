@@ -1,4 +1,6 @@
 import { firstPlaceholder } from "./promptPlaceholder";
+import type { SlashEntry } from "./slashCommands";
+import { isSlashCommandEntry, isSlashTemplate } from "./slashCommands";
 
 export interface SlashState {
   active: boolean;
@@ -63,4 +65,28 @@ export function insertSlashPrompt(
   }
   const cursorPos = cursor + prompt.length;
   return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
+}
+
+/** Apply a slash command picked from the command palette without wiping existing draft text. */
+export function buildSlashInputFromPalette(
+  text: string,
+  command: SlashEntry,
+): { text: string; cursor: number; selectionEnd: number } {
+  const cursor = text.length;
+  if (isSlashTemplate(command)) {
+    return insertSlashPrompt(text, cursor, command.prompt);
+  }
+  if (isSlashCommandEntry(command)) {
+    const slashState = detectSlash(text, cursor);
+    if (slashState) {
+      return applySlashCommand(text, slashState, command.id, command.acceptsTail);
+    }
+    const inserted = command.acceptsTail ? `/${command.id} ` : `/${command.id}`;
+    const separator =
+      text.length === 0 || text.endsWith(" ") || text.endsWith("\n") ? "" : " ";
+    const next = `${text}${separator}${inserted}`;
+    const cursorPos = next.length;
+    return { text: next, cursor: cursorPos, selectionEnd: cursorPos };
+  }
+  return { text, cursor, selectionEnd: cursor };
 }

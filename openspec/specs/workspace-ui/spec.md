@@ -5,12 +5,12 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 ## Requirements
 ### Requirement: 三栏工作区布局
 
-系统 SHALL 提供三栏布局：左侧为项目 / 会话 / 模型配置，中间为会话与结果，右侧为工具调用链与项目文件浏览（上下分栏）。三栏之间 MUST 支持水平拖拽调整宽度。中间会话区 MUST 具有最小宽度约束，防止被完全挤压。左侧栏宽度 MUST 可拖拽调整。
+系统 SHALL 提供三栏布局：左侧为项目 / 会话树与 Web 搜索等辅助配置，中间为会话与结果（含 composer 上下文条中的模型选择），右侧为 **Inspector**（项目文件、工具调用链、构建产物三 Tab 切换）。三栏之间 MUST 支持水平拖拽调整宽度。中间会话区 MUST 具有最小宽度约束，防止被完全挤压。左侧栏宽度 MUST 可拖拽调整。右侧栏 MUST NOT 再使用工具链与文件浏览的 **上下垂直分栏**。
 
 #### Scenario: 三栏同时可见
 
 - **WHEN** 用户打开一个项目的会话
-- **THEN** 界面同时呈现左侧导航与配置、中间会话区、右侧工具调用链与文件浏览两个区域
+- **THEN** 界面同时呈现左侧导航与配置、中间会话区、右侧 Inspector 区域
 
 #### Scenario: 水平拖拽调整侧栏与右侧栏宽度
 
@@ -23,23 +23,28 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** 会话区宽度 MUST NOT 低于预设最小比例，分割条停止继续向内挤压
 
 ### Requirement: 左侧项目/会话/模型配置
-系统 SHALL 在左侧栏展示项目与会话列表；模型详细配置 MUST 位于侧栏左下锚定的「模型」Flyout，侧栏仅展示模型摘要 trigger。模型配置在已选项目且（草稿态或空会话）时可编辑；会话已有 user/assistant 消息后 Flyout 为只读。侧栏 MUST 保留「新建」会话按钮，新建时不自动触发 starter。LLM API Key 配置 MUST NOT 出现在侧栏或模型 Flyout 内。
 
-#### Scenario: 侧栏精简
+系统 SHALL 在左侧栏以 **项目折叠组 → 会话** 树展示导航。侧栏 MUST 在顶部动作区提供「新建会话」（非仅会话分区小按钮）。新建时不自动触发 starter。侧栏 MUST NOT 包含模型选择 trigger 或「模型」配置区块；模型配置 MUST 迁至 composer 上下文条（见「Composer 上下文条」「模型 Flyout 锚定 Composer 上下文条」）。LLM API Key 配置 MUST NOT 出现在侧栏或 Model Flyout 内。Web 搜索状态摘要仍位于侧栏底部。
+
+#### Scenario: 侧栏树形导航
+
 - **WHEN** 用户打开侧栏
-- **THEN** 项目与会话列表可见，完整模型选择与 Key 表单不在侧栏主区域展开
+- **THEN** 可见项目折叠组与会话层级，而非平级「项目」「会话」两个独立分区列表
 
-#### Scenario: 未选项目时无模型入口
+#### Scenario: 侧栏无模型入口
+
+- **WHEN** 用户打开侧栏（无论是否已选项目）
+- **THEN** 侧栏 MUST NOT 展示模型 Flyout trigger 或模型摘要配置区
+
+#### Scenario: 未选项目时模型在上下文条不可见
+
 - **WHEN** 用户尚未选择 activeProject
-- **THEN** 侧栏不显示模型 Flyout trigger；Header 密钥入口仍可用
-
-#### Scenario: 在 Flyout 切换会话与配置
-- **WHEN** 用户在已选项目的空会话通过 Flyout 切换模型
-- **THEN** 配置持久化且侧栏摘要更新
+- **THEN** composer 上下文条不展示模型 trigger；Header 密钥入口仍可用
 
 #### Scenario: 有消息会话模型只读
+
 - **WHEN** 当前会话已有 user 或 assistant 消息
-- **THEN** Flyout 以只读形式展示当前模型与思考配置，不可修改
+- **THEN** 自上下文条打开的 Model Flyout 以只读形式展示当前模型与思考配置，不可修改
 
 ### Requirement: 中间区 Markdown 流式渲染
 
@@ -108,27 +113,43 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** 对应 Provider 的 Key 行展开并视觉高亮
 
 ### Requirement: 模型 Flyout 锚定侧栏
-系统 SHALL 在用户点击侧栏模型摘要 trigger 时，于 trigger **附近**（优先向上展开）显示固定定位 Flyout，而非屏幕右侧全高 Drawer。Flyout MUST 包含：当前模型摘要、Provider segmented control、可滚动模型列表、底部 sticky 思考配置。切换 Provider Tab 时 MUST 预选该 Provider 的第一个可用模型（与现有 `configForProviderFirstModel` 行为一致）。Flyout 水平宽度 MUST 与模型 trigger 按钮同宽（随侧栏拖拽 resize 实时更新）。
 
-#### Scenario: Flyout 靠近 trigger
-- **WHEN** 用户点击侧栏左下模型 trigger
-- **THEN** Flyout 在侧栏内、trigger 上方或下方展开，水平对齐 trigger，不要求用户视线移至屏幕最右侧
+系统 SHALL 在用户点击 **composer 上下文条**内的模型摘要 trigger 时，于 trigger **附近**（优先向上展开，避免遮挡输入框）显示固定定位 Flyout，而非屏幕右侧全高 Drawer。Flyout MUST 包含：当前模型摘要、Provider segmented control、可滚动模型列表、底部 sticky 思考配置。模型配置在已选项目且（草稿态或空会话）时可编辑；会话已有 user/assistant 消息后 Flyout 为只读。切换 Provider Tab 时 MUST 预选该 Provider 的第一个可用模型（与现有 `configForProviderFirstModel` 行为一致）。Flyout 水平宽度 MUST 与上下文条内模型 trigger 同宽（或不低于合理最小宽度如 280px，随 composer 宽度变化实时更新）。侧栏 MUST NOT 再提供模型 Flyout trigger。
 
-#### Scenario: Flyout 宽度随侧栏自适应
-- **WHEN** 用户拖宽左侧栏且模型 Flyout 处于打开状态
-- **THEN** Flyout 宽度 MUST 与 trigger 同宽，不得固定窄于侧栏（如 320px 上限）
+#### Scenario: Flyout 靠近上下文条 trigger
+
+- **WHEN** 用户点击 composer 上下文条内的模型 trigger
+- **THEN** Flyout 在 trigger 上方或下方展开，水平对齐 trigger，不要求用户视线移至侧栏
+
+#### Scenario: Flyout 宽度随 composer 自适应
+
+- **WHEN** 用户拉宽中间会话区且 Model Flyout 处于打开状态
+- **THEN** Flyout 宽度 MUST 与模型 trigger 同宽或保持可读最小宽度，不得错误锚定于侧栏宽度
 
 #### Scenario: Flyout 不含 Key 配置
+
 - **WHEN** 用户打开模型 Flyout
 - **THEN** 界面不包含任何 API Key 输入控件
 
 #### Scenario: Provider Tab 预选首模型
-- **WHEN** 用户在 Flyout 切换至 Kimi Provider Tab 且会话模型未锁定
-- **THEN**  pending/空会话模型切换为该 Provider 列表中的第一个模型
 
-#### Scenario: 侧栏摘要含 vision 标识
+- **WHEN** 用户在 Flyout 切换至 Kimi Provider Tab 且会话模型未锁定
+- **THEN** pending/空会话模型切换为该 Provider 列表中的第一个模型
+
+#### Scenario: 上下文条摘要含 vision 标识
+
 - **WHEN** 当前选中 Kimi K2.6
-- **THEN** 侧栏模型 trigger 摘要显示模型名与视觉能力标识
+- **THEN** composer 上下文条模型 trigger 摘要显示模型名与视觉能力标识
+
+#### Scenario: 在 Flyout 切换模型
+
+- **WHEN** 用户在已选项目的空会话通过 composer 上下文条 Flyout 切换模型
+- **THEN** 配置持久化且上下文条模型摘要立即更新
+
+#### Scenario: 侧栏无模型 Flyout
+
+- **WHEN** 用户查看侧栏任意状态
+- **THEN** MUST NOT 存在侧栏模型 trigger 或 `#sidebar-model-trigger`
 
 ### Requirement: 零 LLM Key 启动弱提醒
 当尚未配置**任一** LLM Provider（DeepSeek/Kimi/MiMo）API Key 时，系统 SHALL 在每次应用启动后于 Header 区域展示非阻塞弱提醒条（单行 muted 样式），文案说明发送前需配置 Key，并提供「去配置」打开密钥 Drawer。密钥 Header 按钮 MUST 显示 amber 状态 dot。弱提醒 MUST NOT 使用 modal；用户关闭当次提醒条后，下次启动仍 MUST 再次显示（不持久 dismiss）。
@@ -158,56 +179,19 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **WHEN** 会话模型为 DeepSeek V4 Flash 且用户粘贴图片
 - **THEN** 出现 toast 且不插入附件
 
-### Requirement: 右侧工具调用链可视化
-
-系统 SHALL 在右侧栏上半区以简洁美观的方式展示工具调用链，每个调用呈现名称、参数、状态与结果（含耗时）；下半区留给项目文件浏览，二者共享右侧栏宽度且各自可纵向滚动。上下两区 MUST 支持垂直拖拽调整高度比例，默认比例为工具调用链 60%、项目文件 40%。工具调用链与项目文件 MUST 各自提供标题栏折叠 / 展开控件，折叠后保留标题行、内容区隐藏，未折叠的一侧占满剩余高度。折叠状态 MUST 互斥：任意时刻最多仅允许一侧折叠，MUST NOT 出现两侧同时折叠；用户 MUST 能通过展开控件或拖拽分割条恢复到两侧均展开。一侧折叠、一侧展开时，垂直分割条 MUST 保持可用。
-
-#### Scenario: 展示工具调用进展
-
-- **WHEN** Agent 发起并完成一个工具调用
-- **THEN** 右侧栏上半区出现对应卡片，状态从「执行中」更新为「完成 / 失败」，并显示结果摘要与耗时
-
-#### Scenario: 工具调用链自动贴底滚动
-
-- **WHEN** Agent 执行中向工具调用链追加新卡片
-- **THEN** 右侧栏上半区在默认贴底状态下自动滚动至最新项；若用户已手动上滑查看历史工具，则暂停自动滚动直至列表清空或重新贴底
-
-#### Scenario: 垂直拖拽调整工具链与文件区高度
-
-- **WHEN** 用户拖拽工具调用链与项目文件之间的垂直分割条
-- **THEN** 两区高度按比例实时调整，松手后新比例生效
-
-#### Scenario: 折叠工具调用链
-
-- **WHEN** 用户点击工具调用链标题栏的折叠控件，且项目文件区当前为展开状态
-- **THEN** 工具调用链内容区收起，仅保留标题行；项目文件区扩展占满右侧栏剩余高度
-
-#### Scenario: 折叠项目文件
-
-- **WHEN** 用户点击项目文件标题栏的折叠控件，且工具调用链当前为展开状态
-- **THEN** 项目文件内容区收起，仅保留标题行；工具调用链扩展占满右侧栏剩余高度
-
-#### Scenario: 切换折叠侧
-
-- **WHEN** 用户在一侧已折叠时点击另一侧的折叠控件
-- **THEN** 原折叠侧展开，新点击侧折叠；MUST NOT 进入两侧同时折叠状态
-
-#### Scenario: 展开已折叠分区
-
-- **WHEN** 用户点击已折叠分区的展开控件
-- **THEN** 该分区内容区恢复展示，两侧均展开，高度按当前布局或持久化比例分配
-
-#### Scenario: 拖拽分割条恢复两侧展开
-
-- **WHEN** 仅一侧折叠且用户拖拽工具调用链与项目文件之间的垂直分割条
-- **THEN** 两侧内容区均恢复展开，并按拖拽后的新比例分配高度
-
 ### Requirement: 项目列表展示与隐藏交互
-左侧项目列表 SHALL 提供更大的可视区域（较 MVP 至少加大约一倍），并在每个项目卡片上提供移除（隐藏）交互入口；不提供已隐藏项目的管理入口。
 
-#### Scenario: hover 显示移除按钮
-- **WHEN** 用户将鼠标悬停在项目卡片上
-- **THEN** 卡片显示移除按钮，点击后该项目立即从列表消失
+左侧项目树 SHALL 为每个项目行提供足够点击区域与 hover 移除/菜单入口；移除交互 MAY 位于上下文菜单内（不必强制 hover 行内 × 按钮）。系统 MUST NOT 提供已隐藏项目的管理入口。项目根路径 MAY 在 tooltip 或二级信息中展示，不必每条会话重复全路径。
+
+#### Scenario: 从菜单移除项目
+
+- **WHEN** 用户通过项目上下文菜单选择「从列表移除」
+- **THEN** 该项目立即从侧栏树消失
+
+#### Scenario: hover 会话显示删除
+
+- **WHEN** 用户 hover 会话项
+- **THEN** 仍可按现网规则展示删除会话控件
 
 ### Requirement: @ 文件引用选择器
 输入框 SHALL 支持 `@` 触发的文件引用：检测到光标前的 `@` 及其后查询串时，弹出项目内文件/目录候选列表，支持 fzf 式模糊匹配（子序列匹配 + 评分排序 + 命中高亮）、键盘上下选择与确认；确认后在输入框插入 `@相对路径`（含空白或解析终止符的路径 MUST 以引号包裹）。文件清单 MUST 限制遍历深度与数量并忽略隐藏目录/依赖目录/Office 临时文件；**此外 MUST 忽略 OOXML 解压工作目录（路径段名为 `unpacked` 或以 `_unpacked` 结尾的目录）及其全部子树**。清单 MUST 按修改时间降序索引，并携带 `is_dir` 供弹层区分目录与文件。清单 MUST 在项目文件变更后更新：优先通过 `tool_result.changed_paths` 增量合并，并在每个 turn 完成时 debounce 全量刷新一次。
@@ -392,11 +376,13 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 - **THEN** activeSession 为空、中间区为空白草稿态，输入框内容不变
 
 ### Requirement: 工作区空状态弱引导
-系统 SHALL 在已选项目且无 chat 消息的中间区展示简洁空状态：可选初始化胶囊（满足条件时）及一行弱提示「或直接输入开始对话」；MUST NOT 使用常驻 hint 条占用输入区。
 
-#### Scenario: 空状态展示
+系统 SHALL 在已选项目且无 chat 消息的中间区通过 **空态居中 composer** 提供弱引导：可选 Init 胶囊（满足条件时）及「或直接输入开始对话」；MUST NOT 使用常驻 hint 条占用输入区。无消息时中间区 MUST NOT 仅为空白 panel 加底部 dock 输入框。
+
+#### Scenario: 空状态居中引导
+
 - **WHEN** 用户已选项目且当前上下文无 user/assistant 消息
-- **THEN** 中间区非完全空白，用户可感知两种开始方式（初始化或直输）
+- **THEN** 用户于居中 composer 可见 Init 胶囊（若适用）与直输提示，感知两种开始方式
 
 ### Requirement: 项目文件索引变更同步
 系统 SHALL 在 Agent 成功执行文件变更类工具后，使 `@` 文件引用清单与资源管理器当前目录与磁盘保持一致；同步 MUST 采用事件驱动策略，禁止定时轮询项目目录。
@@ -698,27 +684,27 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 
 ### Requirement: 上下文占用比例展示
 
-系统 SHALL 在会话区标题栏（中间区「会话」标题行右侧）以**最小化**形式展示当前上下文占用比例：仅图标 + 比例百分比值（如 `42%`），MUST NOT 展示 token 绝对值等冗余信息。比例数据来源为 `context_usage` 事件的 `ratio` 以及切换会话时 IPC `get_session_context_usage` 的初始值；无 LLM 调用历史时 MUST 显示 `0%`（仅无项目时隐藏）。指示器颜色 MAY 随接近上限而变化（如转橙/红）。
+系统 SHALL 在 **composer 上下文条**（中间区输入区上方）以最小化形式展示当前上下文占用比例：仅图标 + 比例百分比值（如 `42%`），MUST NOT 展示 token 绝对值。比例数据来源为 `context_usage` 与 `get_session_context_usage`；无 LLM 调用历史时 MUST 显示 `0%`（仅无项目时隐藏）。
 
 #### Scenario: 展示当前占用比例
 
-- **WHEN** 当前会话已发生至少一次 LLM 响应且收到 `context_usage`
-- **THEN** 会话区标题栏右侧显示图标 + 百分比（如 `42%`），不显示绝对 token 数
+- **WHEN** 当前会话已发生 LLM 响应且收到 `context_usage`
+- **THEN** composer 上下文条显示图标 + 百分比
 
 #### Scenario: 切换会话重置比例
 
-- **WHEN** 用户切换到另一个会话
-- **THEN** 系统通过 `get_session_context_usage` 拉取该会话比例并展示（无历史时为 `0%`）
+- **WHEN** 用户切换会话
+- **THEN** 通过 `get_session_context_usage` 展示该会话比例
 
 #### Scenario: 空会话展示零比例
 
-- **WHEN** 用户新建或切换到尚无 LLM 调用的空会话
-- **THEN** 上下文占用指示器显示 `0%`，而非隐藏
+- **WHEN** 用户切换到尚无 LLM 调用的空会话
+- **THEN** 指示器显示 `0%`
 
 #### Scenario: 接近上限的视觉提示
 
-- **WHEN** 上下文占用比例接近模型上限（高 ratio）
-- **THEN** 指示器以更醒目的颜色提示（如橙/红），帮助用户感知即将压缩
+- **WHEN** ratio 接近上限
+- **THEN** 指示器以橙/红等醒目颜色提示
 
 ### Requirement: 自动压缩一次性提示
 
@@ -853,28 +839,11 @@ The workspace chat UI SHALL block `/compact` execution under the same conditions
 - **THEN** 该占位卡片升级为 running 并展示参数，其他 streaming 占位保持不变
 
 ### Requirement: 工作区分栏布局持久化
+系统 SHALL 将 **主三栏水平比例** 持久化于前端 `localStorage`，应用重启后恢复用户上次选择。首次访问或无有效缓存时 MUST 使用默认水平比例。**Inspector 当前 Tab MUST NOT 持久化**；每次应用启动 MUST 默认选中「项目文件」。布局持久化 MUST NOT 与 `doc-agent-last-session-config` 混用同一存储键。系统 MUST NOT 再持久化右侧 **上下垂直** 分栏比例。
 
-系统 SHALL 将主三栏水平比例与右侧上下分栏垂直比例持久化于前端 `localStorage`，应用重启后恢复用户上次布局（含折叠导致的尺寸变化）。首次访问或无有效缓存时 MUST 使用默认比例（水平接近现网侧栏/右侧栏宽度，垂直为工具调用链 60%、项目文件 40%）。布局持久化 MUST NOT 与 `doc-agent-last-session-config`（会话模型配置）混用同一存储键。
-
-#### Scenario: 拖拽后持久化
-
-- **WHEN** 用户调整水平或垂直分割条并松手
-- **THEN** 新布局比例写入 localStorage
-
-#### Scenario: 重启恢复布局
-
-- **WHEN** 用户曾调整分栏比例或折叠状态并重启应用
-- **THEN** 工作区恢复为上次的栏宽、高度比与折叠状态；若缓存中出现两侧同时折叠的无效状态，MUST 归一化为仅一侧折叠
-
-#### Scenario: 无缓存时使用默认比例
-
-- **WHEN** 用户首次打开应用或 localStorage 中无有效布局缓存
-- **THEN** 三栏与右侧上下分栏使用默认比例，其中工具调用链与项目文件默认为 60% / 40%
-
-#### Scenario: 与会话模型配置存储隔离
-
-- **WHEN** 系统读写布局持久化数据
-- **THEN** MUST NOT 修改或依赖 `doc-agent-last-session-config` 键中的模型配置字段
+#### Scenario: Inspector Tab 启动默认
+- **WHEN** 用户重启应用
+- **THEN** 右侧 Inspector 默认展示「项目文件」，MUST NOT 读取上次退出时的 Tab 偏好
 
 ### Requirement: Chat 输入工具栏
 
@@ -976,7 +945,6 @@ Chat 输入区 SHALL 在当前 active session 为 `running` 时展示 **停止**
 
 收到 `turn_cancelled` 后，前端 SHOULD 调用 `list_messages` 与当前 session 的 tool calls 对齐 DB，清空该 session streaming 缓冲，运行态置 idle。用户可见的 assistant 步骤 MUST 与 cancel 前已 emit 的 `assistant_step_done` 一致，不出现重复条。
 
-
 ### Requirement: 全局并行上限提示
 
 前端 SHALL 基于 per-session running map 派生当前 running/stopping 数量。当本地已知数量达到 3 时，输入区 MUST 阻止新发送并提示「当前已有 3 个任务正在执行，请稍后重试」。后端仍 MUST 作为权威校验；若后端返回全局满额错误，前端 MUST 保留用户输入，不得清空草稿。
@@ -1051,76 +1019,41 @@ The clarify card SHALL render `confirm_agents_md` questions with a scrollable fu
 
 ### Requirement: 构建产物 Tab 视图
 
-系统 SHALL 在右侧上半区（工具调用链所在区域）提供 Tab 切换：「工具调用链」与「构建产物」两个 Tab，同一时刻仅展示其一。Tab 切换 MUST NOT 影响下半区项目文件浏览、上下分割条、高度比例与既有的折叠 / 拖拽语义。「构建产物」Tab 标题 SHALL 显示本轮产物数量徽标。
+系统 SHALL 在右侧 Inspector 内提供「构建产物」Tab（与「项目文件」「工具调用链」并列），同一时刻仅展示其一。「构建产物」Tab 标题 MUST 显示本轮产物数量徽标。Tab 切换 MUST NOT 影响主三栏水平布局。
 
-#### Scenario: 默认展示工具调用链 Tab
+#### Scenario: 默认不在构建产物 Tab
 
 - **WHEN** 用户进入工作区且 Agent 未运行
-- **THEN** 右侧上半区默认选中「工具调用链」Tab；「构建产物」Tab 可见但无徽标或徽标为 0
-
-#### Scenario: Tab 切换不影响布局
-
-- **WHEN** 用户在「工具调用链」与「构建产物」Tab 之间切换
-- **THEN** 上下分割条位置、高度比例、折叠状态均保持不变；下半区项目文件浏览不受影响
+- **THEN** Inspector 默认「项目文件」Tab；「构建产物」可见，徽标为 0 或不显示
 
 #### Scenario: Tab 徽标反映本轮产物数
 
 - **WHEN** Agent 在本轮累积产生 2 个去重后的产物路径
-- **THEN** 「构建产物」Tab 标题显示徽标 `2`；用户未切到该 Tab 也能从徽标感知本轮有产出
+- **THEN** 「构建产物」Tab 标题显示徽标 `2`
 
-#### Scenario: 工具链折叠时 Tab 栏随之收起
+#### Scenario: 切换 Tab 不影响主布局
 
-- **WHEN** 用户折叠工具调用链分区
-- **THEN** Tab 栏与内容区一并收起，仅保留标题行；展开后 Tab 栏恢复
+- **WHEN** 用户在 Inspector 三 Tab 间切换
+- **THEN** 主三栏宽度与中间会话区不受影响
 
 ### Requirement: 本轮构建产物列表
 
-系统 SHALL 在「构建产物」Tab 内展示「本轮」Agent 产生或修改的项目相对路径列表。产物列表 MUST 按当前 turn 累积：新 turn（用户发送新消息）开始时清空。产物路径 MUST 去重。每个产物项 SHALL 标注其来源工具调用（工具中文名）。无产物时 MUST 展示空态文案。产物状态 MUST 按 `session_id` 维护于前端内存（与 per-session 工具调用链 `liveTools` 一致）；切换 `activeSessionId` 时 MUST 恢复该 session 的 `turnArtifacts`，MUST NOT 写入数据库或 `localStorage`。
+系统 SHALL 在 Inspector「构建产物」Tab 内展示「本轮」Agent 产生或修改的项目相对路径列表。产物列表 MUST 按当前 turn 累积：新 turn 开始时清空。产物路径 MUST 去重。每个产物项 SHALL 标注其来源工具调用（工具中文名）。无产物时 MUST 展示空态文案。产物状态 MUST 按 `session_id` 维护于前端内存；切换 `activeSessionId` 时 MUST 恢复该 session 的 `turnArtifacts`，MUST NOT 写入数据库或 `localStorage`。
 
 #### Scenario: 累积本轮产物
 
-- **WHEN** Agent 在本轮先后通过 `skill_run` 产出 `report.docx`、`data.xlsx`，再通过 `fs_write` 修改 `notes.md`
-- **THEN** 「构建产物」Tab 列出三个路径项，每项标注来源工具（skill_run / fs_write）
-
-#### Scenario: 同路径去重
-
-- **WHEN** 同一轮内两个工具调用都写入了 `report.docx`
-- **THEN** 产物列表中 `report.docx` 仅出现一次，来源标注保留首个产生它的工具调用
+- **WHEN** Agent 在本轮产出 `report.docx` 与 `notes.md`
+- **THEN** 「构建产物」Tab 列出路径项并标注来源工具
 
 #### Scenario: 新 turn 清空产物
 
-- **WHEN** 用户在上一轮产物列表存在时发送一条新的用户消息
-- **THEN** 「构建产物」Tab 清空，徽标归零，开始累积新 turn 的产物
+- **WHEN** 用户发送新用户消息开始新 turn
+- **THEN** 产物列表清空，徽标归零
 
-#### Scenario: 无产物空态
+#### Scenario: 切换会话保留产物
 
-- **WHEN** 本轮 Agent 未产生或修改任何文件（如纯对话或仅只读工具）
-- **THEN** 「构建产物」Tab 展示空态文案（如「本轮没有产生或修改文件」），徽标为 0
-
-#### Scenario: 切换会话保留该 session 的产物
-
-- **WHEN** session A 在本轮已累积产物，用户切换到 session B 后再切回 A
-- **THEN** A 的「构建产物」Tab 恢复展示切换前累积的产物列表与徽标（与 per-session 工具调用链行为一致）
-
-#### Scenario: 刷新应用后产物不持久化
-
-- **WHEN** 用户刷新应用或重启进程
-- **THEN** 各 session 的产物列表为空；MUST NOT 从磁盘恢复历史产物
-
-#### Scenario: 不显示 .cache 中间产物
-
-- **WHEN** Agent 调用 `ooxml_unpack` 生成 `.cache/ooxml/<hash>/` 工作目录，并调用 `ooxml_pack` 产出 `report.docx`
-- **THEN** 产物列表仅包含 `report.docx`，MUST NOT 包含 `.cache/` 下的任何路径（中间工作目录、渲染缓存、脚本暂存均不视为交付物）
-
-#### Scenario: 目录类产物按路径本身展示
-
-- **WHEN** Agent 经带 `out_dir` 的工具（如 `pdf_split` 输出到 `output`）产出一个目录
-- **THEN** 产物列表展示该目录路径本身；MUST NOT 递归展开目录内的子文件。路径格式不携带目录语义（不补尾部斜杠），以免污染 `@` 文件索引
-
-#### Scenario: 目录与文件统一支持打开
-
-- **WHEN** 用户点击目录项 `output` 的「打开」动作
-- **THEN** 系统用默认文件管理器打开该目录（与文件用默认程序打开走同一动作）
+- **WHEN** session A 有本轮产物，用户切到 B 再切回 A
+- **THEN** A 的产物列表与徽标恢复
 
 ### Requirement: 构建产物打开与定位
 
@@ -1128,32 +1061,32 @@ The clarify card SHALL render `confirm_agents_md` questions with a scrollable fu
 
 #### Scenario: 用默认程序打开产物
 
-- **WHEN** 用户在产物列表中点击 `report.docx` 的「打开」动作
-- **THEN** 系统以默认关联程序打开该文件（同既有文件打开行为）
+- **WHEN** 用户在产物列表中点击「打开」
+- **THEN** 系统以默认关联程序打开该文件
 
 #### Scenario: 在文件管理器中定位产物
 
-- **WHEN** 用户在产物列表中点击 `data.xlsx` 的「在文件夹中显示」动作
-- **THEN** 系统打开文件管理器并定位到（选中）`data.xlsx`；平台无统一选中语义时（如 Linux）打开其所在目录
+- **WHEN** 用户点击「在文件夹中显示」
+- **THEN** 系统打开文件管理器并定位到该路径
 
 #### Scenario: 拒绝越界路径
 
-- **WHEN** 产物路径经校验不在项目根目录内
-- **THEN** 打开与定位动作均失败并返回错误，MUST NOT 访问项目根之外的路径
+- **WHEN** 产物路径不在项目根内
+- **THEN** 打开与定位均失败
 
 ### Requirement: AGENTS.md status indicator
 
-The workspace UI SHALL indicate whether the active project has a non-empty `AGENTS.md` at project root.
+The workspace UI SHALL indicate whether the active project has a non-empty `AGENTS.md` at project root. The indicator SHALL appear in the **composer context bar** (in addition to or instead of the chat panel title row).
 
 #### Scenario: Indicator reflects file presence
 
 - **WHEN** the user selects a project with `AGENTS.md` present
-- **THEN** the UI SHALL show a visible indicator that project agent profile exists
+- **THEN** the composer context bar shows a visible indicator
 
 #### Scenario: Indicator hidden or muted when missing
 
 - **WHEN** the active project has no `AGENTS.md` or an empty file
-- **THEN** the indicator SHALL reflect missing/empty state without blocking chat
+- **THEN** the indicator reflects missing/empty state without blocking chat
 
 ### Requirement: Chat 输入区焦点策略
 
@@ -1188,3 +1121,220 @@ The workspace UI SHALL indicate whether the active project has a non-empty `AGEN
 
 - **WHEN** 用户在 composer 内使用输入法组合输入，按下 Enter 确认候选词（`isComposing` 为 true 或 `keyCode === 229`）
 - **THEN** 系统 MUST NOT 触发发送，MUST NOT 执行 mention/斜杠弹层选择或删除占位符；该按键 MUST 交由浏览器/输入法原生处理
+
+### Requirement: 侧栏顶部动作区
+
+系统 SHALL 在左侧栏顶部提供固定动作区，包含：**新建会话**（含快捷键提示 ⌘N / Ctrl+N）与 **搜索**（含 ⌘K / Ctrl+K 提示）。动作区 MUST 位于项目树之上，不使用全宽 primary 按钮样式。
+
+#### Scenario: 新建会话在 active 项目下创建
+
+- **WHEN** 用户已选 active 项目并点击侧栏「新建会话」或按下 ⌘N / Ctrl+N
+- **THEN** 系统在该 active 项目下创建会话、选中新会话，且不自动触发 starter
+
+#### Scenario: 无项目时新建被引导
+
+- **WHEN** 用户无 active 项目并点击「新建会话」
+- **THEN** 系统展示引导选择/添加项目目录，并高亮侧栏添加项目入口；MUST NOT 创建 orphan 会话
+
+#### Scenario: 搜索打开命令面板
+
+- **WHEN** 用户点击侧栏「搜索」
+- **THEN** 打开命令面板（与 ⌘K / Ctrl+K 为同一组件）
+
+### Requirement: 侧栏项目折叠组导航
+
+系统 SHALL 在左侧栏以 **项目 → 会话** 树形结构展示导航：每个项目为一组，其下缩进展示该项目会话列表。**任意时刻 MUST 仅展开 active 项目**；非 active 项目 MUST 以折叠单行展示。项目组 MUST NOT 使用全宽 `btn-primary`「选择目录创建项目」长按钮；添加项目 MUST 使用 ghost 文字链或 list item 风格入口（如「＋ 添加项目目录」）。
+
+#### Scenario: 仅 active 项目展开
+
+- **WHEN** 用户选中项目 A 且项目 B 存在于列表
+- **THEN** A 的会话列表可见，B 折叠为单行项目名
+
+#### Scenario: 切换项目切换展开态
+
+- **WHEN** 用户点击项目 B 行（非会话行）
+- **THEN** active 项目切换为 B，B 展开会话列表，A 折叠
+
+#### Scenario: 点击会话不切换项目
+
+- **WHEN** 用户点击项目 A 下某会话
+- **THEN** 选中该会话并加载消息，active 项目仍为 A
+
+#### Scenario: 项目内新建会话
+
+- **WHEN** 用户点击项目 A 行 hover 出现的 `[+]` 新建入口
+- **THEN** 若 A 非 active 则先切换 active 为 A，再在 A 下创建并选中新会话
+
+#### Scenario: 空项目组弱提示
+
+- **WHEN** active 项目下无任何会话
+- **THEN** 项目组内展示一行弱提示（如「暂无会话」），用户仍可通过新建会话或 ⌘N 创建
+
+#### Scenario: 添加项目为 ghost 入口
+
+- **WHEN** 用户查看侧栏项目区
+- **THEN** 「添加项目目录」以 ghost/list 风格呈现，MUST NOT 占据全宽 primary 按钮位
+
+### Requirement: 项目行上下文菜单
+
+系统 SHALL 为侧栏每个项目行提供 `···` 上下文菜单（或等效 overflow 入口），至少包含：**在文件夹中打开**（macOS 文案可为「在 Finder 中打开」）与 **从列表移除**。打开动作 MUST 调用既有 `open_project_root`（或等价 IPC）在系统文件管理器中打开该项目根目录。移除 MUST 复用既有 hide project 行为。
+
+#### Scenario: 在 Finder 中打开项目根
+
+- **WHEN** 用户在项目 A 的上下文菜单选择「在 Finder 中打开」（或平台等效文案）
+- **THEN** 系统打开 A 的 `root_path` 于系统文件管理器
+
+#### Scenario: 从列表移除
+
+- **WHEN** 用户选择「从列表移除」
+- **THEN** 项目从侧栏消失；若其为 active 则切换到下一项目或空态
+
+#### Scenario: 菜单不阻断项目切换
+
+- **WHEN** 用户点击项目行主体（非 `···`）
+- **THEN** 切换 active 项目，不打开菜单
+
+### Requirement: Composer 上下文条
+
+系统 SHALL 在 Chat 输入区（composer）**上方**展示上下文条，集中呈现：当前 **项目名**（可切换）、**模型选择与摘要 trigger**、**AGENTS.md 状态**、**上下文占用 %**。模型详细配置（Model Flyout）MUST **仅**从上下文条的模型 trigger 打开；侧栏 MUST NOT 再提供模型选择入口。顶栏 MUST NOT 重复展示 active 项目名副标题。上下文条在空态居中布局与 chat 底部 dock 布局 MUST 均可见（有项目时）。
+
+#### Scenario: 顶栏不重复项目名
+
+- **WHEN** 用户已选项目 doc_test
+- **THEN** 顶栏仅展示品牌与全局入口；项目名出现在 composer 上下文条与侧栏树
+
+#### Scenario: 模型选择仅在上下文条
+
+- **WHEN** 用户已选项目并查看 composer
+- **THEN** 上下文条展示可点击的模型摘要 trigger；侧栏无「模型」区块或 Flyout trigger
+
+#### Scenario: 上下文条展示占用比例
+
+- **WHEN** 当前会话有 context_usage 数据
+- **THEN** 上下文条展示图标 + 百分比，规则同原会话标题栏 ContextUsageIndicator
+
+#### Scenario: 无项目时隐藏项目与模型段
+
+- **WHEN** 用户未选项目
+- **THEN** 上下文条不展示项目切换段与模型 trigger；发送阻断逻辑不变
+
+### Requirement: 空态居中 Composer
+
+当 active 项目下当前上下文 **无 user/assistant 消息** 且无进行中的 streaming 预览时，系统 SHALL 将 composer（含上下文条、输入框、工具栏、推荐问/Init 胶囊）以 **垂直居中** 方式布局于中间区，最大宽度约 720px 并水平居中。当首条 user 或 assistant 消息出现（或 streaming 开始）后，composer MUST **过渡** 至底部 dock 布局；过渡 MUST NOT 清空输入框内容、附件或 cursor 位置。
+
+#### Scenario: 空态居中展示
+
+- **WHEN** 用户已选项目且当前会话无 chat 消息
+- **THEN** composer 居中展示，上方可有问候语，下方展示 Init 胶囊（满足条件时）与「或直接输入开始对话」弱提示
+
+#### Scenario: 有消息后 dock 底部
+
+- **WHEN** 用户发送首条消息或 assistant 首条消息持久化展示
+- **THEN** composer 位于中间区底部，消息列表占据上方滚动区
+
+#### Scenario: 布局切换保留草稿
+
+- **WHEN** 用户在空态居中 composer 中输入文字后发送首条消息
+- **THEN** 发送内容不变，布局切换后输入框清空行为与现网一致（仅发送后清空）
+
+#### Scenario: 切换会话空态仍居中
+
+- **WHEN** 用户切换到无消息的空会话
+- **THEN** 中间区恢复空态居中 composer
+
+### Requirement: 右侧 Inspector 三 Tab
+
+系统 SHALL 将右侧栏改为 **单一 Inspector**，顶部以 segmented control（或等效 Tab）切换三个视图：**项目文件**、**工具调用链**、**构建产物**；同一时刻仅展示其一，内容区占据右栏剩余全高。**默认 Tab MUST 为「项目文件」**。构建产物 Tab MUST 显示本轮产物数量徽标（无产物时为 0 或不显示）。三 Tab 切换 MUST NOT 影响主三栏水平宽度与拖拽语义。
+
+#### Scenario: 默认展示项目文件
+
+- **WHEN** 用户进入工作区或首次打开右栏 Inspector
+- **THEN** 选中「项目文件」Tab 并展示 ProjectFileExplorer
+
+#### Scenario: 切换至工具调用链
+
+- **WHEN** 用户点击「工具调用链」Tab
+- **THEN** 展示 ToolChainPanel 内容，文件列表隐藏
+
+#### Scenario: 构建产物徽标
+
+- **WHEN** 当前 session 本轮累积 2 个产物
+- **THEN** 「构建产物」Tab 显示徽标 `2`
+
+#### Scenario: 无 vertical 分割
+
+- **WHEN** 用户查看右侧栏
+- **THEN** MUST NOT 同时上下分栏展示「工具链区 + 文件区」；仅 Tab 切换
+
+### Requirement: Inspector 智能 Tab 切换
+
+系统 SHALL 在当前 turn 内，当 active session 出现 **首个** 工具调用进入 executing 态（`ToolCall { status: running }` 或等效 streaming 占位升级为 running）时，**自动**将 Inspector Tab 切换为「工具调用链」，**除非**用户在本 turn 内曾手动切换过 Inspector Tab（user pin）。用户发送新消息开始新 turn 时 MUST 清除 user pin。构建产物累积 MUST NOT 触发自动 Tab 切换（仅更新徽标）。
+
+#### Scenario: 工具开始执行自动切 Tab
+
+- **WHEN** 用户当前在「项目文件」Tab 且 Agent 首个工具进入 running
+- **THEN** Inspector 自动切换至「工具调用链」
+
+#### Scenario: 用户手动切换后本 turn 不自动切
+
+- **WHEN** 本 turn 内用户曾手动切至「项目文件」
+- **THEN** 后续工具 running MUST NOT 再次自动切换 Tab，直至用户发送下一条消息开始新 turn
+
+#### Scenario: 新 turn 清除 pin
+
+- **WHEN** 用户发送新用户消息开始新 turn
+- **THEN** user pin 清除；若再有工具 running 可再次 auto-switch
+
+#### Scenario: 产物不触发 auto-switch
+
+- **WHEN** 本轮首个产物路径写入 turnArtifacts
+- **THEN** 徽标更新，Inspector Tab 保持用户当前选择
+
+### Requirement: 命令面板
+
+系统 SHALL 提供全局命令面板，通过 **⌘K**（macOS）或 **Ctrl+K**（Windows/Linux）及侧栏搜索入口打开。面板 MUST 支持 fuzzy 搜索并分组展示：**快捷操作**（新建会话、添加项目目录等）、**项目**、**会话**（含所属项目上下文）、**斜杠命令**（id / label / description）。选中项目 MUST 切换 active 项目；选中会话 MUST 切换 active 会话（必要时先切换项目）；选中斜杠命令 MUST 向 composer 插入 prompt（同键盘 `/` 与图形菜单，MUST NOT 自动发送）。Esc MUST 关闭面板；↑↓ Enter MUST 导航与确认。
+
+#### Scenario: 快捷键打开
+
+- **WHEN** 用户按下 ⌘K 或 Ctrl+K
+- **THEN** 命令面板 modal 打开并 focus 搜索输入
+
+#### Scenario: 搜索并切换会话
+
+- **WHEN** 用户输入会话标题关键词并选中某会话
+- **THEN** 切换到该会话所属项目（若需要）并加载该会话
+
+#### Scenario: 选中斜杠命令插入 prompt
+
+- **WHEN** 用户选中 `/word:edit`
+- **THEN** composer 填入对应 prompt，首个占位符选中，消息未发送
+
+#### Scenario: 新建会话快捷操作
+
+- **WHEN** 用户在面板选择「新建会话」
+- **THEN** 行为同侧栏新建会话（active 项目下创建）
+
+#### Scenario: 添加项目快捷操作
+
+- **WHEN** 用户选择「添加项目目录」
+- **THEN** 打开系统目录选择对话框并创建项目（同现网 pickProject）
+
+### Requirement: Notion 风格工作区视觉
+
+系统 SHALL 强化 Notion 风格（尤其 light 主题）：侧栏导航项 **MUST NOT** 使用重 border 卡片包裹每条项目/会话；改用 hover 浅底与 active 左侧 accent 条。工作区三栏 **SHOULD** 减少「卡片套卡片」嵌套（侧栏/主区/右栏优先 flat 分隔线而非外圈大圆角 panel 间距）。Composer **SHOULD** 使用较大圆角（约 12–16px）与轻 shadow。侧栏 **MUST NOT** 使用大写 `tracking` 分区标题（「项目」「会话」）作为唯一层级手段；以缩进与字重区分项目与会话。
+
+#### Scenario: 会话项 Notion 风 hover
+
+- **WHEN** 用户 hover 侧栏某会话行
+- **THEN** 展示浅灰 hover 背景，无独立卡片边框
+
+#### Scenario: 三栏 flat 布局
+
+- **WHEN** 用户查看主工作区
+- **THEN** 栏间以分隔线或背景差区分，MUST NOT 三层以上嵌套圆角 panel 造成大量留白
+
+#### Scenario: Composer 圆角阴影
+
+- **WHEN** 用户查看 chat composer
+- **THEN** 输入 composite 具备 Notion AI 风格的圆角与浅阴影
+

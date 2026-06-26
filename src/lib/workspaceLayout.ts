@@ -1,15 +1,11 @@
+import { clearStoredInspectorTab } from "./inspectorTab";
+
 export const MAIN_LAYOUT_GROUP_ID = "doc-agent-layout-main";
-export const RIGHT_LAYOUT_GROUP_ID = "doc-agent-layout-right";
 
 export const MAIN_PANEL_IDS = {
   sidebar: "sidebar",
   chat: "chat",
   right: "right",
-} as const;
-
-export const RIGHT_PANEL_IDS = {
-  toolchain: "toolchain",
-  files: "files",
 } as const;
 
 export const DEFAULT_MAIN_LAYOUT: Record<string, number> = {
@@ -18,43 +14,40 @@ export const DEFAULT_MAIN_LAYOUT: Record<string, number> = {
   [MAIN_PANEL_IDS.right]: 20,
 };
 
-export const DEFAULT_RIGHT_LAYOUT: Record<string, number> = {
-  [RIGHT_PANEL_IDS.toolchain]: 60,
-  [RIGHT_PANEL_IDS.files]: 40,
-};
-
 /** Panel minSize/defaultSize props: numeric values are pixels in v4; use explicit percentages. */
 export const PANEL_MIN_SIZE = {
   sidebar: "12%",
   chat: "35%",
   right: "12%",
-  toolchain: "15%",
-  files: "15%",
 } as const;
 
 export const PANEL_DEFAULT_SIZE = {
   sidebar: "20%",
   chat: "60%",
   right: "20%",
-  toolchain: "60%",
-  files: "40%",
 } as const;
-
-export const PANEL_COLLAPSED_SIZE = "32px";
 
 const LAYOUT_STORAGE_PREFIX = "react-resizable-panels";
 
 export const WORKSPACE_LAYOUT_RESET_EVENT = "doc-agent-workspace-layout-reset";
+
+const LEGACY_RIGHT_LAYOUT_STORAGE_KEY =
+  "react-resizable-panels:doc-agent-layout-right:toolchain:files";
 
 function layoutStorageKey(groupId: string, panelIds: readonly string[]): string {
   return `${LAYOUT_STORAGE_PREFIX}:${[groupId, ...panelIds].join(":")}`;
 }
 
 export function workspaceLayoutStorageKeys(): string[] {
-  return [
-    layoutStorageKey(MAIN_LAYOUT_GROUP_ID, Object.values(MAIN_PANEL_IDS)),
-    layoutStorageKey(RIGHT_LAYOUT_GROUP_ID, Object.values(RIGHT_PANEL_IDS)),
-  ];
+  return [layoutStorageKey(MAIN_LAYOUT_GROUP_ID, Object.values(MAIN_PANEL_IDS))];
+}
+
+export function clearLegacyWorkspaceLayoutKeys(storage: Storage = localStorage): void {
+  try {
+    storage.removeItem(LEGACY_RIGHT_LAYOUT_STORAGE_KEY);
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 export function clearStoredWorkspaceLayouts(): void {
@@ -65,6 +58,8 @@ export function clearStoredWorkspaceLayouts(): void {
       // ignore quota / private mode
     }
   }
+  clearLegacyWorkspaceLayoutKeys();
+  clearStoredInspectorTab();
 }
 
 export function resetWorkspaceLayoutToDefaults(): void {
@@ -79,7 +74,7 @@ export function onWorkspaceLayoutReset(listener: () => void): () => void {
 
 type LayoutStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
-function parsePercent(value: string): number {
+export function parsePanelPercent(value: string): number {
   return Number.parseFloat(value.replace("%", ""));
 }
 
@@ -100,7 +95,7 @@ export function isValidStoredPanelLayout(raw: string, panelIds: readonly string[
 
 export function createValidatingLayoutStorage(
   panelIds: readonly string[],
-  underlying: LayoutStorage = localStorage,
+  underlying: Storage = localStorage,
 ): LayoutStorage {
   return {
     getItem(key: string): string | null {
@@ -131,6 +126,3 @@ export function createValidatingLayoutStorage(
 }
 
 export const mainLayoutStorage = createValidatingLayoutStorage(Object.values(MAIN_PANEL_IDS));
-export const rightLayoutStorage = createValidatingLayoutStorage(Object.values(RIGHT_PANEL_IDS));
-
-export { parsePercent as parsePanelPercent };

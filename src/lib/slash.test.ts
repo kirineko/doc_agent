@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySlash, applySlashCommand, detectSlash } from "./slash";
+import { applySlash, applySlashCommand, buildSlashInputFromPalette, detectSlash } from "./slash";
 import { flattenSlashGroups, searchSlashCommands } from "./slashFuzzy";
 import { CATEGORY_ORDER, SLASH_COMMANDS } from "./slashCommands";
 
@@ -44,6 +44,14 @@ describe("slash", () => {
     expect(result.text).toBe(prompt);
     expect(result.cursor).toBe(prompt.indexOf("{{"));
     expect(result.selectionEnd).toBe(prompt.indexOf("}}") + 2);
+  });
+
+  it("appends palette slash commands without wiping existing draft", () => {
+    const init = SLASH_COMMANDS.find((command) => command.id === "init");
+    expect(init).toBeDefined();
+    const result = buildSlashInputFromPalette("已有草稿", init!);
+    expect(result.text).toBe("已有草稿 /init ");
+    expect(result.cursor).toBe(result.text.length);
   });
 });
 

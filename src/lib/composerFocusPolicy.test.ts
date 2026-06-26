@@ -39,6 +39,7 @@ describe("shouldAllowComposerFocus", () => {
       { mentionPopupOpen: true },
       { slashPopupOpen: true },
       { modelFlyoutOpen: true },
+      { commandPaletteOpen: true },
       { updateInProgress: true },
     ] as const;
     for (const blockers of cases) {

@@ -2,14 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { joinPath, parentPath, pathSegments, segmentTarget } from "../lib/pathUtils";
 import { ProjectDirListing } from "../types";
-import { FolderOpenIcon, panelIconButtonClassName, RefreshIcon } from "./PanelIcons";
-import { PanelSectionHeader } from "./PanelSectionHeader";
+import { FolderIcon, FolderOpenIcon, FileIcon, panelIconButtonClassName, RefreshIcon } from "./PanelIcons";
 
 interface ProjectFileExplorerProps {
   projectId?: string;
   fileRevision?: number;
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
 }
 
 interface BreadcrumbProps {
@@ -24,7 +21,9 @@ interface BreadcrumbSegment {
 }
 
 const ROOT_BTN_CLASS =
-  "inline-flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded text-base leading-none text-fg-secondary hover:bg-hover hover:text-link";
+  "inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-xs leading-none text-fg-secondary hover:bg-hover hover:text-link";
+
+const FILE_ROW_ICON_CLASS = "inline-flex h-4 w-4 shrink-0 items-center justify-center text-fg-muted";
 
 function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
   const segments = pathSegments(currentPath);
@@ -103,8 +102,6 @@ function Breadcrumb({ currentPath, onNavigate }: BreadcrumbProps) {
 export function ProjectFileExplorer({
   projectId,
   fileRevision = 0,
-  collapsed = false,
-  onToggleCollapse,
 }: ProjectFileExplorerProps) {
   const [listing, setListing] = useState<ProjectDirListing | null>(null);
   const [loading, setLoading] = useState(false);
@@ -169,56 +166,45 @@ export function ProjectFileExplorer({
   }
 
   const panelIconBtn = panelIconButtonClassName();
-  const refreshButton =
-    projectId && !collapsed ? (
-      <>
-        <button
-          type="button"
-          className={panelIconBtn}
-          aria-label="在文件管理器中打开项目根目录"
-          title="在文件管理器中打开项目根目录"
-          disabled={loading}
-          onClick={() => void openProjectRoot()}
-        >
-          <FolderOpenIcon />
-        </button>
-        <button
-          type="button"
-          className={panelIconBtn}
-          aria-label="刷新当前目录"
-          title="刷新当前目录"
-          disabled={loading}
-          onClick={() => void loadDir(projectId, currentPath)}
-        >
-          <RefreshIcon />
-        </button>
-      </>
-    ) : null;
+  const toolbarActions = projectId ? (
+    <>
+      <button
+        type="button"
+        className={panelIconBtn}
+        aria-label="在文件管理器中打开项目根目录"
+        title="在文件管理器中打开项目根目录"
+        disabled={loading}
+        onClick={() => void openProjectRoot()}
+      >
+        <FolderOpenIcon className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={panelIconBtn}
+        aria-label="刷新当前目录"
+        title="刷新当前目录"
+        disabled={loading}
+        onClick={() => void loadDir(projectId, currentPath)}
+      >
+        <RefreshIcon className="h-3.5 w-3.5" />
+      </button>
+    </>
+  ) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {onToggleCollapse ? (
-        <PanelSectionHeader
-          title="项目文件"
-          collapsed={collapsed}
-          onToggleCollapse={onToggleCollapse}
-          actions={refreshButton}
-        />
-      ) : (
-        <div className="mb-1 flex items-center justify-between gap-2">
-          <div className="text-xs font-medium text-fg-heading">项目文件</div>
-          {refreshButton}
-        </div>
-      )}
-      {!collapsed && (
-        <>
       {projectId ? (
-        <Breadcrumb
-          currentPath={currentPath}
-          onNavigate={(path) => void loadDir(projectId, path)}
-        />
+        <div className="mb-1 flex min-w-0 items-center gap-1">
+          <div className="min-w-0 flex-1">
+            <Breadcrumb
+              currentPath={currentPath}
+              onNavigate={(path) => void loadDir(projectId, path)}
+            />
+          </div>
+          <div className="flex shrink-0 items-center gap-0.5">{toolbarActions}</div>
+        </div>
       ) : (
-        <div className="mb-1 truncate text-[10px] text-fg-muted">未选择项目</div>
+        <div className="mb-1 truncate text-[10px] leading-none text-fg-muted">未选择项目</div>
       )}
       <div className="min-h-0 flex-1 space-y-0.5 overflow-y-auto">
         {!projectId && (
@@ -232,11 +218,13 @@ export function ProjectFileExplorer({
           <button
             type="button"
             disabled={loading}
-            className="chip-surface flex w-full items-center gap-1.5 rounded border-dashed px-1 py-0.5 text-left text-[11px] disabled:cursor-not-allowed disabled:opacity-40"
+            className="chip-surface flex w-full items-center gap-1.5 rounded border-dashed px-1 py-0.5 text-left text-[11px] leading-none disabled:cursor-not-allowed disabled:opacity-40"
             onClick={() => void loadDir(projectId, parentPath(currentPath))}
           >
-            <span className="shrink-0">📂</span>
-            <span>返回上级</span>
+            <span className={FILE_ROW_ICON_CLASS}>
+              <FolderOpenIcon className="h-3 w-3" />
+            </span>
+            <span className="truncate">返回上级</span>
           </button>
         )}
         {listing?.entries.map((entry) => (
@@ -244,7 +232,7 @@ export function ProjectFileExplorer({
             key={entry.name}
             type="button"
             title={entry.is_dir ? "点击进入" : "双击用默认应用打开"}
-            className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] text-fg hover:bg-hover"
+            className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-[11px] leading-none text-fg hover:bg-hover"
             onClick={() => {
               if (entry.is_dir && projectId) {
                 void loadDir(projectId, joinPath(currentPath, entry.name));
@@ -254,7 +242,13 @@ export function ProjectFileExplorer({
               if (!entry.is_dir) void openFile(entry.name);
             }}
           >
-            <span className="shrink-0 text-fg-muted">{entry.is_dir ? "📁" : "📄"}</span>
+            <span className={FILE_ROW_ICON_CLASS}>
+              {entry.is_dir ? (
+                <FolderIcon className="h-3 w-3" />
+              ) : (
+                <FileIcon className="h-3 w-3" />
+              )}
+            </span>
             <span className="truncate">{entry.name}</span>
           </button>
         ))}
@@ -262,8 +256,6 @@ export function ProjectFileExplorer({
           <div className="text-[11px] text-fg-muted">空目录</div>
         )}
       </div>
-        </>
-      )}
     </div>
   );
 }

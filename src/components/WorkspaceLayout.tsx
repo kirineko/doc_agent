@@ -33,7 +33,7 @@ export function WorkspaceLayout({ sidebar, chat, right }: WorkspaceLayoutProps) 
   }, [groupRef]);
 
   return (
-    <main className="min-h-0 flex-1 p-2.5">
+    <main className="min-h-0 flex-1">
       <Group
         id={MAIN_LAYOUT_GROUP_ID}
         groupRef={groupRef}

@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { TurnArtifact } from "../lib/agentEvents";
+import { pathBasename } from "../lib/pathUtils";
 
 interface BuildArtifactsPanelProps {
   artifacts: TurnArtifact[];
   projectId?: string;
-  collapsed?: boolean;
 }
 
 /** 按扩展名给出文件 emoji；无扩展名（如目录）统一 📄。
@@ -20,16 +20,9 @@ function artifactIcon(path: string): string {
   return "📄";
 }
 
-function baseName(path: string): string {
-  const trimmed = path.replace(/\/$/, "");
-  const idx = trimmed.lastIndexOf("/");
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
 export function BuildArtifactsPanel({
   artifacts,
   projectId,
-  collapsed = false,
 }: BuildArtifactsPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -75,8 +68,6 @@ export function BuildArtifactsPanel({
     }
   }
 
-  if (collapsed) return null;
-
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div
@@ -100,7 +91,7 @@ export function BuildArtifactsPanel({
               <span className="shrink-0 text-fg-muted">{artifactIcon(item.path)}</span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-medium text-link" title={item.path}>
-                  {baseName(item.path)}
+                  {pathBasename(item.path.replace(/\/$/, ""))}
                 </div>
                 <div className="truncate text-[10px] text-fg-muted" title={item.path}>
                   {item.path}

@@ -1,10 +1,13 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChatPanel } from "./components/ChatPanel";
+import { CommandPalette } from "./components/CommandPalette";
+import type { CommandPaletteItem } from "./lib/commandPaletteSearch";
+import { parseSessionPaletteItemId } from "./lib/commandPaletteSearch";
 import { CredentialsButton } from "./components/CredentialsButton";
 import { CredentialsDrawer } from "./components/CredentialsDrawer";
 import { CredentialsHintBanner } from "./components/CredentialsHintBanner";
+import { InspectorTabs } from "./components/InspectorTabs";
 import { Logo } from "./components/Logo";
-import { RightPanel } from "./components/RightPanel";
 import { SettingsButton } from "./components/SettingsButton";
 import { SettingsDrawer } from "./components/SettingsDrawer";
 import { Sidebar } from "./components/Sidebar";
@@ -14,11 +17,17 @@ import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useAppUpdater } from "./hooks/useAppUpdater";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { hasAnyLlmKey } from "./lib/credentials";
+import {
+  isAddProjectShortcut,
+  isCommandPaletteShortcut,
+  isNewSessionShortcut,
+} from "./lib/keyboardShortcuts";
 
 function App() {
   const ws = useWorkspace();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelFlyoutOpen, setModelFlyoutOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   useAppUpdater();
 
   const showCredentialsHint = useMemo(
@@ -30,14 +39,93 @@ function App() {
     ws.setCredentialsOpen(true);
   }
 
+  const openCommandPalette = useCallback(() => {
+    setCommandPaletteOpen(true);
+  }, []);
+
+  const handleCommandPaletteItem = useCallback(
+    (item: CommandPaletteItem) => {
+      switch (item.group) {
+        case "actions":
+          if (item.id === "action:new-session") {
+            if (!ws.activeProjectId) {
+              ws.promptAddProject();
+              setCommandPaletteOpen(false);
+              return;
+            }
+            void ws.createSession();
+          } else if (item.id === "action:add-project") {
+            void ws.addProjectFromDialog();
+          }
+          break;
+        case "projects":
+          void ws.selectProject(item.id.slice("project:".length));
+          break;
+        case "sessions": {
+          const parsed = parseSessionPaletteItemId(item.id);
+          if (!parsed) break;
+          void ws.selectProject(parsed.projectId, { preferredSessionId: parsed.sessionId });
+          break;
+        }
+        case "commands":
+          ws.insertSlashCommandPrompt(item.id.slice("command:".length));
+          break;
+      }
+    },
+    [
+      ws.activeProjectId,
+      ws.createSession,
+      ws.addProjectFromDialog,
+      ws.selectProject,
+      ws.insertSlashCommandPrompt,
+      ws.promptAddProject,
+    ],
+  );
+
+  useEffect(() => {
+    if (commandPaletteOpen) {
+      void ws.refreshPaletteSessions();
+    }
+  }, [commandPaletteOpen, ws.refreshPaletteSessions]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (commandPaletteOpen) {
+        if (isCommandPaletteShortcut(event)) {
+          event.preventDefault();
+          setCommandPaletteOpen(false);
+        }
+        return;
+      }
+      if (isCommandPaletteShortcut(event)) {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
+        return;
+      }
+      if (isNewSessionShortcut(event)) {
+        event.preventDefault();
+        if (ws.activeProjectId) {
+          void ws.createSession();
+        } else {
+          ws.promptAddProject();
+        }
+        return;
+      }
+      if (isAddProjectShortcut(event)) {
+        event.preventDefault();
+        void ws.addProjectFromDialog();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [commandPaletteOpen, ws.activeProjectId, ws.createSession, ws.addProjectFromDialog, ws.promptAddProject]);
+
   return (
     <div className="flex h-full flex-col bg-app">
-      <header className="flex items-center gap-3 border-b border-border px-3 py-1.5">
+      <header className="flex items-center gap-3 border-b border-border px-3 py-2">
         <Logo />
         <div className="text-sm font-semibold text-fg">Doc Agent</div>
-        <div className="hidden min-w-0 truncate text-xs text-fg-secondary sm:block">
-          {ws.activeProjectName ? ws.activeProjectName : "请选择项目目录"}
-        </div>
         <CredentialsHintBanner
           visible={showCredentialsHint}
           onOpenCredentials={openCredentialsDrawer}
@@ -53,6 +141,15 @@ function App() {
         </div>
       </header>
       <UpdateProgressOverlay />
+      {commandPaletteOpen && (
+        <CommandPalette
+          open
+          projects={ws.projects}
+          sessions={ws.paletteSessions}
+          onClose={() => setCommandPaletteOpen(false)}
+          onSelectItem={handleCommandPaletteItem}
+        />
+      )}
       <SettingsDrawer
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
@@ -75,23 +172,19 @@ function App() {
             activeProjectId={ws.activeProjectId}
             activeSessionId={ws.activeSessionId}
             sessionRunStatuses={ws.sessionRunStatuses}
-            models={ws.models}
-            sessionConfig={ws.effectiveSessionConfig}
-            modelLocked={ws.modelLocked}
-            apiKeyStatus={ws.apiKeyStatus}
             highlightProject={ws.highlightProject}
             webSearchActive={ws.webSearchActive}
-            modelSummary={ws.modelSummary}
             onProjectsChange={ws.setProjects}
             onSelectProject={ws.selectProject}
             onSelectSession={ws.setActiveSessionId}
-            onCreateSession={() => ws.createSession()}
+            onCreateSession={(projectId) => void ws.createSession(projectId)}
             onDeleteSession={(sessionId) => ws.deleteSession(sessionId)}
             onReorderSessions={ws.reorderSessions}
-            onSessionConfigChange={(patch) => void ws.updateSessionConfig(patch)}
             onEnableWebSearch={() => void ws.enableWebSearch()}
             onDisableWebSearch={() => void ws.disableWebSearch()}
-            onModelFlyoutOpenChange={setModelFlyoutOpen}
+            onOpenCommandPalette={openCommandPalette}
+            onPromptAddProject={ws.promptAddProject}
+            onAddProject={() => ws.addProjectFromDialog()}
           />
         }
         chat={
@@ -117,7 +210,18 @@ function App() {
             pendingAttachments={ws.pendingAttachments}
             visionToast={ws.visionToast}
             projectId={ws.activeProjectId}
+            projects={ws.projects}
+            models={ws.models}
+            sessionConfig={ws.effectiveSessionConfig}
+            modelLocked={ws.modelLocked}
+            modelSummary={ws.modelSummary}
+            apiKeyStatus={ws.apiKeyStatus}
+            onSelectProject={(projectId) => void ws.selectProject(projectId)}
+            onSessionConfigChange={(patch) => void ws.updateSessionConfig(patch)}
+            onModelFlyoutOpenChange={setModelFlyoutOpen}
             onInputChange={ws.setInput}
+            composerFocusRequest={ws.composerFocusRequest}
+            onConsumeComposerFocusRequest={ws.consumeComposerFocusRequest}
             onSend={ws.sendMessage}
             onPasteImage={ws.addPastedImage}
             onRemoveAttachment={ws.removePendingAttachment}
@@ -141,15 +245,18 @@ function App() {
               settingsOpen,
               credentialsOpen: ws.credentialsOpen,
               modelFlyoutOpen,
+              commandPaletteOpen,
             }}
           />
         }
         right={
-          <RightPanel
+          <InspectorTabs
             liveTools={ws.stream.liveTools}
             turnArtifacts={ws.stream.turnArtifacts}
             projectId={ws.activeProjectId}
             fileRevision={ws.fileRevision}
+            inspectorTurnNonce={ws.inspectorTurnNonce}
+            activeSessionId={ws.activeSessionId}
           />
         }
       />

@@ -21,6 +21,43 @@ export function FolderOpenIcon({ className = "h-3 w-3" }: IconProps) {
   );
 }
 
+export function FolderIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <path
+        d="M2.5 4.5h4l1 1.5h6v6.5H2.5V4.5z"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function FileIcon({ className = "h-3 w-3" }: IconProps) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 16 16"
+      className={className}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+    >
+      <path
+        d="M5 2.5h4.5L12.5 5.5v8H5V2.5z"
+        strokeLinejoin="round"
+      />
+      <path d="M9.5 2.5V5.5H12.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function RefreshIcon({ className = "h-3 w-3" }: IconProps) {
   return (
     <svg

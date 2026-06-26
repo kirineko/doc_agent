@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mostRecentSessionId, shouldApplyProjectSelection } from "./projectSession";
+import { mostRecentSessionId, resolveInitialSessionId, shouldApplyProjectSelection } from "./projectSession";
 import type { Session } from "../types";
 
 function session(id: string, updatedAt: string): Session {
@@ -23,6 +23,16 @@ describe("projectSession", () => {
 
   it("returns undefined for empty session list", () => {
     expect(mostRecentSessionId([])).toBeUndefined();
+  });
+
+  it("prefers stored session id when still present", () => {
+    const sessions = [session("s-old", "2026-01-01"), session("s-new", "2026-01-02")];
+    expect(resolveInitialSessionId(sessions, "s-old")).toBe("s-old");
+  });
+
+  it("falls back to most recent session when stored id is missing", () => {
+    const sessions = [session("s-old", "2026-01-01"), session("s-new", "2026-01-02")];
+    expect(resolveInitialSessionId(sessions, "missing")).toBe("s-new");
   });
 
   it("detects stale project selection results", () => {

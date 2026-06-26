@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { formatToolResultError } from "../lib/fileBusy";
 import { formatToolArgs, toolLabel } from "../lib/toolLabels";
-import { PanelSectionHeader } from "./PanelSectionHeader";
 
 export interface LiveToolCall {
   id: string;
@@ -15,10 +14,6 @@ export interface LiveToolCall {
 
 interface ToolChainPanelProps {
   items: LiveToolCall[];
-  collapsed?: boolean;
-  onToggleCollapse?: () => void;
-  /** 由外层 Tab 容器提供标题时，隐藏本组件自带标题。 */
-  hideHeader?: boolean;
 }
 
 function statusLabel(status: string): string {
@@ -60,12 +55,7 @@ export function formatCharCount(count: number): string {
   return `${(count / 1000).toFixed(1)}K 字符`;
 }
 
-export function ToolChainPanel({
-  items,
-  collapsed = false,
-  onToggleCollapse,
-  hideHeader = false,
-}: ToolChainPanelProps) {
+export function ToolChainPanel({ items }: ToolChainPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
@@ -89,20 +79,8 @@ export function ToolChainPanel({
     scrollToBottom();
   }, [items.length]);
 
-  const header = hideHeader ? null : onToggleCollapse ? (
-    <PanelSectionHeader
-      title="工具调用链"
-      collapsed={collapsed}
-      onToggleCollapse={onToggleCollapse}
-    />
-  ) : (
-    <div className="mb-1.5 shrink-0 text-xs font-medium text-fg-heading">工具调用链</div>
-  );
-
   return (
     <section className="flex h-full min-h-0 flex-col">
-      {header}
-      {!collapsed && (
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -154,7 +132,6 @@ export function ToolChainPanel({
         ))}
         <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
       </div>
-      )}
     </section>
   );
 }

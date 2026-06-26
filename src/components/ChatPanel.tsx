@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AgentsMdIndicator } from "./AgentsMdIndicator";
 import {
   readClipboardImageFile,
   type PendingAttachment,
 } from "../lib/attachments";
 import { type AgentsMdStatus } from "../lib/agentsMdStatus";
+import { composerWelcomeMessage, isComposerEmptyLayout, shouldCenterComposer } from "../lib/composerLayout";
 import type { MentionFileEntry } from "../lib/projectFiles";
 import { orderMentionFileMatchesForDisplay, searchMentionFiles } from "../lib/mentionFiles";
 import { applyMention, detectMention, expandMentionDirectory } from "../lib/mention";
@@ -17,9 +17,10 @@ import { useComposerFocus } from "../hooks/useComposerFocus";
 import { SLASH_COMMANDS, isSlashCommandEntry, isSlashTemplate } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { PARALLEL_LIMIT_MESSAGE, STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
-import { ClarifyQuestion, Message, ToolCallRecord } from "../types";
+import { ClarifyQuestion, Message, ModelInfo, Project, ToolCallRecord } from "../types";
+import { type SessionConfig } from "../lib/sessionConfig";
 import { ChatInputToolbar } from "./ChatInputToolbar";
-import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import { ComposerContextBar } from "./ComposerContextBar";
 import { ClarifyQuestionCard } from "./ClarifyQuestionCard";
 import { FileMentionPopup } from "./FileMentionPopup";
 import { InitCapsule, InitLoadingCapsule } from "./InitCapsule";
@@ -55,7 +56,18 @@ interface ChatPanelProps {
   pendingAttachments: PendingAttachment[];
   visionToast?: string | null;
   projectId?: string;
+  projects?: Project[];
+  models?: ModelInfo[];
+  sessionConfig?: SessionConfig;
+  modelLocked?: boolean;
+  modelSummary?: string;
+  apiKeyStatus?: Record<string, boolean>;
+  onSelectProject?: (projectId: string) => void | Promise<void>;
+  onSessionConfigChange?: (patch: Partial<SessionConfig>) => void;
+  onModelFlyoutOpenChange?: (open: boolean) => void;
   onInputChange: (value: string) => void;
+  composerFocusRequest?: { start: number; end: number; nonce: number } | null;
+  onConsumeComposerFocusRequest?: () => void;
   onSend: () => void;
   onPasteImage: (file: File, mime: string) => void | Promise<void>;
   onRemoveAttachment: (path: string) => void;
@@ -75,7 +87,7 @@ interface ChatPanelProps {
   onNotifyToast?: (message: string) => void;
   composerFocusBlockers?: Pick<
     ComposerFocusBlockers,
-    "settingsOpen" | "credentialsOpen" | "modelFlyoutOpen"
+    "settingsOpen" | "credentialsOpen" | "modelFlyoutOpen" | "commandPaletteOpen"
   >;
 }
 
@@ -101,7 +113,18 @@ export function ChatPanel({
   pendingAttachments,
   visionToast,
   projectId,
+  projects = [],
+  models = [],
+  sessionConfig,
+  modelLocked = false,
+  modelSummary = "",
+  apiKeyStatus = {},
+  onSelectProject,
+  onSessionConfigChange,
+  onModelFlyoutOpenChange,
   onInputChange,
+  composerFocusRequest,
+  onConsumeComposerFocusRequest,
   onSend,
   onPasteImage,
   onRemoveAttachment,
@@ -134,6 +157,17 @@ export function ChatPanel({
   const [previewImageSrc, setPreviewImageSrc] = useState<string | null>(null);
 
   const visibleMessages = useMemo(() => messages.filter(isVisibleMessage), [messages]);
+  const isEmptyLayout = useMemo(
+    () =>
+      isComposerEmptyLayout(
+        visibleMessages.length,
+        streamingReasoning,
+        streamingContent,
+        busy,
+      ),
+    [visibleMessages.length, streamingReasoning, streamingContent, busy],
+  );
+  const showCenteredComposer = shouldCenterComposer(Boolean(projectId), isEmptyLayout);
   const lastMessageId = visibleMessages.at(-1)?.id;
   const hasActiveClarify = Boolean(activeClarify);
   const showStop = (runStatus === "running" || runStatus === "stopping") && !hasActiveClarify;
@@ -166,6 +200,13 @@ export function ChatPanel({
   }, [initializing, hasActiveClarify, busy, visibleMessages.length, starterSuggestions, followupSuggestions]);
 
   const showStarterCapsule = showInitCapsule && Boolean(onInitStarter);
+  const showInitStarterRow = showStarterCapsule || initializing;
+  const showDirectInputHint =
+    showCenteredComposer &&
+    projectId &&
+    !initializing &&
+    starterSuggestions.length === 0 &&
+    (showStarterCapsule || !showInitCapsule);
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
     bottomRef.current?.scrollIntoView({ behavior, block: "end" });
@@ -240,6 +281,13 @@ export function ChatPanel({
     });
   }
 
+  useEffect(() => {
+    if (!composerFocusRequest) return;
+    setCursor(composerFocusRequest.end);
+    focusTextareaAt(composerFocusRequest.start, composerFocusRequest.end);
+    onConsumeComposerFocusRequest?.();
+  }, [composerFocusRequest, onConsumeComposerFocusRequest]);
+
   const { importProjectFiles, importing } = useProjectImport({
     projectId,
     input,
@@ -262,6 +310,7 @@ export function ChatPanel({
       settingsOpen: composerFocusBlockers?.settingsOpen,
       credentialsOpen: composerFocusBlockers?.credentialsOpen,
       modelFlyoutOpen: composerFocusBlockers?.modelFlyoutOpen,
+      commandPaletteOpen: composerFocusBlockers?.commandPaletteOpen,
       imagePreviewOpen: previewImageSrc !== null,
       slashMenuOpen,
       mentionPopupOpen: showMentionPopup,
@@ -271,6 +320,7 @@ export function ChatPanel({
       composerFocusBlockers?.settingsOpen,
       composerFocusBlockers?.credentialsOpen,
       composerFocusBlockers?.modelFlyoutOpen,
+      composerFocusBlockers?.commandPaletteOpen,
       previewImageSrc,
       slashMenuOpen,
       showMentionPopup,
@@ -372,34 +422,43 @@ export function ChatPanel({
   }
 
   return (
-    <section className="panel flex h-full min-h-0 flex-col p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="text-xs font-medium text-fg-heading">会话</div>
-          <AgentsMdIndicator status={agentsMdStatus} variant="labeled" />
+    <section className="workspace-pane flex h-full min-h-0 flex-col px-3 py-2.5">
+      {!showCenteredComposer && (
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2"
+        >
+          <MessageList
+            messages={visibleMessages}
+            toolCalls={toolCalls}
+            streamingReasoning={streamingReasoning}
+            streamingContent={streamingContent}
+            activity={activity}
+            busy={busy}
+            projectId={projectId}
+            onPreviewImage={setPreviewImageSrc}
+          />
+
+          <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
         </div>
-        <ContextUsageIndicator ratio={contextRatio ?? 0} hidden={!projectId} />
-      </div>
+      )}
+
+      {showCenteredComposer && (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4 pb-6">
+          <p className="mb-4 text-center text-sm text-fg-secondary">
+            {composerWelcomeMessage(Boolean(projectId))}
+          </p>
+        </div>
+      )}
+
       <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-2"
+        className={`shrink-0 space-y-2 transition-all duration-200 ${
+          showCenteredComposer
+            ? "mx-auto w-full max-w-[720px] pb-[min(12vh,4rem)]"
+            : "mt-2"
+        }`}
       >
-        <MessageList
-          messages={visibleMessages}
-          toolCalls={toolCalls}
-          streamingReasoning={streamingReasoning}
-          streamingContent={streamingContent}
-          activity={activity}
-          busy={busy}
-          projectId={projectId}
-          onPreviewImage={setPreviewImageSrc}
-        />
-
-        <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
-      </div>
-
-      <div className="mt-2 shrink-0 space-y-2">
         {suggestionItems.length > 0 && (
           <SuggestionCards items={suggestionItems} onPick={pickSuggestion} />
         )}
@@ -442,14 +501,41 @@ export function ChatPanel({
           </div>
         )}
 
-        {(showStarterCapsule || initializing) && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {initializing ? (
-              <InitLoadingCapsule />
-            ) : (
-              onInitStarter && <InitCapsule onInit={onInitStarter} />
+        {(showInitStarterRow || showDirectInputHint) && (
+          <div className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            {showInitStarterRow &&
+              (initializing ? (
+                <InitLoadingCapsule />
+              ) : (
+                onInitStarter && <InitCapsule onInit={onInitStarter} />
+              ))}
+            {showDirectInputHint && (
+              <span className="text-[11px] text-fg-muted">或直接输入开始对话</span>
             )}
           </div>
+        )}
+
+        {showCenteredComposer && !projectId && (
+          <p className="text-center text-[11px] text-fg-muted">
+            点击上方「添加项目目录」，或使用搜索
+          </p>
+        )}
+
+        {projectId && sessionConfig && onSelectProject && onSessionConfigChange && (
+          <ComposerContextBar
+            projectId={projectId}
+            projects={projects}
+            models={models}
+            sessionConfig={sessionConfig}
+            modelLocked={modelLocked}
+            modelSummary={modelSummary}
+            apiKeyStatus={apiKeyStatus}
+            agentsMdStatus={agentsMdStatus}
+            contextRatio={contextRatio ?? 0}
+            onSelectProject={onSelectProject}
+            onSessionConfigChange={onSessionConfigChange}
+            onModelFlyoutOpenChange={onModelFlyoutOpenChange}
+          />
         )}
 
         <PendingAttachmentChips
@@ -481,7 +567,7 @@ export function ChatPanel({
               onPick={pickSlashCommand}
               agentsMdStatus={agentsMdStatus}
             />
-            <div className="input-field flex min-h-[7.5rem] flex-col overflow-hidden rounded-lg">
+            <div className="composer-shell input-field flex min-h-[7.5rem] flex-col overflow-hidden rounded-xl shadow-sm">
               <textarea
                 ref={textareaRef}
                 className="min-h-0 flex-1 resize-none border-0 bg-transparent px-3 pt-2 text-sm focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"

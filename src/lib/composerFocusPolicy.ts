@@ -6,6 +6,7 @@ export interface ComposerFocusBlockers {
   mentionPopupOpen?: boolean;
   slashPopupOpen?: boolean;
   modelFlyoutOpen?: boolean;
+  commandPaletteOpen?: boolean;
   updateInProgress?: boolean;
 }
 
@@ -27,6 +28,7 @@ export function shouldAllowComposerFocus(ctx: ComposerFocusContext): boolean {
   if (b.mentionPopupOpen) return false;
   if (b.slashPopupOpen) return false;
   if (b.modelFlyoutOpen) return false;
+  if (b.commandPaletteOpen) return false;
   if (b.updateInProgress) return false;
   return true;
 }

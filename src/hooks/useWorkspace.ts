@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import { formatCharCount } from "../components/ToolChainPanel";
+import { pathBasename } from "../lib/pathUtils";
+import { buildSlashInputFromPalette } from "../lib/slash";
+import { SLASH_COMMANDS } from "../lib/slashCommands";
 import { toolLabel } from "../lib/toolLabels";
 import {
   countChatMessages,
@@ -12,8 +16,17 @@ import {
 import { appendAssistantStepDone } from "../lib/messages";
 import {
   mostRecentSessionId,
+  resolveInitialSessionId,
   shouldApplyProjectSelection,
 } from "../lib/projectSession";
+import { clearLegacyWorkspaceLayoutKeys } from "../lib/workspaceLayout";
+import { clearStoredInspectorTab } from "../lib/inspectorTab";
+import {
+  clearStoredActiveWorkspace,
+  planWorkspaceRestore,
+  readStoredActiveWorkspace,
+  writeStoredActiveWorkspace,
+} from "../lib/activeWorkspace";
 import {
   displaySessionsForProject,
   moveSessionInList,
@@ -94,6 +107,13 @@ export function useWorkspace() {
     readStoredSessionConfig(),
   );
   const [input, setInput] = useState("");
+  const [paletteSessions, setPaletteSessions] = useState<Session[]>([]);
+  const [composerFocusRequest, setComposerFocusRequest] = useState<{
+    start: number;
+    end: number;
+    nonce: number;
+  } | null>(null);
+  const [inspectorTurnNonce, setInspectorTurnNonce] = useState(0);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [visionToast, setVisionToast] = useState<string | null>(null);
   const [contextRatio, setContextRatio] = useState(0);
@@ -141,9 +161,15 @@ export function useWorkspace() {
   const stoppingTimersRef = useRef<Map<string, number>>(new Map());
   const initStarterInFlightRef = useRef(false);
   const ensureSessionInFlightRef = useRef<Promise<string | null> | null>(null);
+  const createSessionInFlightRef = useRef<Promise<string | null> | null>(null);
+  const paletteRefreshGenerationRef = useRef(0);
   const selectionTargetProjectIdRef = useRef<string | undefined>(undefined);
+  const projectSelectionGenerationRef = useRef(0);
   const activeSessionRef = useRef<string | undefined>(undefined);
   const activeProjectRef = useRef<string | undefined>(undefined);
+  const selectProjectRef = useRef<
+    (projectId: string | undefined, options?: { preferredSessionId?: string }) => Promise<void>
+  >(async () => {});
   const messagesRef = useRef<Message[]>([]);
   const sessionsRef = useRef<Session[]>([]);
   const pendingSessionConfigRef = useRef(pendingSessionConfig);
@@ -178,8 +204,17 @@ export function useWorkspace() {
     setSessions(ordered);
   }, []);
 
+  const applyActiveSession = useCallback(
+    (sessionId: string | undefined, projectIdOverride?: string) => {
+      setActiveSessionId(sessionId);
+      const projectId = projectIdOverride ?? activeProjectRef.current;
+      if (!projectId) return;
+      writeStoredActiveWorkspace({ projectId, sessionId });
+    },
+    [],
+  );
+
   useEffect(() => {
-    invoke<Project[]>("list_projects").then(setProjects).catch(console.error);
     loadModels().then(setModels).catch(console.error);
     API_PROVIDERS.forEach(async (provider) => {
       const has = await invoke<boolean>("has_api_key", { provider });
@@ -203,30 +238,102 @@ export function useWorkspace() {
     );
   }, [models]);
 
-  const selectProject = useCallback(async (projectId: string | undefined) => {
-    if (projectId && projectId === activeProjectRef.current) return;
-
+  const selectProject = useCallback(async (
+    projectId: string | undefined,
+    options?: { preferredSessionId?: string; holdSessionSelection?: boolean },
+  ) => {
+    const generation = ++projectSelectionGenerationRef.current;
     selectionTargetProjectIdRef.current = projectId;
+
+    if (projectId && projectId === activeProjectRef.current) {
+      const preferredSessionId = options?.preferredSessionId;
+      if (!preferredSessionId) return;
+
+      if (sessionsRef.current.some((session) => session.id === preferredSessionId)) {
+        applyActiveSession(preferredSessionId, projectId);
+        return;
+      }
+
+      try {
+        const list = await invoke<Session[]>("list_sessions", { projectId });
+        if (generation !== projectSelectionGenerationRef.current) return;
+        if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return;
+        setSessionsFromBackend(list, projectId);
+        const sessionId = resolveInitialSessionId(list, preferredSessionId);
+        applyActiveSession(sessionId, projectId);
+      } catch (error) {
+        console.error(error);
+      }
+      return;
+    }
+
+    activeProjectRef.current = projectId;
     setActiveProjectId(projectId);
     setHighlightProject(false);
 
     if (!projectId) {
       setSessions([]);
+      sessionsRef.current = [];
       setActiveSessionId(undefined);
+      clearStoredActiveWorkspace();
       projectFiles.reset();
       return;
     }
 
+    setSessions([]);
+    sessionsRef.current = [];
+    setActiveSessionId(undefined);
+
     try {
       const list = await invoke<Session[]>("list_sessions", { projectId });
+      if (generation !== projectSelectionGenerationRef.current) return;
       if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return;
       setSessionsFromBackend(list, projectId);
       void projectFiles.loadInitial(projectId);
-      setActiveSessionId(mostRecentSessionId(list));
+      if (!options?.holdSessionSelection) {
+        const sessionId = resolveInitialSessionId(list, options?.preferredSessionId);
+        applyActiveSession(sessionId, projectId);
+      }
     } catch (error) {
       console.error(error);
     }
-  }, [projectFiles.loadInitial, projectFiles.reset, setSessionsFromBackend]);
+  }, [applyActiveSession, projectFiles.loadInitial, projectFiles.reset, setSessionsFromBackend]);
+
+  selectProjectRef.current = selectProject;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrapProjects() {
+      clearLegacyWorkspaceLayoutKeys();
+      clearStoredInspectorTab();
+      try {
+        const list = await invoke<Project[]>("list_projects");
+        if (cancelled) return;
+        setProjects(list);
+
+        if (activeProjectRef.current || selectionTargetProjectIdRef.current !== undefined) return;
+
+        const plan = planWorkspaceRestore(list, readStoredActiveWorkspace());
+        if (plan.kind === "clear") {
+          clearStoredActiveWorkspace();
+          return;
+        }
+        if (plan.kind !== "restore") return;
+
+        await selectProjectRef.current(plan.projectId, {
+          preferredSessionId: plan.preferredSessionId,
+        });
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    void bootstrapProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeSessionId) {
@@ -546,6 +653,18 @@ export function useWorkspace() {
   );
 
   const ensureActiveSession = useCallback(async (): Promise<string | null> => {
+    if (createSessionInFlightRef.current) {
+      await createSessionInFlightRef.current;
+      const projectId = activeProjectRef.current;
+      const currentSessionId = activeSessionRef.current;
+      if (
+        projectId &&
+        currentSessionId &&
+        sessionsRef.current.some((s) => s.id === currentSessionId && s.project_id === projectId)
+      ) {
+        return currentSessionId;
+      }
+    }
     if (ensureSessionInFlightRef.current) return ensureSessionInFlightRef.current;
 
     const task = (async (): Promise<string | null> => {
@@ -563,13 +682,15 @@ export function useWorkspace() {
       const session = await invoke<Session>("create_session", {
         req: buildCreateSessionRequest(projectId, pendingSessionConfigRef.current),
       });
+      if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return null;
+      prependSessionToOrder(projectId, session.id);
+      if (activeProjectRef.current !== projectId) return null;
 
       skipNextLoadRef.current = true;
-      prependSessionToOrder(projectId, session.id);
       sessionsRef.current = [session, ...sessionsRef.current];
       activeSessionRef.current = session.id;
       setSessions(sessionsRef.current);
-      setActiveSessionId(session.id);
+      applyActiveSession(session.id, projectId);
       setMessages([]);
       setMessagesLoaded(true);
       starterStartedRef.current = undefined;
@@ -584,7 +705,7 @@ export function useWorkspace() {
         ensureSessionInFlightRef.current = null;
       }
     }
-  }, []);
+  }, [applyActiveSession]);
 
   async function reloadMessages(sessionId: string) {
     const bundle = await invoke<MessageBundle>("list_messages", { sessionId });
@@ -602,14 +723,38 @@ export function useWorkspace() {
     setVisionToast("当前模型不支持图片输入，已移除待发送图片");
   }, [models]);
 
+  const promptAddProject = useCallback(() => {
+    setHighlightProject(true);
+    document.getElementById("sidebar-add-project")?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  const refreshPaletteSessions = useCallback(async () => {
+    if (projects.length === 0) {
+      setPaletteSessions([]);
+      return;
+    }
+    const generation = ++paletteRefreshGenerationRef.current;
+    setPaletteSessions([]);
+    try {
+      const lists = await Promise.all(
+        projects.map((project) =>
+          invoke<Session[]>("list_sessions", { projectId: project.id }),
+        ),
+      );
+      if (generation !== paletteRefreshGenerationRef.current) return;
+      setPaletteSessions(lists.flat());
+    } catch (error) {
+      console.error(error);
+    }
+  }, [projects]);
+
   function showSendBlocker(blocker: SendBlocker) {
     setSendHint(blocker);
     if (blocker.kind === "parallel_limit" || blocker.kind === "clarify_pending") {
       return;
     }
     if (blocker.kind === "no_project") {
-      setHighlightProject(true);
-      document.getElementById("sidebar-projects")?.scrollIntoView({ block: "nearest" });
+      promptAddProject();
       return;
     }
     setHighlightApiKeyProvider(blocker.provider);
@@ -641,7 +786,8 @@ export function useWorkspace() {
         showSendBlocker(blocker);
         return;
       }
-      const sessionId = await ensureActiveSession();
+      await ensureActiveSession();
+      const sessionId = activeSessionRef.current;
       if (!sessionId) {
         showSendBlocker({ kind: "no_project" });
         return;
@@ -721,7 +867,9 @@ export function useWorkspace() {
       return;
     }
 
-    const sessionId = await ensureActiveSession();
+    await ensureActiveSession();
+    if (createSessionInFlightRef.current) return;
+    const sessionId = activeSessionRef.current;
     if (!sessionId) {
       showSendBlocker({ kind: "no_project" });
       return;
@@ -741,6 +889,7 @@ export function useWorkspace() {
       setStarterSuggestions([]);
       setFollowupSuggestions([]);
       starterStartedRef.current = undefined;
+      setInspectorTurnNonce((value) => value + 1);
       dispatchSessionRuns({ type: "busy", sessionId });
       setMessages((prev) => [
         ...prev,
@@ -895,7 +1044,8 @@ export function useWorkspace() {
 
     initStarterInFlightRef.current = true;
     try {
-      const sessionId = await ensureActiveSession();
+      await ensureActiveSession();
+      const sessionId = activeSessionRef.current;
       if (!sessionId) {
         showSendBlocker({ kind: "no_project" });
         return;
@@ -1043,18 +1193,70 @@ export function useWorkspace() {
     setSessions(next);
   }, []);
 
-  const createSession = useCallback(async () => {
-    const projectId = activeProjectRef.current;
-    if (!projectId) return;
+  const createSession = useCallback(async (projectIdOverride?: string) => {
+    const waiting = createSessionInFlightRef.current ?? ensureSessionInFlightRef.current;
+    if (waiting) {
+      await waiting;
+    }
 
-    const session = await invoke<Session>("create_session", {
-      req: buildCreateSessionRequest(projectId, pendingSessionConfigRef.current),
+    const task = (async (): Promise<string | null> => {
+      const projectId = projectIdOverride ?? activeProjectRef.current;
+      if (!projectId) return null;
+
+      if (projectId !== activeProjectRef.current) {
+        await selectProject(projectId, { holdSessionSelection: true });
+        if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return null;
+        if (activeProjectRef.current !== projectId) return null;
+      }
+
+      const session = await invoke<Session>("create_session", {
+        req: buildCreateSessionRequest(projectId, pendingSessionConfigRef.current),
+      });
+      if (!shouldApplyProjectSelection(projectId, selectionTargetProjectIdRef.current)) return null;
+      prependSessionToOrder(projectId, session.id);
+      if (activeProjectRef.current !== projectId) return null;
+      sessionsRef.current = [session, ...sessionsRef.current];
+      setSessions(sessionsRef.current);
+      applyActiveSession(session.id, projectId);
+      return session.id;
+    })();
+
+    createSessionInFlightRef.current = task;
+    try {
+      await task;
+    } finally {
+      if (createSessionInFlightRef.current === task) {
+        createSessionInFlightRef.current = null;
+      }
+    }
+  }, [applyActiveSession, selectProject]);
+
+  const addProjectFromDialog = useCallback(async () => {
+    const selected = await open({ directory: true, multiple: false });
+    if (!selected || Array.isArray(selected)) return;
+    const name = pathBasename(selected) || "project";
+    const project = await invoke<Project>("create_project", {
+      req: { name, root_path: selected },
     });
-    prependSessionToOrder(projectId, session.id);
-    sessionsRef.current = [session, ...sessionsRef.current];
-    setSessions(sessionsRef.current);
-    setActiveSessionId(session.id);
+    setProjects((prev) => [project, ...prev]);
+    await selectProject(project.id);
+  }, [selectProject]);
+
+  const consumeComposerFocusRequest = useCallback(() => {
+    setComposerFocusRequest(null);
   }, []);
+
+  const insertSlashCommandPrompt = useCallback((commandId: string) => {
+    const command = SLASH_COMMANDS.find((item) => item.id === commandId);
+    if (!command) return;
+    const result = buildSlashInputFromPalette(input, command);
+    setInput(result.text);
+    setComposerFocusRequest({
+      start: result.cursor,
+      end: result.selectionEnd,
+      nonce: Date.now(),
+    });
+  }, [input]);
 
   const deleteSession = useCallback(
     async (sessionId: string) => {
@@ -1068,20 +1270,27 @@ export function useWorkspace() {
         sessionsRef.current = next;
         setSessions(next);
         if (activeSessionRef.current === sessionId) {
-          setActiveSessionId(mostRecentSessionId(next));
+          applyActiveSession(mostRecentSessionId(next));
         }
       } catch (error) {
         console.error(error);
       }
     },
-    [],
+    [applyActiveSession],
   );
 
   return {
     projects,
     setProjects,
     sessions,
+    paletteSessions,
+    refreshPaletteSessions,
     createSession,
+    addProjectFromDialog,
+    insertSlashCommandPrompt,
+    consumeComposerFocusRequest,
+    composerFocusRequest,
+    promptAddProject,
     deleteSession,
     reorderSessions,
     messages,
@@ -1089,10 +1298,11 @@ export function useWorkspace() {
     activeClarify,
     activeProjectId,
     activeSessionId,
-    setActiveSessionId,
+    setActiveSessionId: applyActiveSession,
     pendingSessionConfig,
     input,
     setInput,
+    inspectorTurnNonce,
     pendingAttachments,
     visionToast,
     supportsVision,

@@ -125,3 +125,47 @@ describe("ChatPanel composer focus", () => {
     expect(focusSpy).not.toHaveBeenCalled();
   });
 });
+
+describe("ChatPanel empty starter row", () => {
+  it("shows direct-input hint on the same row as init capsule", () => {
+    render(
+      <ChatPanel
+        {...baseProps({
+          showInitCapsule: true,
+          onInitStarter: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("根据文档生成推荐问")).toBeInTheDocument();
+    expect(screen.getByText("或直接输入开始对话")).toBeInTheDocument();
+  });
+
+  it("hides direct-input hint after starter suggestions are generated", () => {
+    render(
+      <ChatPanel
+        {...baseProps({
+          showInitCapsule: false,
+          starterSuggestions: ["Summarize the report"],
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("或直接输入开始对话")).not.toBeInTheDocument();
+  });
+
+  it("hides direct-input hint while generating starter suggestions", () => {
+    render(
+      <ChatPanel
+        {...baseProps({
+          showInitCapsule: true,
+          initializing: true,
+          onInitStarter: vi.fn(),
+        })}
+      />,
+    );
+
+    expect(screen.getByText("正在分析项目文档…")).toBeInTheDocument();
+    expect(screen.queryByText("或直接输入开始对话")).not.toBeInTheDocument();
+  });
+});

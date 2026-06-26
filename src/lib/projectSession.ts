@@ -8,6 +8,20 @@ export function mostRecentSessionId(sessions: Session[]): string | undefined {
   ).id;
 }
 
+/** 冷启动恢复时优先使用上次会话，无效则回退到最近更新会话。 */
+export function resolveInitialSessionId(
+  sessions: Session[],
+  preferredSessionId?: string,
+): string | undefined {
+  if (
+    preferredSessionId &&
+    sessions.some((session) => session.id === preferredSessionId)
+  ) {
+    return preferredSessionId;
+  }
+  return mostRecentSessionId(sessions);
+}
+
 export function shouldApplyProjectSelection(
   requestedProjectId: string | undefined,
   selectionTargetId: string | undefined,

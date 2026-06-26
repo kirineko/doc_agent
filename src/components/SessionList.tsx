@@ -26,12 +26,14 @@ interface SessionListProps {
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
   onReorderSessions: (activeId: string, overId: string) => void;
+  variant?: "card" | "tree";
 }
 
 interface SortableSessionItemProps {
   session: Session;
   active: boolean;
   runStatus: SessionRunStatus;
+  variant: "card" | "tree";
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => void;
 }
@@ -40,6 +42,7 @@ function SortableSessionItem({
   session,
   active,
   runStatus,
+  variant,
   onSelectSession,
   onDeleteSession,
 }: SortableSessionItemProps) {
@@ -51,12 +54,21 @@ function SortableSessionItem({
     transition,
   };
 
+  const surfaceClass =
+    variant === "tree"
+      ? active
+        ? "nav-session-active bg-hover"
+        : "hover:bg-hover"
+      : active
+        ? "item-session-active"
+        : "item-surface";
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative rounded-md border text-xs ${
-        active ? "item-session-active" : "item-surface"
+      className={`group relative rounded-md text-xs ${surfaceClass} ${
+        variant === "tree" ? "" : "border"
       } ${isDragging ? "z-10 opacity-80 shadow-md" : ""}`}
     >
       <div className="flex items-stretch">
@@ -119,6 +131,7 @@ export function SessionList({
   onSelectSession,
   onDeleteSession,
   onReorderSessions,
+  variant = "card",
 }: SessionListProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -141,6 +154,7 @@ export function SessionList({
               session={session}
               active={session.id === activeSessionId}
               runStatus={sessionRunStatuses[session.id] ?? "idle"}
+              variant={variant}
               onSelectSession={onSelectSession}
               onDeleteSession={onDeleteSession}
             />

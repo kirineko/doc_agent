@@ -290,3 +290,23 @@ body {
   border: 1px solid var(--border);
   background: var(--bg-muted);
 }
+
+.workspace-pane {
+  background: var(--bg-panel);
+}
+
+.nav-project-active {
+  box-shadow: inset 2px 0 0 var(--border-project-active);
+}
+
+.nav-session-active {
+  box-shadow: inset 2px 0 0 var(--border-session-active);
+}
+
+.composer-shell {
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+}
+
+[data-theme="light"] .composer-shell {
+  box-shadow: 0 1px 3px rgb(55 53 47 / 0.08);
+}
