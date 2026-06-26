@@ -1,0 +1,78 @@
+/*
+ * 共享双栏简历布局：h2 在网格外，条目在 .resume-section-body 内 Grid 排列。
+ * 避免 h2 作为 grid 子项导致的错位与标题截断。
+ */
+
+.resume-section {
+  margin: 0;
+  padding: 0;
+}
+
+.resume-main .resume-section h2 {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0;
+  padding-top: 1.25rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 1px solid var(--md-border);
+  line-height: 1.45;
+  overflow: visible;
+}
+
+.resume-main > .resume-section:first-child h2 {
+  padding-top: 0.75rem;
+}
+
+.resume-section-body {
+  display: block;
+  overflow: visible;
+}
+
+.resume-section .resume-entry {
+  min-width: 0;
+  overflow: visible;
+  padding-top: 0.75rem;
+}
+
+.resume-section--cols .resume-section-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 2rem;
+  row-gap: 0.75rem;
+  align-items: start;
+}
+
+.resume-section--cols .resume-entry--span {
+  grid-column: 1 / -1;
+}
+
+.resume-section .resume-entry h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.resume-section .resume-entry p,
+.resume-section .resume-entry ul {
+  margin: 0.3rem 0;
+}
+
+.resume-section .resume-entry ul {
+  padding-left: 1.2rem;
+}
+
+.resume-section .resume-entry li {
+  margin: 0.2rem 0;
+  line-height: 1.55;
+}
+
+@media print {
+  .resume-section--cols .resume-section-body {
+    display: grid;
+  }
+
+  .resume-section .resume-entry {
+    break-inside: auto;
+  }
+}

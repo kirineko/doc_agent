@@ -3908,7 +3908,102 @@ See [Example](https://example.com/doc).
         assert!(html.contains("138-0000"));
         assert!(html.contains("上海"));
         assert!(html.contains("<h2>技能</h2>"));
+        assert!(!html.contains("resume-section"));
+        assert!(!html.contains("resume-entry"));
         assert!(!html.contains("<h1>高级前端</h1>"));
+    }
+
+    #[test]
+    fn markdown_to_html_resume_two_col_wraps_h3_entries() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "---\nname: 张三\ntitle: 工程师\n---\n\n## 经历\n\n### 星云科技 · 高级 Java 工程师 · 2022—至今\n\n- 负责订单核心服务架构升级\n- 主导数据库分库分表与性能优化\n\n### 云帆信息 · Java 工程师 · 2019—2022\n\n- 参与业务中台与权限体系建设\n- 维护高并发接口与监控告警\n";
+        let p = sandbox.resolve_for_write("cv.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "cv.md",
+                "out_path": "cv/index.html",
+                "profile": "resume",
+                "template": "resume/two-col",
+                "options": { "toc": false, "mermaid": false }
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["template"], "resume/two-col");
+        let html = fs::read_to_string(sandbox.resolve("cv/index.html").unwrap()).unwrap();
+        assert_eq!(html.matches("class=\"resume-entry\"").count(), 2);
+        assert!(html.contains("resume-section--cols"));
+        assert!(html.contains("resume-section-body"));
+        assert!(html.contains("星云科技"));
+        assert!(html.contains("云帆信息"));
+        let theme = fs::read_to_string(sandbox.resolve("cv/assets/theme.css").unwrap()).unwrap();
+        assert!(theme.contains(".resume-section--cols .resume-section-body"));
+        assert!(theme.contains("grid-template-columns"));
+        assert!(!theme.contains(".resume-section--cols h2"));
+        assert!(theme.contains(".resume-entry--span"));
+    }
+
+    #[test]
+    fn markdown_to_html_resume_even_cols_use_grid_layout() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "---\nname: 张三\ntitle: 工程师\n---\n\n## 经历\n\n### 星辰科技 · 2022—至今\n\n- 负责 Agent 平台与 LLM 推理服务\n- 主导 Python 异步任务队列改造\n\n### 云智科技 · 2019—2022\n\n- 参与 RAG 检索与 FastAPI 接口开发\n- 维护 Celery 任务与监控体系\n";
+        let p = sandbox.resolve_for_write("cv.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "cv.md",
+                "out_path": "cv/index.html",
+                "profile": "resume",
+                "template": "resume/even",
+                "options": { "toc": false, "mermaid": false }
+            }),
+        )
+        .unwrap();
+        let html = fs::read_to_string(sandbox.resolve("cv/index.html").unwrap()).unwrap();
+        assert!(html.contains("resume-section--cols"));
+        assert!(html.contains("resume-section-body"));
+        let theme = fs::read_to_string(sandbox.resolve("cv/assets/theme.css").unwrap()).unwrap();
+        assert!(theme.contains(".resume-section--cols .resume-section-body"));
+        assert!(theme.contains("grid-template-columns: minmax(0, 1fr)"));
+    }
+
+    #[test]
+    fn markdown_to_html_resume_two_col_sparse_section_stays_single_column() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "---\nname: 张三\ntitle: 工程师\n---\n\n## 语言\n\n### 中文（母语）\n\n### 英语：CET-6，可阅读技术文档\n";
+        let p = sandbox.resolve_for_write("cv.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "cv.md",
+                "out_path": "cv/index.html",
+                "profile": "resume",
+                "template": "resume/two-col",
+                "options": { "toc": false, "mermaid": false }
+            }),
+        )
+        .unwrap();
+        let html = fs::read_to_string(sandbox.resolve("cv/index.html").unwrap()).unwrap();
+        assert!(html.contains("class=\"resume-section\""));
+        assert!(!html.contains("resume-section--cols"));
     }
 
     #[test]

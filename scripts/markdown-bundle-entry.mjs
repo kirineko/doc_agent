@@ -172,6 +172,53 @@ function wrapFigureBlocks(html) {
   return out;
 }
 
+/** Wrap each h3 block (heading + following content until next h2/h3) for multi-column resume layouts. */
+function wrapResumeEntries(html) {
+  return html.replace(
+    /(<h3\b[^>]*>[\s\S]*?<\/h3>(?:\s*(?!<h[23]\b)[\s\S])*?)(?=<h[23]\b|$)/gi,
+    (block) => `<div class="resume-entry">${block.trim()}</div>\n`,
+  );
+}
+
+/** Minimum plain-text chars in a section (excluding h2) before enabling two-column layout. */
+const RESUME_SECTION_COLS_MIN_CHARS = 80;
+
+function sectionBodyPlainLength(block) {
+  return block
+    .replace(/^<h2\b[\s\S]*?<\/h2>/i, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\s+/g, " ")
+    .trim().length;
+}
+
+/** Group h2 + entries; dual-column class only when section has enough content. */
+function wrapResumeSections(html) {
+  return html.replace(
+    /(<h2\b[^>]*>[\s\S]*?<\/h2>(?:\s*<div class="resume-entry">[\s\S]*?<\/div>\s*)*)/gi,
+    (block) => {
+      const h2Match = block.match(/^<h2\b[\s\S]*?<\/h2>/i);
+      if (!h2Match) return block;
+      const h2 = h2Match[0];
+      const entries = block.match(/<div class="resume-entry">[\s\S]*?<\/div>/gi) || [];
+      const useCols =
+        entries.length >= 2 && sectionBodyPlainLength(block) >= RESUME_SECTION_COLS_MIN_CHARS;
+      const bodyEntries = entries.map((entry, index) => {
+        const spanLastOdd = useCols && entries.length >= 3 && entries.length % 2 === 1;
+        if (spanLastOdd && index === entries.length - 1) {
+          return entry.replace(
+            /^<div class="resume-entry"/,
+            '<div class="resume-entry resume-entry--span"',
+          );
+        }
+        return entry;
+      });
+      const sectionCls = useCols ? "resume-section resume-section--cols" : "resume-section";
+      const bodyHtml = bodyEntries.length > 0 ? bodyEntries.join("\n") : "";
+      return `<section class="${sectionCls}">${h2}\n<div class="resume-section-body">\n${bodyHtml}\n</div></section>\n`;
+    },
+  );
+}
+
 function extractHeadings(html) {
   const toc = [];
   const re = /<h([23])[^>]*(?:id="([^"]*)")?[^>]*>([\s\S]*?)<\/h\1>/gi;
@@ -276,6 +323,8 @@ globalThis.MarkdownConvert = {
   injectHeadingIds,
   injectFigureCaptionClasses,
   wrapFigureBlocks,
+  wrapResumeEntries,
+  wrapResumeSections,
   preprocessGfmTables,
 };
 

@@ -1,29 +1,15 @@
 @import "classic.css";
+@import "grid.css";
 
 body {
   max-width: 960px;
 }
 
-/* 正文流式双栏，章节标题横跨整幅 */
-.resume-main {
-  column-count: 2;
-  column-gap: 2.5rem;
-}
-
-.resume-main h2 {
-  column-span: all;
-  margin-top: 1.25rem;
+.resume-main .resume-section h2 {
   color: #0f766e;
   border-bottom-color: #99f6e4;
 }
 
-.resume-main h2:first-of-type {
-  margin-top: 0.5rem;
-}
-
-.resume-main h3,
-.resume-main p,
-.resume-main ul,
-.resume-main li {
-  break-inside: avoid;
+.resume-section--cols .resume-section-body {
+  column-gap: 2.5rem;
 }

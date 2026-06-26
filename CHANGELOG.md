@@ -8,6 +8,25 @@
 
 ## [Unreleased]
 
+---
+
+## [2026.6.27] — 2026-06-27
+
+本版本新增 Markdown 斜杠命令分组与图片下载快捷入口，并修复简历双栏模板布局；同时合入 Markdown 网页导出、工作区 UX 重构与冷启动恢复等近期能力。
+
+### 斜杠命令 Markdown 分组（add-markdown-slash-commands）
+
+- **新分类 Markdown**：4 条模板——幻灯片 / 报告 / 简历 / 转 HTML；prompt 使用「转 HTML」等用户友好措辞
+- **通用「下载图片」**：`/download-images` 按主题搜索并落地到 `images/`，无需手填 URL
+- **`web:report` 描述澄清**：标注为自由 HTML/CSS，与 Markdown 模板化报告区分
+- **注册表**：template 增至 28 条；分类顺序 command → general → markdown → word → ppt → excel → pdf → web
+
+### 简历双栏模板布局修复
+
+- **`resume/two-col` / `resume/even`**：共享 `grid.css`；章节标题在网格外，条目 Grid 双栏顶对齐
+- **按章节自适应**：仅当一节 ≥2 条且正文足够长时双栏；短节（如语言）保持 classic 单栏
+- **隔离其他模板**：grid 包装仅作用于 two-col / even，classic / modern / compact 不受影响
+
 ### Markdown 网页导出（add-markdown-html-export）
 
 本版本新增 Markdown → 静态 HTML 交付能力，覆盖幻灯片、报告、简历三类网页，内置模板与增强语法，工具链可直接打开产物。
@@ -19,8 +38,6 @@
 - **路径与产物**：目录型 `out_path` 写入 `index.html` 且响应 `path` 返回解析后的 HTML 文件路径；`written_paths` 进入构建产物面板
 - **内置 `markdown` skill**：写法、模板选型、与 html-report / pptx 分工；clarify 交付格式新增「Markdown 网页」选项
 - **UI**：工具链中文标签「Markdown 转 HTML / 列出 Markdown 模板 / 读取 Markdown 模板」
-
-本版本重构工作区信息架构与视觉：侧栏改为项目折叠树、中间区空态居中 Composer、右侧 Inspector 三 Tab，并支持冷启动恢复上次项目与会话。
 
 ### 工作区 UX 重构（refine-workspace-ux）
 

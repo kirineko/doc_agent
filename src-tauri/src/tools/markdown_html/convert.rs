@@ -54,6 +54,10 @@ const DOCUMENT_SCRIPT: &str = r#"
   let body = MarkdownConvert.parseMarkdown(fm.content || "", opts);
   body = MarkdownConvert.injectFigureCaptionClasses(body);
   body = MarkdownConvert.wrapFigureBlocks(body);
+  if (opts.resumeGridLayout) {
+    body = MarkdownConvert.wrapResumeEntries(body);
+    body = MarkdownConvert.wrapResumeSections(body);
+  }
   if (opts.toc !== false) body = MarkdownConvert.injectHeadingIds(body);
   const toc = opts.toc === false ? [] : MarkdownConvert.extractHeadings(body);
   const needs = MarkdownConvert.detectNeeds(input.markdown || "");
@@ -85,6 +89,7 @@ pub fn convert_slide(
 pub fn convert_document(
     markdown: &str,
     options: &ConvertOptions,
+    resume_grid_layout: bool,
 ) -> Result<DocumentResult, String> {
     validate_input(Profile::Report, markdown)?;
     let payload = json!({
@@ -92,6 +97,7 @@ pub fn convert_document(
         "options": {
             "toc": options.toc,
             "highlight": options.highlight,
+            "resumeGridLayout": resume_grid_layout,
         }
     });
     let raw = run_boa(Profile::Report, &payload, DOCUMENT_SCRIPT)?;
@@ -275,14 +281,14 @@ mod tests {
     #[test]
     fn report_table_renders() {
         let md = "| a | b |\n| --- | --- |\n| 1 | 2 |";
-        let out = convert_document(md, &ConvertOptions::default()).expect("convert");
+        let out = convert_document(md, &ConvertOptions::default(), false).expect("convert");
         assert!(out.body_html.contains("<table"));
     }
 
     #[test]
     fn report_image_with_italic_caption_wraps_figure() {
         let md = "![alt](../images/x.jpg)\n*菲比——示例图注*";
-        let out = convert_document(md, &ConvertOptions::default()).expect("convert");
+        let out = convert_document(md, &ConvertOptions::default(), false).expect("convert");
         assert!(out.body_html.contains("md-figure"));
         assert!(out.body_html.contains("<figcaption>"));
     }
@@ -383,7 +389,7 @@ author: Doc Agent
     fn oversize_input_rejected() {
         use crate::tools::markdown_html::MAX_INPUT_BYTES;
         let md = "x".repeat(MAX_INPUT_BYTES + 1);
-        let err = convert_document(&md, &ConvertOptions::default()).unwrap_err();
+        let err = convert_document(&md, &ConvertOptions::default(), false).unwrap_err();
         assert!(err.contains("规模上限"));
     }
 }

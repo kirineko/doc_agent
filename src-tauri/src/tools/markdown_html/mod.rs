@@ -149,7 +149,9 @@ fn markdown_to_html_handler(ctx: &ToolContext, args: Value) -> Result<Value, Too
             write_html_file(&html_abs, &html)?;
         }
         Profile::Report | Profile::Resume => {
-            let doc = convert_document(&markdown, &options).map_err(ToolError::Execution)?;
+            let resume_grid = matches!(template.id, "resume/two-col" | "resume/even");
+            let doc =
+                convert_document(&markdown, &options, resume_grid).map_err(ToolError::Execution)?;
             let needs_katex = doc.needs_katex && options.math;
             let needs_mermaid = doc.needs_mermaid && options.mermaid;
             let needs_highlight = options.highlight;

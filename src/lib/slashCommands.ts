@@ -1,4 +1,12 @@
-export type SlashCategory = "command" | "general" | "word" | "ppt" | "excel" | "pdf" | "web";
+export type SlashCategory =
+  | "command"
+  | "general"
+  | "markdown"
+  | "word"
+  | "ppt"
+  | "excel"
+  | "pdf"
+  | "web";
 
 export interface SlashTemplate {
   kind: "template";
@@ -28,6 +36,7 @@ export type SlashCommand = SlashEntry;
 export const CATEGORY_ORDER: SlashCategory[] = [
   "command",
   "general",
+  "markdown",
   "word",
   "ppt",
   "excel",
@@ -38,6 +47,7 @@ export const CATEGORY_ORDER: SlashCategory[] = [
 export const CATEGORY_LABELS: Record<SlashCategory, string> = {
   command: "命令",
   general: "通用",
+  markdown: "Markdown",
   word: "Word",
   ppt: "PPT",
   excel: "Excel",
@@ -88,6 +98,46 @@ const SLASH_TEMPLATE_SEEDS: SlashTemplateSeed[] = [
     description: "搜索网络信息并整理要点（需 Tavily Key）",
     keywords: ["联网", "搜索", "资料"],
     prompt: "请联网搜索「{{关键词}}」的最新信息，整理成文档要点。",
+  },
+  {
+    id: "download-images",
+    category: "general",
+    label: "下载图片",
+    description: "搜索并下载主题相关图片到项目",
+    keywords: ["图片", "下载", "image", "images"],
+    prompt: "请找并下载与「{{主题}}」相关的图片到 images/，告诉我本地路径。",
+  },
+  {
+    id: "markdown:slide",
+    category: "markdown",
+    label: "Markdown 幻灯片",
+    description: "用 .md 做演示，转 slide 网页",
+    keywords: ["markdown", "slide", "幻灯片", "演示", "marp"],
+    prompt: "帮我用 Markdown 做幻灯片，主题{{主题}}。先选 slide 模板，写 .md 再转 HTML。",
+  },
+  {
+    id: "markdown:report",
+    category: "markdown",
+    label: "Markdown 报告",
+    description: "技术报告/总结，模板化网页",
+    keywords: ["markdown", "report", "报告", "总结"],
+    prompt: "帮我用 Markdown 写报告，主题{{主题}}。先选 report 模板，写 .md 再转 HTML。",
+  },
+  {
+    id: "markdown:resume",
+    category: "markdown",
+    label: "Markdown 简历",
+    description: "填 frontmatter 生成简历页",
+    keywords: ["markdown", "resume", "简历", "cv"],
+    prompt: "帮我用 Markdown 做一份{{岗位}}简历。先选 resume 模板，填 frontmatter 再转 HTML。",
+  },
+  {
+    id: "markdown:convert",
+    category: "markdown",
+    label: "转 HTML",
+    description: "已有 .md 按 profile 转换",
+    keywords: ["markdown", "转换", "html", "convert"],
+    prompt: "请把 {{文件名.md}} 转成 HTML，profile 用{{slide/report/resume}}。",
   },
   {
     id: "word:create",
@@ -223,7 +273,7 @@ const SLASH_TEMPLATE_SEEDS: SlashTemplateSeed[] = [
     id: "web:report",
     category: "web",
     label: "HTML 报告",
-    description: "生成项目内静态网页报告",
+    description: "自由 HTML/CSS 静态报告（非 Markdown 模板）",
     keywords: ["html", "报告", "网页"],
     prompt: "帮我生成一份 HTML 网页报告，主题是{{主题}}，表格和文字要清晰。",
   },

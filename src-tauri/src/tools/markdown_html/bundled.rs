@@ -65,6 +65,7 @@ const REPORT_NARROW: &str = include_str!("../../../assets/markdown-templates/rep
 const REPORT_DATA: &str = include_str!("../../../assets/markdown-templates/report/data.css");
 
 const RESUME_CLASSIC: &str = include_str!("../../../assets/markdown-templates/resume/classic.css");
+const RESUME_GRID: &str = include_str!("../../../assets/markdown-templates/resume/grid.css");
 const RESUME_MODERN: &str = include_str!("../../../assets/markdown-templates/resume/modern.css");
 const RESUME_TWO_COL: &str = include_str!("../../../assets/markdown-templates/resume/two-col.css");
 const RESUME_COMPACT: &str = include_str!("../../../assets/markdown-templates/resume/compact.css");
@@ -382,6 +383,8 @@ fn resolve_css_imports(raw: &str) -> String {
         out = out.replace("@import \"github-light\";", REPORT_GITHUB_LIGHT);
         out = out.replace("@import \"classic.css\";", RESUME_CLASSIC);
         out = out.replace("@import \"classic\";", RESUME_CLASSIC);
+        out = out.replace("@import \"grid.css\";", RESUME_GRID);
+        out = out.replace("@import \"grid\";", RESUME_GRID);
         if out == prev {
             break;
         }
