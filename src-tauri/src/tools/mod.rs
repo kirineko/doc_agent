@@ -7,6 +7,7 @@ pub mod html_export;
 pub mod image_download;
 pub mod image_read;
 pub mod io_plan;
+pub mod markdown_html;
 pub mod office;
 pub mod ooxml;
 pub mod pdf;

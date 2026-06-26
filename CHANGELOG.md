@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Markdown 网页导出（add-markdown-html-export）
+
+本版本新增 Markdown → 静态 HTML 交付能力，覆盖幻灯片、报告、简历三类网页，内置模板与增强语法，工具链可直接打开产物。
+
+- **新工具三件套**：`markdown_to_html` 将项目内 `.md` 转为 HTML；`markdown_list_templates` / `markdown_read_template` 枚举并读取内置模板示例（对标 `typst_*`）
+- **三类 profile**：`slide`（Marp + Bespoke 翻页 viewer）、`report`（GFM + TOC + 打印样式）、`resume`（封面 frontmatter + 多栏布局）；slide ≥6、report ≥6、resume ≥5 套内置主题
+- **内容增强**：YAML frontmatter、代码高亮、KaTeX 数学、Mermaid 图、`@media print`；Mermaid/KaTeX 按需拷贝，无对应语法不写大体积资源
+- **离线优先**：工具注入的 JS/CSS 走本地 `./assets/`；正文外链按需保留，不运行时拦截
+- **路径与产物**：目录型 `out_path` 写入 `index.html` 且响应 `path` 返回解析后的 HTML 文件路径；`written_paths` 进入构建产物面板
+- **内置 `markdown` skill**：写法、模板选型、与 html-report / pptx 分工；clarify 交付格式新增「Markdown 网页」选项
+- **UI**：工具链中文标签「Markdown 转 HTML / 列出 Markdown 模板 / 读取 Markdown 模板」
+
 本版本重构工作区信息架构与视觉：侧栏改为项目折叠树、中间区空态居中 Composer、右侧 Inspector 三 Tab，并支持冷启动恢复上次项目与会话。
 
 ### 工作区 UX 重构（refine-workspace-ux）

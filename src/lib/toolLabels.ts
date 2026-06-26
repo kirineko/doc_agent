@@ -32,6 +32,9 @@ export const TOOL_LABELS: Record<string, string> = {
   typst_to_pdf: "Typst 导出 PDF",
   typst_list_templates: "列出 Typst 模板",
   typst_read_template: "读取 Typst 模板",
+  markdown_to_html: "Markdown 转 HTML",
+  markdown_list_templates: "列出 Markdown 模板",
+  markdown_read_template: "读取 Markdown 模板",
   web_search: "Web 搜索",
   web_extract: "抽取网页正文",
 };

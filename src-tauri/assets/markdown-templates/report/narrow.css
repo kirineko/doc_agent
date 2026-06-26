@@ -1,0 +1,20 @@
+@import "github-light.css";
+
+body {
+  max-width: 680px;
+  padding: 1.5rem 1rem 3rem;
+  font-size: 15px;
+}
+
+.cover h1 {
+  font-size: 1.75rem;
+}
+
+.content h2 {
+  font-size: 1.15rem;
+  margin-top: 1.5rem;
+}
+
+.content pre {
+  font-size: 0.85rem;
+}

@@ -1,0 +1,26 @@
+@import "github-light.css";
+
+body {
+  max-width: 900px;
+}
+
+.cover {
+  background: linear-gradient(180deg, #eff6ff 0%, transparent 100%);
+  border-radius: 12px;
+  padding: 2.5rem 2rem 2rem;
+  border: 1px solid #dbeafe;
+}
+
+.cover h1 {
+  color: #1e3a8a;
+}
+
+.content h2 {
+  color: #1d4ed8;
+  border-bottom-color: #bfdbfe;
+}
+
+.content blockquote {
+  background: #f8fafc;
+  border-left-color: #2563eb;
+}

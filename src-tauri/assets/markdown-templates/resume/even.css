@@ -1,0 +1,33 @@
+@import "classic.css";
+
+body {
+  max-width: 880px;
+}
+
+.resume-header {
+  text-align: left;
+}
+
+/* 区块均分两栏（标题随内容参与分栏） */
+.resume-main {
+  column-count: 2;
+  column-gap: 2rem;
+}
+
+.resume-main h2 {
+  color: #7c3aed;
+  border-bottom-color: #ddd6fe;
+  break-after: avoid-column;
+  margin-top: 1rem;
+}
+
+.resume-main h2:first-of-type {
+  margin-top: 0;
+}
+
+.resume-main h3,
+.resume-main p,
+.resume-main ul,
+.resume-main li {
+  break-inside: avoid;
+}

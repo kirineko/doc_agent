@@ -36,6 +36,9 @@ const EXPECTED_TOOLS = [
   "typst_to_pdf",
   "typst_list_templates",
   "typst_read_template",
+  "markdown_to_html",
+  "markdown_list_templates",
+  "markdown_read_template",
   "web_search",
   "web_extract",
 ] as const;

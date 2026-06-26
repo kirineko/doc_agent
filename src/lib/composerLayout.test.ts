@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   composerWelcomeMessage,
+  greetingForHour,
   isComposerEmptyLayout,
   shouldCenterComposer,
 } from "./composerLayout";
@@ -26,5 +27,16 @@ describe("composerLayout", () => {
   it("shows project onboarding copy without project", () => {
     expect(composerWelcomeMessage(false)).toContain("项目目录");
     expect(composerWelcomeMessage(true)).toMatch(/好/);
+  });
+
+  it("picks greeting by hour band", () => {
+    expect(greetingForHour(0)).toContain("午夜");
+    expect(greetingForHour(5)).toContain("午夜");
+    expect(greetingForHour(6)).toContain("早上");
+    expect(greetingForHour(11)).toContain("早上");
+    expect(greetingForHour(12)).toContain("下午");
+    expect(greetingForHour(17)).toContain("下午");
+    expect(greetingForHour(18)).toContain("晚上");
+    expect(greetingForHour(23)).toContain("晚上");
   });
 });

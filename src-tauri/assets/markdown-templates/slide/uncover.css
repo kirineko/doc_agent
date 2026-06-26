@@ -1,0 +1,51 @@
+/* @theme uncover */
+@import "default";
+
+section {
+  background: #111827;
+  color: #f9fafb;
+}
+
+h1, h2, h3 {
+  color: #fff;
+}
+
+a {
+  color: #93c5fd;
+}
+
+header {
+  color: #9ca3af;
+}
+
+strong {
+  color: #fff;
+}
+
+blockquote {
+  border-left-color: #4b5563;
+  color: #9ca3af;
+}
+
+table {
+  font-size: 0.85em;
+}
+
+th {
+  background: #1f2937;
+  color: #f9fafb;
+}
+
+th,
+td {
+  border-color: #374151;
+}
+
+pre {
+  background: #1f2937;
+  color: #e5e7eb;
+}
+
+section::after {
+  color: #6b7280;
+}

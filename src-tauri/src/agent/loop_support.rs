@@ -50,6 +50,7 @@ pub(crate) fn build_working_messages(
                      澄清问题 MUST 通过 clarify_ask 工具逐问提出，每轮 assistant 仅一次 clarify_ask 调用，禁止同轮并行多个，禁止以纯文本罗列问题；若 system 含 ## 项目配置（AGENTS.md），须 skill_read clarify 并沿用其中规范、勿重复问已规定项。\
                      生成 .docx/.pptx/.xlsx 交付物前，MUST 先 skill_read 对应 skill 获取规范；\
                      生成静态 HTML 报告前，MUST 先 skill_read html-report；\
+                     Markdown 网页交付（slide/report/resume）前，MUST 先 skill_read markdown，再 markdown_list_templates / markdown_read_template / markdown_to_html；\
                      html_to_pdf 可单独使用，不要求先生成报告；\
                      Typst PDF（新建或大改 .typ）：guide → list → 场景模板 → 写 .typ → typst_to_pdf（完整步骤见 clarify skill 与 typst 工具说明）。不得跳过 guide 或凭记忆臆造 Typst 语法。\
                      公式密集文档优先 typst_to_pdf；图文 HTML 报告可用 html_to_pdf。\

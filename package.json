@@ -11,9 +11,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "bundle:js": "node scripts/bundle-js-libs.mjs",
+    "bundle:js": "node scripts/copy-markdown-vendor.mjs && node scripts/bundle-js-libs.mjs",
+    "vendor:markdown": "node scripts/copy-markdown-vendor.mjs",
     "calver:today": "node scripts/calver-today.mjs",
-    "release:check": "npm run bundle:js && cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test && cd .. && npm run typecheck && npm test && npm run build"
+    "release:check": "npm run vendor:markdown && npm run bundle:js && cd src-tauri && cargo fmt --check && cargo clippy -- -D warnings && cargo test && cd .. && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -34,6 +35,9 @@
     "remark-math": "^6.0.0"
   },
   "devDependencies": {
+    "@marp-team/marp-cli": "4.4.0",
+    "@marp-team/marp-core": "^4.0.0",
+    "@marp-team/marpit": "^3.2.1",
     "@tailwindcss/vite": "^4.3.0",
     "@tauri-apps/cli": "^2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -46,7 +50,12 @@
     "docx": "^9.5.0",
     "esbuild": "^0.25.0",
     "exceljs": "^4.4.0",
+    "gray-matter": "^4.0.3",
+    "highlight.js": "^11.11.1",
     "jsdom": "^29.1.1",
+    "katex": "^0.16.22",
+    "marked": "^15.0.12",
+    "mermaid": "^11.6.0",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^4.0.0",
     "tailwindcss": "^4.3.0",

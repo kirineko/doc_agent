@@ -42,7 +42,9 @@ pub fn plan_tool_io(
         | "web_search"
         | "web_extract"
         | "typst_list_templates"
-        | "typst_read_template" => {}
+        | "typst_read_template"
+        | "markdown_list_templates"
+        | "markdown_read_template" => {}
         "office_convert" => {
             add_read_arg(ctx, args, "path", &mut plan)?;
             plan_office_convert_write(ctx, args, &mut plan)?;
@@ -103,6 +105,9 @@ pub fn plan_tool_io(
             add_read_arg(ctx, args, "path", &mut plan)?;
             add_write_arg(ctx, args, "out_path", &mut plan)?;
         }
+        "markdown_to_html" => {
+            plan_markdown_to_html(ctx, args, &mut plan)?;
+        }
         "skill_run" => {
             plan.dynamic_writes = true;
             plan_skill_run(ctx, args, &mut plan)?;
@@ -143,6 +148,7 @@ fn minimal_args_for(tool_name: &str) -> Value {
             serde_json::json!({ "path": "a.txt" })
         }
         "typst_read_template" => serde_json::json!({ "template": "syntax/typst-guide" }),
+        "markdown_read_template" => serde_json::json!({ "template": "report/github-light" }),
         "fs_write" | "excel_write" => serde_json::json!({ "path": "a.txt", "content": "x" }),
         "fs_patch" => serde_json::json!({ "path": "a.txt", "edits": [] }),
         "office_convert" => serde_json::json!({ "path": "legacy.doc" }),
@@ -162,6 +168,9 @@ fn minimal_args_for(tool_name: &str) -> Value {
         }
         "html_to_pdf" | "typst_to_pdf" => {
             serde_json::json!({ "path": "a.typ", "out_path": "out.pdf" })
+        }
+        "markdown_to_html" => {
+            serde_json::json!({ "path": "a.md", "out_path": "out/index.html", "profile": "report" })
         }
         "skill_run" => serde_json::json!({ "code": "async function main(){}" }),
         "image_read" => serde_json::json!({ "paths": [".cache/attachments/x.png"] }),
@@ -249,6 +258,27 @@ fn plan_data_query(
         .and_then(|v| v.as_str())
         .unwrap_or("query_result.csv");
     add_write_path(ctx, out, plan)
+}
+
+fn plan_markdown_to_html(
+    ctx: &ToolContext<'_>,
+    args: &Value,
+    plan: &mut ToolIoPlan,
+) -> Result<(), ToolError> {
+    add_read_arg(ctx, args, "path", plan)?;
+    let out_path = args
+        .get("out_path")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ToolError::InvalidArgs("out_path required".into()))?;
+    let html_rel = crate::tools::markdown_html::resolve_output_path(out_path)
+        .map_err(ToolError::InvalidArgs)?;
+    let html_rel_str = html_rel.to_string_lossy();
+    let assets_rel = html_rel
+        .parent()
+        .map(|p| p.join("assets"))
+        .unwrap_or_else(|| Path::new("assets").to_path_buf());
+    add_write_path(ctx, &html_rel_str, plan)?;
+    add_subtree_write_path(ctx, &assets_rel.to_string_lossy(), plan)
 }
 
 fn plan_skill_run(
@@ -559,9 +589,14 @@ mod tests {
                 "ooxml_unpack" | "docx_accept_changes" => "a.docx",
                 "excel_read" | "excel_describe" | "excel_normalize" | "xlsx_recalc" => "a.xlsx",
                 "html_to_pdf" | "typst_to_pdf" => "a.typ",
+                "markdown_to_html" => "a.md",
                 _ => "a.txt",
             }),
-            "template" => json!("syntax/typst-guide"),
+            "template" => json!(match tool_name {
+                "markdown_read_template" => "report/github-light",
+                _ => "syntax/typst-guide",
+            }),
+            "profile" => json!("report"),
             "dir" => json!("unpacked"),
             "out_dir" => json!("tables"),
             "out_path" => json!(match tool_name {
@@ -569,6 +604,7 @@ mod tests {
                 | "pdf_delete_pages" => {
                     "out.pdf"
                 }
+                "markdown_to_html" => "out/index.html",
                 "excel_normalize" => "out.csv",
                 _ => "out.docx",
             }),

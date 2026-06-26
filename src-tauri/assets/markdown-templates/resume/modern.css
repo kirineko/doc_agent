@@ -1,0 +1,28 @@
+@import "classic.css";
+
+body {
+  background: #fafafa;
+}
+
+.resume-header {
+  background: #111827;
+  color: #fff;
+  padding: 1.75rem 1.5rem;
+  border: none;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.resume-header h1,
+.resume-header .role {
+  color: #fff;
+}
+
+.resume-header .contact {
+  color: #cbd5e1;
+}
+
+.resume-main h2 {
+  color: #2563eb;
+  border-bottom-color: #bfdbfe;
+}

@@ -1,0 +1,51 @@
+@import "../common/base.css";
+
+:root {
+  --md-text: #e5e7eb;
+  --md-muted: #9ca3af;
+  --md-border: #374151;
+  --md-accent: #60a5fa;
+}
+
+body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+  background: #0f172a;
+  color: var(--md-text);
+}
+
+.cover h1 {
+  color: #f8fafc;
+}
+
+.toc {
+  background: #111827;
+  border-color: var(--md-border);
+}
+
+.content h2 {
+  border-bottom-color: var(--md-border);
+  color: #f8fafc;
+}
+
+.content th {
+  background: #1f2937;
+}
+
+.content pre {
+  background: #111827;
+}
+
+.content a {
+  color: var(--md-accent);
+}
+
+.markdown-body ul.task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-body li.task-list-item input {
+  margin-right: 0.5rem;
+}

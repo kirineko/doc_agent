@@ -1,0 +1,20 @@
+/* @theme corporate */
+@import "default";
+
+section {
+  background: #ffffff;
+  border-top: 6px solid #0f766e;
+}
+
+h1 {
+  color: #0f766e;
+  font-weight: 700;
+}
+
+h2 {
+  color: #115e59;
+}
+
+header {
+  color: #64748b;
+}

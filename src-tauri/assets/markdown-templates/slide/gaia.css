@@ -1,0 +1,14 @@
+/* @theme gaia */
+@import "default";
+
+section {
+  background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+}
+
+h1 {
+  color: #312e81;
+}
+
+header {
+  color: #6366f1;
+}

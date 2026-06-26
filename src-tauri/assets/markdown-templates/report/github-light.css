@@ -1,0 +1,51 @@
+@import "../common/base.css";
+
+body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 3rem;
+  background: #fff;
+}
+
+.content {
+  font-size: 16px;
+}
+
+.content h1, .content h2, .content h3 {
+  scroll-margin-top: 1rem;
+}
+
+.content h2 {
+  border-bottom: 1px solid var(--md-border);
+  padding-bottom: 0.35rem;
+  margin-top: 2rem;
+}
+
+.content a {
+  color: var(--md-accent);
+}
+
+.content th {
+  background: #f3f4f6;
+}
+
+.content thead th {
+  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+}
+
+.content pre {
+  background: #f6f8fa;
+}
+
+.markdown-body {
+  box-sizing: border-box;
+}
+
+.markdown-body ul.task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.markdown-body li.task-list-item input {
+  margin-right: 0.5rem;
+}

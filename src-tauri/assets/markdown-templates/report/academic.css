@@ -1,0 +1,31 @@
+@import "github-light.css";
+
+body {
+  max-width: 760px;
+  font-family: "Times New Roman", "Songti SC", "SimSun", serif;
+}
+
+.cover h1 {
+  font-family: var(--md-font-sans);
+  text-align: center;
+}
+
+.content h2, .content h3 {
+  font-family: var(--md-font-sans);
+}
+
+.content h2 {
+  counter-increment: section;
+}
+
+.content h2::before {
+  content: counter(section) ". ";
+}
+
+body {
+  counter-reset: section;
+}
+
+.cover .meta {
+  text-align: center;
+}

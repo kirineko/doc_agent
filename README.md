@@ -70,11 +70,12 @@ Agent 通过工具链操作项目内文件，主要包括：
 | PPT | `skill_run` + pptxgenjs；或斜杠 `ppt:edit-ooxml` 精准改 OOXML |
 | PDF | 合并、拆分、旋转、删除页面；`pdf_read` 智能读（文本 / vision） |
 | HTML 报告 | 项目内静态 HTML 报告；可选 `html_to_pdf` 导出 PDF |
+| Markdown 网页 | `markdown_to_html` 将 `.md` 转为 slide / report / resume 静态 HTML（内置模板，离线优先） |
 | Typst | `typst_to_pdf` 离线编译 `.typ` 为 PDF；内置中英 report/exam/paper/lecture 模板与语法手册；捆绑 Noto SC 字体保证中文无警告回退 |
 | OOXML | 解包 / 打包（含结构校验）、批注、接受修订 |
 | 数据分析 | Word 表格提取、`polars-sql` 查询、IronCalc 重算公式 |
 | 联网（可选） | Tavily `web_search` / `web_extract`（侧栏开关 + Key） |
-| Document Skills | 内置 docx / pdf / pptx / xlsx / html-report / clarify / runtime；`skill_read` + `skill_run`（exceljs、docx、pptxgenjs、pdf-lib） |
+| Document Skills | 内置 docx / pdf / pptx / xlsx / html-report / markdown / clarify / runtime；`skill_read` + `skill_run`（exceljs、docx、pptxgenjs、pdf-lib） |
 
 所有文件操作受**沙箱**约束，路径不能逃出项目根目录。网络图片须先 `image_download` 落地，再在文档工具中按本地路径引用。
 

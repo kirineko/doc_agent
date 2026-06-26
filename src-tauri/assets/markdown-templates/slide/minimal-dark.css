@@ -1,0 +1,57 @@
+/* @theme minimal-dark */
+@import "default";
+
+section {
+  background: #0b0f14;
+  color: #e5e7eb;
+}
+
+h1, h2, h3 {
+  color: #f3f4f6;
+  font-weight: 600;
+}
+
+code {
+  background: #1f2937;
+  color: #fbbf24;
+}
+
+header {
+  color: #9ca3af;
+}
+
+a {
+  color: #60a5fa;
+}
+
+strong {
+  color: #f9fafb;
+}
+
+blockquote {
+  border-left-color: #374151;
+  color: #9ca3af;
+}
+
+table {
+  font-size: 0.85em;
+}
+
+th {
+  background: #1f2937;
+  color: #f3f4f6;
+}
+
+th,
+td {
+  border-color: #374151;
+}
+
+pre {
+  background: #111827;
+  color: #e5e7eb;
+}
+
+section::after {
+  color: #6b7280;
+}

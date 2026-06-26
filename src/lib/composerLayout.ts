@@ -1,8 +1,12 @@
-export function composerEmptyGreeting(): string {
-  const hour = new Date().getHours();
+export function greetingForHour(hour: number): string {
+  if (hour < 6) return "午夜好，想处理哪份文档？";
   if (hour < 12) return "早上好，想处理哪份文档？";
   if (hour < 18) return "下午好，想处理哪份文档？";
   return "晚上好，想处理哪份文档？";
+}
+
+export function composerEmptyGreeting(): string {
+  return greetingForHour(new Date().getHours());
 }
 
 export function composerWelcomeMessage(hasProject: boolean): string {

@@ -1,0 +1,301 @@
+/* Shared Chinese system font stack */
+:root {
+  --md-font-sans: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", Arial, sans-serif;
+  --md-font-mono: "SF Mono", "Menlo", "Consolas", "Courier New", monospace;
+  --md-text: #1f2937;
+  --md-muted: #6b7280;
+  --md-border: #e5e7eb;
+  --md-accent: #2563eb;
+}
+
+body {
+  font-family: var(--md-font-sans);
+  color: var(--md-text);
+  line-height: 1.65;
+}
+
+@media print {
+  body {
+    font-size: 11pt;
+  }
+  .no-print {
+    display: none !important;
+  }
+  a[href]::after {
+    content: "";
+  }
+  pre, blockquote, table, figure {
+    break-inside: avoid;
+  }
+  h1, h2, h3 {
+    break-after: avoid;
+  }
+}
+
+.cover {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  padding: 1.25rem 0 1rem;
+  border-bottom: 1px solid var(--md-border);
+  margin-bottom: 1.25rem;
+}
+
+.cover h1 {
+  margin: 0 0 0.5rem;
+  font-size: 2rem;
+  line-height: 1.25;
+}
+
+.cover .meta {
+  color: var(--md-muted);
+  font-size: 0.95rem;
+}
+
+.toc {
+  background: #f9fafb;
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin: 0 0 1.25rem;
+}
+
+.toc h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--md-muted);
+}
+
+.toc ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.toc li {
+  margin: 0.35rem 0;
+}
+
+.toc li.level-3 {
+  padding-left: 1rem;
+}
+
+.toc a {
+  color: var(--md-accent);
+  text-decoration: none;
+}
+
+.toc a:hover {
+  text-decoration: underline;
+}
+
+.content img {
+  max-width: 100%;
+  height: auto;
+}
+
+.content table,
+.markdown-body table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.25rem 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  border: 1px solid var(--md-border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.content thead th,
+.markdown-body thead th {
+  background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+  font-weight: 600;
+  text-align: left;
+  color: #111827;
+  border-bottom: 2px solid #d1d5db;
+}
+
+.content tbody tr:nth-child(even),
+.markdown-body tbody tr:nth-child(even) {
+  background: #fafafa;
+}
+
+.content tbody tr:hover,
+.markdown-body tbody tr:hover {
+  background: #f3f4f6;
+}
+
+.content th,
+.content td,
+.markdown-body th,
+.markdown-body td {
+  border: 1px solid var(--md-border);
+  padding: 0.625rem 0.875rem;
+  vertical-align: top;
+}
+
+.content th:first-child,
+.content td:first-child,
+.markdown-body th:first-child,
+.markdown-body td:first-child {
+  padding-left: 1rem;
+}
+
+.content th:last-child,
+.content td:last-child,
+.markdown-body th:last-child,
+.markdown-body td:last-child {
+  padding-right: 1rem;
+}
+
+.content blockquote {
+  border-left: 4px solid var(--md-accent);
+  margin: 1rem 0;
+  padding: 0.25rem 1rem;
+  color: var(--md-muted);
+}
+
+.content pre {
+  overflow-x: auto;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.content code {
+  font-family: var(--md-font-mono);
+  font-size: 0.92em;
+}
+
+.content :not(pre) > code {
+  background: rgba(127, 127, 127, 0.14);
+  padding: 0.12em 0.36em;
+  border-radius: 4px;
+}
+
+.content pre code {
+  background: none;
+  padding: 0;
+}
+
+.content .mermaid {
+  margin: 1.5rem 0;
+  text-align: center;
+}
+
+/* 图表说明：Mermaid 块后紧跟的段落，或以「图：」/ Figure 开头的段落 */
+.content .mermaid + p,
+.content p.figure-caption {
+  text-align: center;
+  color: var(--md-muted);
+  font-size: 0.92rem;
+  margin-top: -0.35rem;
+  margin-bottom: 1.25rem;
+}
+
+.content figure.md-figure {
+  margin: 1.5rem auto 1.75rem;
+  padding: 0;
+  max-width: 100%;
+  text-align: center;
+}
+
+.content figure.md-figure img {
+  display: block;
+  margin: 0 auto;
+}
+
+.content figure.md-figure figcaption {
+  text-align: center;
+  color: var(--md-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+  margin-top: 0.65rem;
+  font-style: italic;
+}
+
+.content p:has(> img:only-child) {
+  text-align: center;
+}
+
+.content p:has(> img:only-child) + p,
+.content p:has(> img:only-child) + p.figure-caption {
+  text-align: center;
+  color: var(--md-muted);
+  font-size: 0.92rem;
+  margin-top: -0.35rem;
+  margin-bottom: 1.25rem;
+}
+
+/* 通用正文排版 */
+.content h1 {
+  font-size: 1.8rem;
+  line-height: 1.25;
+  margin: 1.5rem 0 0.75rem;
+}
+
+.content h3 {
+  font-size: 1.2rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.content h4 {
+  font-size: 1.05rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.content p {
+  margin: 0.75rem 0;
+}
+
+.content ul,
+.content ol {
+  padding-left: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.content li {
+  margin: 0.3rem 0;
+}
+
+.content li > ul,
+.content li > ol {
+  margin: 0.3rem 0;
+}
+
+.content strong {
+  font-weight: 600;
+}
+
+.content a {
+  color: var(--md-accent);
+  text-decoration: none;
+}
+
+.content a:hover {
+  text-decoration: underline;
+}
+
+.content hr {
+  border: none;
+  border-top: 1px solid var(--md-border);
+  margin: 2rem 0;
+}
+
+.content img {
+  border-radius: 8px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.1);
+}
+
+/* 宽表横向滚动容器（由转换脚本包裹 <table>） */
+.content .table-wrap {
+  overflow-x: auto;
+  margin: 1.25rem 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.content .table-wrap > table {
+  margin: 0;
+}

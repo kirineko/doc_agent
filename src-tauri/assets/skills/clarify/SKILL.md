@@ -2,7 +2,7 @@
 
 通过 `clarify_ask` 工具逐问澄清文档的内容、结构与排版样式，输出结构化「创作简报」，再进入对应格式的生成或编辑流程。
 
-适用于 Word / PPT / Excel / HTML 报告 / Typst PDF 等交付形态，覆盖**全新创作**与**编辑已有文件**两类场景。
+适用于 Word / PPT / Excel / HTML 报告 / Markdown 网页 / Typst PDF 等交付形态，覆盖**全新创作**与**编辑已有文件**两类场景。
 
 ## 何时使用
 
@@ -16,7 +16,7 @@
 ## 执行流程
 
 0. **读取项目配置** — 若 system 已含 `## 项目配置（AGENTS.md）`，将其视为**默认创作规范**；若无该段，可 `fs_read AGENTS.md`（`exists:false` 则跳过）。详见下节「与 AGENTS.md 协作」
-1. **识别交付格式** — 若未说明（Word / PPT / Excel / HTML 报告 / Typst PDF），作为第一个或第二个问题；**AGENTS.md 已指定默认交付类型时跳过**
+1. **识别交付格式** — 若未说明（Word / PPT / Excel / HTML 报告 / Markdown 网页 / Typst PDF），作为第一个或第二个问题；**AGENTS.md 已指定默认交付类型时跳过**
 2. **识别场景** — 全新创作 or 编辑已有文件
 3. **评估已有信息** — 对照下方关键信息清单 **与 AGENTS.md 已覆盖项**，标记已明确项与**本次任务**仍缺的缺口
 4. **选择深度路径**（见下节；有 AGENTS.md 时倾向极简）
@@ -105,7 +105,7 @@
 
 澄清时对照此清单，跳过已有答案的项 **及 AGENTS.md 已规定项**：
 
-- [ ] 交付格式（Word / PPT / Excel / HTML 报告 / Typst PDF）— AGENTS.md 有默认且与任务一致则跳过
+- [ ] 交付格式（Word / PPT / Excel / HTML 报告 / Markdown 网页 / Typst PDF）— AGENTS.md 有默认且与任务一致则跳过
 - [ ] 主题与核心目的 / 编辑目标 — **几乎总是要问**（任务特有）
 - [ ] 目标受众 / 使用场景 — AGENTS.md「概述」已写且用户未改意图则跳过
 - [ ] 结构与篇幅 / 改动范围 — **任务特有**；AGENTS.md 仅有类型级默认（如「PPT 8–12 页」）且用户未提新目标时可跳过
@@ -123,6 +123,7 @@
 - PPT（.pptx）
 - Excel（.xlsx）
 - HTML 报告（可后续 `html_to_pdf`）
+- Markdown 网页（slide / report / resume，见 `markdown_to_html`）
 - Typst PDF（公式密集、版式严谨时优先推荐）
 - 仅项目内中间稿（.md / .typ，无最终打包文件）
 
@@ -133,6 +134,31 @@
 - 公式多、版式严 → 建议 **Typst PDF**
 - 必须 Word 且含公式 → 交付格式定为 Word，生成时 `skill_read docx` 后再读 `math.md`
 - 图文网页型报告 → HTML 报告 + 可选 `html_to_pdf`
+- 已有 Markdown、要幻灯片/报告/简历网页 → Markdown 网页（`skill_read markdown`）
+
+---
+
+## 问题库 — Markdown 网页（slide / report / resume）
+
+适用于 `markdown_to_html` 交付：演示幻灯片、书面报告、个人简历等。
+
+### Profile 与模板
+
+- 交付形态？（`slide` 演示 / `report` 报告 / `resume` 简历）
+- 模板风格？（可先 `markdown_list_templates` 后让用户选，或描述后推荐 id）
+- 是否需要目录（report 默认开启 TOC）？
+
+### 内容与结构
+
+- slide：大约几页、叙事结构（问题-方案 / 时间轴等）？
+- report：必须章节、是否含表格/代码/公式/流程图？
+- resume：重点突出经历还是技能？模板风格（经典 / 现代 / 双栏 / 紧凑）？
+
+### 排版 / 样式
+
+- 浅色 / 深色 / 商务 / 学术？
+- 是否需要打印友好（`@media print` 默认已注入）？
+- 是否需要 Mermaid 图或 KaTeX 公式？（默认开启，可按需关闭）
 
 ---
 
@@ -265,7 +291,7 @@
 字段参考：
 
 ```
-交付格式：<Word / PPT / Excel / HTML 报告 / Typst PDF / 中间稿>
+交付格式：<Word / PPT / Excel / HTML 报告 / Markdown 网页 / Typst PDF / 中间稿>
 主题 / 目标：<一句话>
 受众 / 使用场景：<描述>
 结构：<章节、幻灯片或工作表框架>
@@ -285,6 +311,7 @@
 | **PPT** | `skill_read pptx`（必要时 `pptxgenjs.md` / `editing.md`）→ `skill_run` |
 | **Excel** | `skill_read xlsx` → `skill_run` / `data_query` 等 |
 | **HTML 报告** | `skill_read html-report` → 生成 HTML → 可选 `html_to_pdf` |
+| **Markdown 网页** | `skill_read markdown` → `markdown_list_templates` → `markdown_read_template` → `fs_write` `.md` → `markdown_to_html` |
 | **Typst PDF** | ① `typst_read_template syntax/typst-guide` → ② `typst_list_templates` → ③ `typst_read_template` 选场景模板 → ④ `fs_write` 项目内 `.typ` → ⑤ `typst_to_pdf`（仅重编译已有 `.typ` 可跳过 ②③） |
 | **中间稿** | `fs_write` 草稿（如 `.md` / `.typ`），待用户确认后再定最终格式 |
 

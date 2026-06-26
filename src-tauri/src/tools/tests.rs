@@ -3262,7 +3262,7 @@ async function main() {
     }
 
     #[test]
-    fn skills_index_lists_eight_skills() {
+    fn skills_index_lists_nine_skills() {
         let md = crate::core::skills::index_markdown();
         for name in [
             "docx",
@@ -3270,13 +3270,14 @@ async function main() {
             "pptx",
             "xlsx",
             "html-report",
+            "markdown",
             "clarify",
             "runtime",
             "profile",
         ] {
             assert!(md.contains(name), "missing {name} in index");
         }
-        assert_eq!(crate::core::skills::available_names().len(), 8);
+        assert_eq!(crate::core::skills::available_names().len(), 9);
     }
 
     #[test]
@@ -3780,5 +3781,285 @@ Second page
         )
         .unwrap();
         assert!(out["pages"].as_u64().unwrap() >= 2);
+    }
+
+    #[test]
+    fn markdown_list_templates_returns_seventeen_entries() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(&registry, &ctx, "markdown_list_templates", json!({})).unwrap();
+        let templates = out["templates"].as_array().unwrap();
+        assert_eq!(templates.len(), 17);
+        for profile in ["slide", "report", "resume"] {
+            assert!(templates.iter().any(|t| t["profile"] == profile));
+        }
+    }
+
+    #[test]
+    fn markdown_read_template_returns_sample() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_read_template",
+            json!({ "template": "report/github-light" }),
+        )
+        .unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("title:"));
+        assert!(content.contains("季度业务报告"));
+    }
+
+    #[test]
+    fn markdown_read_template_rejects_unknown_id() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_read_template",
+            json!({ "template": "slide/missing" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown template"));
+    }
+
+    #[test]
+    fn markdown_to_html_allows_external_links_and_renders_mermaid() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = r#"---
+title: Link Report
+---
+
+## Flow
+
+```mermaid
+graph TD
+  A[Start] --> B[End]
+```
+
+See [Example](https://example.com/doc).
+
+图：示例传播路径图
+"#;
+        let p = sandbox.resolve_for_write("doc.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "doc.md",
+                "out_path": "out/index.html",
+                "profile": "report",
+                "options": { "mermaid": true, "toc": false }
+            }),
+        )
+        .unwrap();
+        let html = fs::read_to_string(sandbox.resolve("out/index.html").unwrap()).unwrap();
+        assert!(html.contains(r#"href="https://example.com/doc""#));
+        assert!(html.contains("language-mermaid"));
+        assert!(html.contains(r#"class="figure-caption""#));
+        assert!(html.contains("mermaid.min.js"));
+        assert!(html.contains("mermaid.run"));
+        assert!(!html.contains("https://cdn"));
+        let written = out["written_paths"].as_array().unwrap();
+        assert!(written
+            .iter()
+            .any(|p| p.as_str() == Some("out/assets/mermaid.min.js")));
+    }
+
+    #[test]
+    fn markdown_to_html_resume_cover_uses_name_and_contacts() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "---\nname: 张三\ntitle: 高级前端\nemail: a@b.com\nphone: 138-0000\nlocation: 上海\n---\n\n## 技能\n\n- Rust";
+        let p = sandbox.resolve_for_write("cv.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "cv.md",
+                "out_path": "cv/index.html",
+                "profile": "resume",
+                "options": { "toc": false, "mermaid": false }
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["template"], "resume/classic");
+        let html = fs::read_to_string(sandbox.resolve("cv/index.html").unwrap()).unwrap();
+        assert!(html.contains(r#"<h1>张三</h1>"#));
+        assert!(html.contains(r#"<div class="role">高级前端</div>"#));
+        assert!(html.contains("a@b.com"));
+        assert!(html.contains("138-0000"));
+        assert!(html.contains("上海"));
+        assert!(html.contains("<h2>技能</h2>"));
+        assert!(!html.contains("<h1>高级前端</h1>"));
+    }
+
+    #[test]
+    fn markdown_to_html_report_writes_html_and_assets() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "---\ntitle: Cover\nauthor: Bob\n---\n\n## Section\n\n|a|b|\n|---|---|\n|1|2|";
+        let p = sandbox.resolve_for_write("doc.md").unwrap();
+        fs::write(p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "doc.md",
+                "out_path": "out/index.html",
+                "profile": "report",
+                "options": { "mermaid": false }
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["template"], "report/github-light");
+        let written = out["written_paths"].as_array().unwrap();
+        assert!(written.iter().any(|p| p.as_str() == Some("out/index.html")));
+        assert!(written
+            .iter()
+            .any(|p| p.as_str() == Some("out/assets/theme.css")));
+        assert!(written
+            .iter()
+            .any(|p| p.as_str() == Some("out/assets/highlight.css")));
+        let html = fs::read_to_string(sandbox.resolve("out/index.html").unwrap()).unwrap();
+        assert!(html.contains("Cover"));
+        assert!(html.contains("<table"));
+        assert!(!sandbox.resolve("out/assets/mermaid.min.js").is_ok());
+        let theme = fs::read_to_string(sandbox.resolve("out/assets/theme.css").unwrap()).unwrap();
+        assert!(!theme.contains("@import"));
+        assert!(theme.contains("border-collapse"));
+    }
+
+    #[test]
+    fn markdown_to_html_directory_out_path_returns_index_html() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let p = sandbox.resolve_for_write("doc.md").unwrap();
+        fs::write(&p, "# Title\n\nBody").unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "doc.md",
+                "out_path": "docs/q1",
+                "profile": "report",
+                "options": { "toc": false, "mermaid": false }
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["path"], "docs/q1/index.html");
+        assert!(sandbox.resolve("docs/q1/index.html").is_ok());
+        let written = out["written_paths"].as_array().unwrap();
+        assert!(written
+            .iter()
+            .any(|p| p.as_str() == Some("docs/q1/index.html")));
+    }
+
+    #[test]
+    fn markdown_to_html_rejects_invalid_profile_and_oversize() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let p = sandbox.resolve_for_write("doc.md").unwrap();
+        fs::write(&p, "# hi").unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({ "path": "doc.md", "out_path": "out.html", "profile": "ppt" }),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ToolError::InvalidArgs(_)));
+
+        let big = "x".repeat(crate::tools::markdown_html::MAX_INPUT_BYTES + 1);
+        fs::write(&p, big).unwrap();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({ "path": "doc.md", "out_path": "out/index.html", "profile": "report" }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("规模上限"));
+        assert!(!sandbox.resolve("out/index.html").is_ok());
+    }
+
+    #[test]
+    fn markdown_to_html_slide_uses_bespoke_viewer() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let md = "# One\n\n---\n\n# Two";
+        let p = sandbox.resolve_for_write("deck.md").unwrap();
+        fs::write(&p, md).unwrap();
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        exec_tool(
+            &registry,
+            &ctx,
+            "markdown_to_html",
+            json!({
+                "path": "deck.md",
+                "out_path": "deck/index.html",
+                "profile": "slide",
+                "template": "slide/gaia"
+            }),
+        )
+        .unwrap();
+        let html = fs::read_to_string(sandbox.resolve("deck/index.html").unwrap()).unwrap();
+        assert!(html.contains("bespoke-marp-osc"), "missing Marp CLI OSC");
+        assert!(html.contains(r#"id=":$p""#), "missing bespoke deck root");
+        assert!(
+            html.contains(r"div#\:\$p"),
+            "theme CSS must target bespoke root"
+        );
+        assert!(
+            html.contains("data-marpit-svg"),
+            "inline SVG slides required"
+        );
+        assert!(!html.contains("slide-stage"), "stale custom stage");
+        assert!(!html.contains("sections.length"), "stale broken nav script");
+    }
+
+    #[test]
+    fn skill_read_markdown_has_no_cdn() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_read",
+            json!({ "skill": "markdown" }),
+        )
+        .unwrap();
+        let content = out["content"].as_str().unwrap();
+        assert!(content.contains("markdown_to_html"));
+        assert!(!content.contains("cdn.jsdelivr"));
+        assert!(!content.contains("unpkg.com"));
     }
 }

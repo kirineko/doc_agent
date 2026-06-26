@@ -1,0 +1,36 @@
+@import "classic.css";
+
+body {
+  max-width: 720px;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 1.25rem 1.25rem 2rem;
+}
+
+.resume-header {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+}
+
+.resume-header h1 {
+  font-size: 1.6rem;
+}
+
+.resume-main h2 {
+  font-size: 0.85rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.resume-main h3 {
+  font-size: 0.95rem;
+  margin: 0.6rem 0 0.2rem;
+}
+
+.resume-main p,
+.resume-main ul {
+  margin: 0.2rem 0;
+}
+
+.resume-main li {
+  margin: 0.15rem 0;
+}

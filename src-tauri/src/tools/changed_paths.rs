@@ -44,15 +44,16 @@ pub fn extract_changed_paths(tool_name: &str, args: &Value, result: &Value) -> V
         "excel_normalize" | "data_query" => {
             push_arg_path(&mut paths, args, "out_path");
         }
-        "skill_run" => {
-            // runtime 将 __doc_write 写入的相对路径放入 result.written_paths
-            if let Some(items) = result.get("written_paths").and_then(|v| v.as_array()) {
-                for item in items {
-                    if let Some(path) = item.as_str() {
-                        push_normalized(&mut paths, path);
-                    }
-                }
-            }
+        "skill_run" | "markdown_to_html" => {
+            push_written_paths_from_result(
+                &mut paths,
+                result,
+                if tool_name == "markdown_to_html" {
+                    Some("path")
+                } else {
+                    None
+                },
+            );
         }
         "image_download" => {
             // 逐个上报成功下载的本地文件，便于 @ 引用具体图片
@@ -81,6 +82,22 @@ fn push_arg_path(out: &mut Vec<String>, args: &Value, key: &str) {
 fn push_result_path(out: &mut Vec<String>, result: &Value, key: &str) {
     if let Some(path) = result.get(key).and_then(|v| v.as_str()) {
         push_normalized(out, path);
+    }
+}
+
+fn push_written_paths_from_result(
+    out: &mut Vec<String>,
+    result: &Value,
+    fallback_key: Option<&str>,
+) {
+    if let Some(items) = result.get("written_paths").and_then(|v| v.as_array()) {
+        for item in items {
+            if let Some(path) = item.as_str() {
+                push_normalized(out, path);
+            }
+        }
+    } else if let Some(key) = fallback_key {
+        push_result_path(out, result, key);
     }
 }
 
@@ -214,6 +231,30 @@ mod tests {
             &json!({ "out_dir": ".cache/ooxml/a1b2c3d4/", "parts": 12 }),
         );
         assert!(paths.is_empty());
+    }
+
+    #[test]
+    fn markdown_to_html_reads_written_paths_from_result() {
+        let paths = extract_changed_paths(
+            "markdown_to_html",
+            &json!({ "path": "doc.md", "out_path": "site/index.html", "profile": "report" }),
+            &json!({
+                "path": "site/index.html",
+                "written_paths": [
+                    "site/index.html",
+                    "site/assets/theme.css",
+                    "site/assets/highlight.css"
+                ]
+            }),
+        );
+        assert_eq!(
+            paths,
+            vec![
+                "site/assets/highlight.css",
+                "site/assets/theme.css",
+                "site/index.html"
+            ]
+        );
     }
 
     #[test]

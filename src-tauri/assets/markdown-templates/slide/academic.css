@@ -1,0 +1,22 @@
+/* @theme academic */
+@import "default";
+
+section {
+  background: #fffdf8;
+  font-family: "Times New Roman", "Songti SC", "SimSun", serif;
+}
+
+h1, h2, h3 {
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1e3a5f;
+}
+
+header {
+  color: #64748b;
+}
+
+blockquote {
+  border-left: 4px solid #1e3a5f;
+  padding-left: 1rem;
+  color: #475569;
+}
