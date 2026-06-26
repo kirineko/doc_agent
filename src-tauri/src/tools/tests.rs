@@ -3944,7 +3944,7 @@ See [Example](https://example.com/doc).
         let html = fs::read_to_string(sandbox.resolve("out/index.html").unwrap()).unwrap();
         assert!(html.contains("Cover"));
         assert!(html.contains("<table"));
-        assert!(!sandbox.resolve("out/assets/mermaid.min.js").is_ok());
+        assert!(sandbox.resolve("out/assets/mermaid.min.js").is_err());
         let theme = fs::read_to_string(sandbox.resolve("out/assets/theme.css").unwrap()).unwrap();
         assert!(!theme.contains("@import"));
         assert!(theme.contains("border-collapse"));
@@ -4005,7 +4005,7 @@ See [Example](https://example.com/doc).
         )
         .unwrap_err();
         assert!(err.to_string().contains("规模上限"));
-        assert!(!sandbox.resolve("out/index.html").is_ok());
+        assert!(sandbox.resolve("out/index.html").is_err());
     }
 
     #[test]

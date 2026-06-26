@@ -8,9 +8,7 @@ pub use output::{resolve_output_path, rewrite_local_image_srcs, MAX_INPUT_BYTES}
 use std::path::{Path, PathBuf};
 
 use convert::{convert_document, convert_slide};
-use output::{
-    assemble_document_html, rel_from_root, validate_input, write_assets, ConvertOptions,
-};
+use output::{assemble_document_html, rel_from_root, validate_input, write_assets, ConvertOptions};
 use serde_json::{json, Value};
 use slide_bespoke::assemble_slide_html;
 
