@@ -53,7 +53,14 @@ pub fn pack_tool() -> ToolSpec {
 pub fn comment_tool() -> ToolSpec {
     ToolSpec {
         name: "docx_comment",
-        description: "Add a comment (or reply) to an unpacked docx directory. dir MUST be the out_dir from ooxml_unpack.",
+        description: "Add a comment (or reply) to an unpacked docx directory and wire it into the \
+            document so Word renders it. dir MUST be the out_dir from ooxml_unpack. \
+            The comment is anchored to the paragraph at `paragraph_index` (0-based, counting only \
+            top-level <w:p> elements under <w:body> in word/document.xml). Optionally pass \
+            `text_hint` to assert that paragraph contains the given substring (guards against \
+            miscounting); a mismatch is an error. The tool itself inserts commentRangeStart/End + \
+            commentReference anchors, writes comments.xml (and commentsExtended/people.xml as \
+            needed), so callers must NOT add range markup manually.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -61,9 +68,17 @@ pub fn comment_tool() -> ToolSpec {
                 "id": { "type": "integer" },
                 "text": { "type": "string" },
                 "author": { "type": "string", "default": "Claude" },
-                "parent": { "type": "integer" }
+                "parent": { "type": "integer" },
+                "paragraph_index": {
+                    "type": "integer",
+                    "description": "0-based index of the top-level <w:p> in word/document.xml to anchor the comment to."
+                },
+                "text_hint": {
+                    "type": "string",
+                    "description": "Optional substring that the target paragraph must contain; mismatch is an error."
+                }
             },
-            "required": ["dir", "id", "text"]
+            "required": ["dir", "id", "text", "paragraph_index"]
         }),
         handler: comment_handler,
     }
@@ -149,8 +164,25 @@ fn comment_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
         .get("parent")
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
+    let paragraph_index = args
+        .get("paragraph_index")
+        .and_then(|v| v.as_u64())
+        .ok_or_else(|| ToolError::InvalidArgs("paragraph_index required".into()))?
+        as usize;
+    let text_hint = args
+        .get("text_hint")
+        .and_then(|v| v.as_str())
+        .map(str::to_string);
     let unpacked = ctx.sandbox.resolve(&dir)?;
-    comment::add_comment(&unpacked, id, &text, author, parent)?;
+    comment::add_comment(
+        &unpacked,
+        id,
+        &text,
+        author,
+        parent,
+        paragraph_index,
+        text_hint.as_deref(),
+    )?;
     Ok(json!({ "dir": unpacked.display().to_string(), "comment_id": id }))
 }
 

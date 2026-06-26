@@ -1690,7 +1690,7 @@ async function main() {
         exec_tool(&registry,
                 &ctx,
                 "docx_comment",
-                json!({ "dir": "contract_unpacked", "id": 1, "text": "建议明确付款方式", "author": "审阅人" }),
+                json!({ "dir": "contract_unpacked", "id": 1, "text": "建议明确付款方式", "author": "审阅人", "paragraph_index": 1, "text_hint": "甲方应于30日内付款" }),
             )
             .unwrap();
         exec_tool(&registry,
@@ -1701,14 +1701,334 @@ async function main() {
             .unwrap();
         let reviewed = dir.path().join("contract_reviewed.docx");
         assert_valid_ooxml(&reviewed);
-        let file = fs::File::open(&reviewed).unwrap();
-        let mut archive = ZipArchive::new(file).unwrap();
-        let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
-            .collect();
+
+        // Visibility assertions: the comment must be wired up end-to-end.
+        let comments = read_zip_entry(&reviewed, "word/comments.xml");
         assert!(
-            names.iter().any(|n| n.contains("comments.xml")),
-            "expected comments.xml in {names:?}"
+            comments.contains("<w:comment ") && comments.contains(r#"w:id="1""#),
+            "comments.xml must contain a <w:comment> with w:id=\"1\"; got: {comments}"
+        );
+        let document = read_zip_entry(&reviewed, "word/document.xml");
+        assert!(
+            document.contains(r#"commentRangeStart w:id="1""#),
+            "document.xml must contain commentRangeStart w:id=1"
+        );
+        assert!(
+            document.contains(r#"commentRangeEnd w:id="1""#),
+            "document.xml must contain commentRangeEnd w:id=1"
+        );
+        assert!(
+            document.contains(r#"commentReference w:id="1""#),
+            "document.xml must contain commentReference w:id=1"
+        );
+        assert!(
+            comments.contains("建议明确付款方式"),
+            "comment text must be present in comments.xml"
+        );
+    }
+
+    /// Read one entry out of a docx zip as a String (panics if absent).
+    fn read_zip_entry(path: &std::path::Path, name: &str) -> String {
+        let file = fs::File::open(path).unwrap();
+        let mut archive = ZipArchive::new(file).unwrap();
+        let mut buf = String::new();
+        let found = (0..archive.len()).any(|i| {
+            let mut e = archive.by_index(i).unwrap();
+            if e.name() == name {
+                e.read_to_string(&mut buf).unwrap();
+                true
+            } else {
+                false
+            }
+        });
+        assert!(found, "entry {name} not found in {}", path.display());
+        buf
+    }
+
+    /// Remove any `<Relationship .../>` element referencing comments, leaving the
+    /// rest of the .rels document intact. Used to simulate a comments-less source.
+    fn strip_comments_relationship(rels: &str) -> String {
+        let mut out = String::with_capacity(rels.len());
+        let bytes = rels.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            if rels[i..].starts_with("<Relationship") {
+                // Find the end of this self-closing tag.
+                let mut j = i;
+                let mut in_quotes = false;
+                while j < bytes.len() {
+                    if bytes[j] == b'"' {
+                        in_quotes = !in_quotes;
+                    } else if !in_quotes && bytes[j] == b'>' {
+                        j += 1;
+                        break;
+                    }
+                    j += 1;
+                }
+                let tag = &rels[i..j];
+                if tag.contains("relationships/comments") || tag.contains("Target=\"comments.xml\"")
+                {
+                    // drop this tag (including any single trailing newline)
+                    i = j;
+                    if rels[i..].starts_with('\n') {
+                        i += 1;
+                    }
+                    continue;
+                }
+                out.push_str(tag);
+                i = j;
+            } else {
+                let ch = rels[i..].chars().next().unwrap();
+                out.push(ch);
+                i += ch.len_utf8();
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn docx_comment_paragraph_index_out_of_range_errors() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "x", "paragraph_index": 99 }),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("out of range"),
+            "expected out-of-range error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn docx_comment_text_hint_mismatch_errors() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文内容");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "x", "paragraph_index": 1, "text_hint": "不存在的文本" }),
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("text_hint"),
+            "expected text_hint mismatch error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn docx_comment_reply_chain_writes_extended() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文内容");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+        exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "第一条", "paragraph_index": 1 }),
+        )
+        .unwrap();
+        exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 2, "text": "回复", "paragraph_index": 1, "parent": 1 }),
+        )
+        .unwrap();
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_pack",
+            json!({ "dir": "d_unpacked", "out_path": "d_out.docx", "original": "d.docx" }),
+        )
+        .unwrap();
+        let out = dir.path().join("d_out.docx");
+        assert_valid_ooxml(&out);
+        let extended = read_zip_entry(&out, "word/commentsExtended.xml");
+        let parent_para_id = format!("{:08X}", 1u32.wrapping_mul(0x9E37_79B9));
+        assert!(
+            extended.contains(&format!(r#"paraIdParent="{parent_para_id}""#)),
+            "commentsExtended must reference parent paraId; got: {extended}"
+        );
+        // people.xml should now exist with the author.
+        assert!(
+            read_zip_entry(&out, "word/people.xml").contains("Claude"),
+            "people.xml should record the author"
+        );
+    }
+
+    #[test]
+    fn docx_comment_failed_call_is_atomic_and_retryable() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文内容");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+
+        // A bad paragraph_index must fail…
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "x", "paragraph_index": 99 }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("out of range"));
+
+        // …and leave comments.xml untouched (no dangling id=1 entry).
+        let unpacked = sandbox
+            .resolve("d_unpacked")
+            .unwrap()
+            .join("word/comments.xml");
+        let comments_xml = fs::read_to_string(&unpacked).unwrap();
+        assert!(
+            !comments_xml.contains(r#"w:id="1""#),
+            "failed call must not leave a dangling comment; got: {comments_xml}"
+        );
+
+        // …so retrying with the SAME id must not hit "duplicate id".
+        exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "真正批注", "paragraph_index": 1 }),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn docx_comment_bad_parent_is_atomic() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文内容");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+
+        // parent=999 doesn't exist → must fail…
+        let err = exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "回复", "paragraph_index": 1, "parent": 999 }),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("999"));
+
+        // …and leave nothing written (id=1 still free, anchors absent).
+        let unpacked = sandbox.resolve("d_unpacked").unwrap();
+        let comments_xml = fs::read_to_string(unpacked.join("word/comments.xml")).unwrap();
+        assert!(!comments_xml.contains(r#"w:id="1""#));
+        let document_xml = fs::read_to_string(unpacked.join("word/document.xml")).unwrap();
+        assert!(!document_xml.contains(r#"commentReference w:id="1""#));
+    }
+
+    #[test]
+    fn docx_comment_registers_part_when_comments_absent() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        create_docx_via_skill_run(&ctx, &registry, "d.docx", "标题", "正文内容");
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_unpack",
+            json!({ "path": "d.docx", "out_dir": "d_unpacked" }),
+        )
+        .unwrap();
+
+        // Simulate a source document that has NO comments part: delete
+        // comments.xml and remove its content-type Override and relationship.
+        let unpacked = sandbox.resolve("d_unpacked").unwrap();
+        let _ = fs::remove_file(unpacked.join("word/comments.xml"));
+        let ct_path = unpacked.join("[Content_Types].xml");
+        let ct = fs::read_to_string(&ct_path).unwrap();
+        let ct_clean = ct.replace(
+            r#"<Override ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml" PartName="/word/comments.xml"/>"#,
+            "",
+        );
+        fs::write(&ct_path, ct_clean).unwrap();
+        // Remove the comments relationship entry by filtering whole <Relationship .../> tags.
+        let rels_path = unpacked.join("word/_rels/document.xml.rels");
+        let rels = fs::read_to_string(&rels_path).unwrap();
+        let rels_clean = strip_comments_relationship(&rels);
+        fs::write(&rels_path, rels_clean).unwrap();
+
+        // Now add a comment into this comments-less document.
+        exec_tool(
+            &registry,
+            &ctx,
+            "docx_comment",
+            json!({ "dir": "d_unpacked", "id": 1, "text": "批注", "paragraph_index": 1 }),
+        )
+        .unwrap();
+        exec_tool(
+            &registry,
+            &ctx,
+            "ooxml_pack",
+            json!({ "dir": "d_unpacked", "out_path": "d_out.docx", "original": "d.docx" }),
+        )
+        .unwrap();
+        let out = dir.path().join("d_out.docx");
+        assert_valid_ooxml(&out);
+
+        // The newly created comments part must be registered so Word discovers it.
+        let ct = read_zip_entry(&out, "[Content_Types].xml");
+        assert!(
+            ct.contains(r#"PartName="/word/comments.xml""#),
+            "comments.xml content-type Override must be registered: {ct}"
+        );
+        let rels = read_zip_entry(&out, "word/_rels/document.xml.rels");
+        assert!(
+            rels.contains("relationships/comments"),
+            "document.xml.rels must declare the comments relationship: {rels}"
         );
     }
 

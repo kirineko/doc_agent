@@ -1,6 +1,6 @@
 pub(crate) mod opc;
 pub(crate) mod pml;
-mod scan;
+pub(crate) mod scan;
 pub(crate) mod sml;
 pub(crate) mod wml;
 
@@ -22,7 +22,11 @@ pub fn validate_part_structure(base: &Path, rel_part: &str, xml: &str) -> Vec<Ru
         return opc::validate_content_types(xml);
     }
     match rel.as_str() {
-        "word/document.xml" => wml::validate_wml_document(xml),
+        "word/document.xml" => {
+            let mut v = wml::validate_wml_document(xml);
+            v.extend(wml::validate_comment_consistency(base, xml));
+            v
+        }
         "word/glossarydocument.xml" => wml::validate_wml_glossary(xml),
         "ppt/presentation.xml" => pml::validate_presentation(xml),
         "xl/workbook.xml" => sml::validate_workbook(xml),

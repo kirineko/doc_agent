@@ -9,6 +9,14 @@ pub fn local_name(raw: &[u8]) -> String {
     s.rsplit(':').next().unwrap_or(s).to_string()
 }
 
+pub fn qname_prefix(raw: &[u8]) -> String {
+    let s = std::str::from_utf8(raw).unwrap_or("");
+    match s.rsplit_once(':') {
+        Some((prefix, _)) => format!("{prefix}:"),
+        None => String::new(),
+    }
+}
+
 pub fn attr_local(e: &BytesStart, want: &str) -> Option<String> {
     for attr in e.attributes().flatten() {
         if local_name(attr.key.as_ref()) == want {

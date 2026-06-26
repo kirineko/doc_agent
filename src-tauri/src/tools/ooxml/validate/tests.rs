@@ -325,3 +325,243 @@ fn opc_ct05_violation_reports_actual_part() {
     let msg = super::error::violations_to_error("[Content_Types].xml", v);
     assert!(msg.starts_with("word/header1.xml"));
 }
+
+fn write_comments_xml(dir: &tempfile::TempDir, ids: &[&str]) {
+    std::fs::create_dir_all(dir.path().join("word")).unwrap();
+    let entries: String = ids
+        .iter()
+        .map(|id| format!(r#"<w:comment w:id="{id}"/>"#))
+        .collect();
+    let xml = format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{entries}</w:comments>"#
+    );
+    std::fs::write(dir.path().join("word/comments.xml"), xml).unwrap();
+}
+
+fn doc_with_refs(ids: &[&str]) -> String {
+    let refs: String = ids
+        .iter()
+        .map(|id| format!(r#"<w:r><w:commentReference w:id="{id}"/></w:r>"#))
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p>{refs}</w:p></w:body></w:document>"#
+    )
+}
+
+#[test]
+fn comment_consistency_consistent_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    write_comments_xml(&dir, &["1", "2"]);
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&["1", "2"]));
+    assert!(v.is_empty(), "expected no violations, got {v:?}");
+}
+
+#[test]
+fn comment_consistency_comment_without_reference_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    write_comments_xml(&dir, &["1"]);
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&[]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("1")),
+        "expected violation for id 1, got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_reference_without_comment_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    write_comments_xml(&dir, &[]);
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&["2"]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("2")),
+        "expected violation for id 2, got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_no_comments_part_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    // No word/comments.xml at all; document has no refs either.
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&[]));
+    assert!(v.is_empty(), "got {v:?}");
+}
+
+#[test]
+fn comment_consistency_dangling_ref_when_comments_part_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    // No word/comments.xml, but document.xml references id "3" — that reference
+    // cannot resolve and must be reported (regression for the early-return that
+    // used to treat a missing comments part as "nothing to check").
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&["3"]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("3")),
+        "expected violation for dangling id 3, got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_reference_in_header_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("word/_rels")).unwrap();
+    write_comments_xml(&dir, &["1"]);
+    // The comment is anchored in a header story, not the main body. Its
+    // commentReference lives in word/header1.xml, so document.xml has none.
+    std::fs::write(
+        dir.path().join("word/header1.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:commentReference w:id="1"/></w:r></w:p></w:hdr>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("word/_rels/document.xml.rels"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+    )
+    .unwrap();
+    let doc = r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:pPr><w:headerReference w:type="default" r:id="rId1"/></w:pPr></w:p></w:body></w:document>"#;
+    let v = wml::validate_comment_consistency(dir.path(), doc);
+    assert!(
+        v.is_empty(),
+        "comment referenced in a reachable header must not be flagged; got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_stale_header_rel_without_header_reference_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("word/_rels")).unwrap();
+    write_comments_xml(&dir, &["1"]);
+    std::fs::write(
+        dir.path().join("word/header1.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:commentReference w:id="1"/></w:r></w:p></w:hdr>"#,
+    )
+    .unwrap();
+    // rels points at header1.xml but document.xml never references rId1 — Word
+    // does not load that header, so the commentReference there must not count.
+    std::fs::write(
+        dir.path().join("word/_rels/document.xml.rels"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/header" Target="header1.xml"/></Relationships>"#,
+    )
+    .unwrap();
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&[]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("1")),
+        "stale header rel without headerReference must not satisfy anchor; got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_unreferenced_header_does_not_count() {
+    let dir = tempfile::tempdir().unwrap();
+    write_comments_xml(&dir, &["1"]);
+    // Stale header1.xml on disk with a commentReference, but no document.xml.rels
+    // entry — Word never loads it, so id=1 still lacks a reachable anchor.
+    std::fs::write(
+        dir.path().join("word/header1.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:commentReference w:id="1"/></w:r></w:p></w:hdr>"#,
+    )
+    .unwrap();
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&[]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("1")),
+        "unreferenced header must not satisfy anchor check; got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_reply_without_reference_passes() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("word")).unwrap();
+    // id=1 is top-level (paraId AAAA1111); id=2 is a reply to it (paraId
+    // BBBB2222). Word links the reply via commentsExtended (paraIdParent) and
+    // does NOT emit a commentReference for id=2 in document.xml.
+    std::fs::write(
+        dir.path().join("word/comments.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+  <w:comment w:id="1"><w:p w14:paraId="AAAA1111"><w:r><w:t>top</w:t></w:r></w:p></w:comment>
+  <w:comment w:id="2"><w:p w14:paraId="BBBB2222"><w:r><w:t>reply</w:t></w:r></w:p></w:comment>
+</w:comments>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("word/commentsExtended.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="BBBB2222" w15:paraIdParent="AAAA1111" w15:done="0"/></w15:commentsEx>"#,
+    )
+    .unwrap();
+    // document.xml references only the top-level comment id=1.
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&["1"]));
+    assert!(
+        v.is_empty(),
+        "reply comment must not require its own commentReference; got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_non_reply_without_reference_still_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("word")).unwrap();
+    // commentsExtended exists but neither commentEx has a paraIdParent, so no
+    // comment is a reply: a missing reference must still be reported.
+    std::fs::write(
+        dir.path().join("word/comments.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+  <w:comment w:id="1"><w:p w14:paraId="AAAA1111"><w:r><w:t>top</w:t></w:r></w:p></w:comment>
+</w:comments>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("word/commentsExtended.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="AAAA1111" w15:done="0"/></w15:commentsEx>"#,
+    )
+    .unwrap();
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&[]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("1")),
+        "expected violation for unanchored non-reply id 1, got {v:?}"
+    );
+}
+
+#[test]
+fn comment_consistency_stale_para_id_parent_still_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("word")).unwrap();
+    // commentsExtended claims id=2 is a reply (BBBB2222 → DEADBEEF), but DEADBEEF
+    // is not any comment's paraId — stale metadata must not exempt the reference check.
+    std::fs::write(
+        dir.path().join("word/comments.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">
+  <w:comment w:id="1"><w:p w14:paraId="AAAA1111"><w:r><w:t>top</w:t></w:r></w:p></w:comment>
+  <w:comment w:id="2"><w:p w14:paraId="BBBB2222"><w:r><w:t>orphan reply</w:t></w:r></w:p></w:comment>
+</w:comments>"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("word/commentsExtended.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="BBBB2222" w15:paraIdParent="DEADBEEF" w15:done="0"/></w15:commentsEx>"#,
+    )
+    .unwrap();
+    let v = wml::validate_comment_consistency(dir.path(), &doc_with_refs(&["1"]));
+    assert!(
+        v.iter()
+            .any(|e| e.rule_id == "wml.comment.consistency" && e.message.contains("2")),
+        "stale paraIdParent must not exempt id 2 from reference check; got {v:?}"
+    );
+}

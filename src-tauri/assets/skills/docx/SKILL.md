@@ -569,15 +569,17 @@ Edit files in `<out_dir>/word/`. See XML Reference below for patterns.
 | `&#x201C;` | “ (left double) |
 | `&#x201D;` | ” (right double) |
 
-**Adding comments:** Use `docx_comment` to handle boilerplate across multiple XML files (text must be pre-escaped XML):
+**Adding comments:** `docx_comment` writes the `<w:comment>` into `comments.xml` **and inserts the `commentRangeStart/End` + `commentReference` anchors into `document.xml` itself** — do NOT add markers by hand. `paragraph_index` is required. Pass **raw** comment text: the tool XML-escapes `< > & " '` for you, so do NOT pre-escape (passing `&amp;` would render as `&amp;`). For typographic punctuation pass the actual character (e.g. ' " —), not an entity:
 
 ```json
-docx_comment {"dir": "<out_dir>", "id": 0, "text": "Comment text with &amp; and &#x2019;"}
-docx_comment {"dir": "<out_dir>", "id": 1, "text": "Reply text", "parent": 0}
-docx_comment {"dir": "<out_dir>", "id": 0, "text": "Text", "author": "Custom Author"}
+docx_comment {"dir": "<out_dir>", "id": 0, "text": "See R&D budget — note the 'revised' figure", "paragraph_index": 1}
+docx_comment {"dir": "<out_dir>", "id": 0, "text": "Text", "author": "Custom Author", "paragraph_index": 1, "text_hint": "substring the paragraph must contain"}
+docx_comment {"dir": "<out_dir>", "id": 1, "text": "Reply text", "parent": 0, "paragraph_index": 1}
 ```
 
-Then add markers to document.xml (see Comments in XML Reference).
+- `paragraph_index` (**required**): 0-based index over top-level `<w:p>` children of `<w:body>`.
+- `text_hint` (optional): assert the target paragraph contains this substring; a mismatch is an error (guards against off-by-one paragraph counts).
+- `parent` (optional): id of the comment being replied to. `author` (optional): comment author.
 
 ### Step 3: Pack
 
@@ -679,7 +681,7 @@ Without the `<w:del/>` in `<w:pPr><w:rPr>`, accepting changes leaves an empty pa
 
 ### Comments
 
-After running `docx_comment` (see Step 2), add markers to document.xml. For replies, pass `"parent"` and nest markers inside the parent's.
+`docx_comment` (see Step 2) inserts these markers into document.xml for you — you normally do NOT author them by hand. The markup below is **reference only** (for inspecting tool output, or for hand-targeting a span `paragraph_index` cannot reach, e.g. a sub-paragraph range).
 
 **CRITICAL: `<w:commentRangeStart>` and `<w:commentRangeEnd>` are siblings of `<w:r>`, never inside `<w:r>`.**
 

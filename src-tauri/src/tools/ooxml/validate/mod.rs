@@ -1,5 +1,5 @@
 mod error;
-mod rules;
+pub(crate) mod rules;
 mod wellformed;
 
 #[cfg(test)]

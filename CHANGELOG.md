@@ -10,6 +10,22 @@
 
 ---
 
+## [2026.6.26] — 2026-06-26
+
+本版本修复 Word 批注写回：`docx_comment` 现在能写入可见批注，并在打包前校验批注三件套一致性。
+
+### DOCX 批注写回（fix-docx-comment-writeback）
+
+- **`docx_comment` 端到端写回**：自动写入 `comments.xml` 条目、在 `document.xml` 目标段落插入 `commentRangeStart` / `commentRangeEnd` / `commentReference` 锚点，并维护 `commentsExtended.xml`（回复链）、`people.xml` 及 Content Types / 关系注册
+- **段落定位**：新增必填 `paragraph_index`（0-based 顶层段落）与可选 `text_hint`（断言式文本校验）；工具自行完成锚点装配，Agent 无需手动改 XML
+- **健壮 OOXML 处理**：支持自闭合 `comments.xml` / `people.xml` / rels 空壳；插入片段自带 `xmlns:w` / `w14` / `w15` 声明；锚点前缀跟随文档命名空间（含默认命名空间文档的 `w:id` 属性前缀）
+- **原子写回**：compute-then-commit + 失败 rollback，避免半写入导致重试撞 duplicate id
+- **重复 id 防护**：写入前检查 `comments.xml` 及 document / header / footer / footnote / endnote story parts 是否已占用同一 id
+- **批注一致性校验**：`ooxml_pack` 新增 `wml.comment.consistency`，检测 comments 与 commentReference 断链；回复批注经 `commentsExtended` 验证后豁免；跨 story part 收集引用，忽略 stale 未引用部件
+- **内置 docx skill 同步**：`SKILL.md` / `editing.md` 更新 API 说明与原始文本示例（工具自行 XML 转义，勿预转义）
+
+---
+
 ## [2026.6.24] — 2026-06-24
 
 本版本带来网络图片批量下载、构建产物面板，以及 Chat 输入区焦点体验优化。

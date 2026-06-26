@@ -65,11 +65,16 @@ async function main() {
 | `&#x201C;` | “ |
 | `&#x201D;` | ” |
 
-**批注**（解包后）：
+**批注**（解包后）：`docx_comment` 会写入 `comments.xml` **并自动在 `document.xml` 插入** `commentRangeStart/End` + `commentReference` 锚点，**无需手动加标记**。
 
 ```json
-{ "dir": "<out_dir>", "id": 0, "text": "批注正文" }
+{ "dir": "<out_dir>", "id": 0, "text": "批注正文", "paragraph_index": 1, "text_hint": "可选：该段应包含的子串" }
 ```
+
+- `paragraph_index`（**必填**）：0-based，仅计 `word/document.xml` 中 `<w:body>` 的直接子级 `<w:p>`
+- `text_hint`（可选）：断言目标段落包含此子串，不匹配即报错（防数错段落）
+- 回复：再传 `parent`（父批注 id）；`author` 可选
+- `text` 传**原始文本**：工具自动转义 `< > & " '`，**勿预转义**（传 `&amp;` 会显示成 `&amp;`）；排版引号直接传字符 `'` `"`，勿用实体（实体仅用于上面手写 XML 的场景）
 
 工具：`docx_comment`
 
