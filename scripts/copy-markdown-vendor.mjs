@@ -29,8 +29,8 @@ async function extractMarpBespokeAssets() {
       "---\nmarp: true\ntheme: default\n---\n\n# Slide\n",
       "utf8",
     );
-    const marpBin = path.join(repo, "node_modules/.bin/marp");
-    await execFileAsync(marpBin, [deck, "-o", html, "--no-stdin"], {
+    const marpCli = path.join(repo, "node_modules/@marp-team/marp-cli/marp-cli.js");
+    await execFileAsync(process.execPath, [marpCli, deck, "-o", html, "--no-stdin"], {
       cwd: tmp,
     });
     const raw = await readFile(html, "utf8");
