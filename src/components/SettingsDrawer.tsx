@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import packageJson from "../../package.json";
+import { useUiScale } from "../hooks/useUiScale";
 import { useUpdateProgress } from "../hooks/useUpdateProgress";
 import {
   configuredBalanceProviders,
@@ -12,6 +13,12 @@ import {
   isNewerVersion,
 } from "../lib/updater";
 import { resetWorkspaceLayoutToDefaults } from "../lib/workspaceLayout";
+import {
+  UI_SCALE_MAX,
+  UI_SCALE_MIN,
+  UI_SCALE_STEP,
+  formatUiScalePercent,
+} from "../lib/uiScale";
 import { providerLabel } from "../types";
 
 interface SettingsDrawerProps {
@@ -38,6 +45,7 @@ function balanceDisplayForProvider(
 }
 
 export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerProps) {
+  const { scale, setScale, resetScale } = useUiScale();
   const currentVersion = packageJson.version;
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [loadingLatest, setLoadingLatest] = useState(false);
@@ -174,11 +182,35 @@ export function SettingsDrawer({ open, onClose, apiKeyStatus }: SettingsDrawerPr
         </section>
 
         <section className="config-surface rounded-md p-3 text-xs text-fg-secondary">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-fg">界面缩放</span>
+            <span className="text-fg">{formatUiScalePercent(scale)}</span>
+          </div>
+          <input
+            type="range"
+            min={UI_SCALE_MIN}
+            max={UI_SCALE_MAX}
+            step={UI_SCALE_STEP}
+            value={scale}
+            aria-label="界面缩放"
+            aria-valuemin={UI_SCALE_MIN}
+            aria-valuemax={UI_SCALE_MAX}
+            aria-valuenow={scale}
+            aria-valuetext={formatUiScalePercent(scale)}
+            className="mt-3 w-full accent-[var(--accent)]"
+            onChange={(event) => setScale(Number(event.target.value))}
+          />
+        </section>
+
+        <section className="config-surface rounded-md p-3 text-xs text-fg-secondary">
           <div className="text-fg">工作区布局</div>
           <button
             type="button"
             className="mt-3 w-full rounded-md border border-border-subtle px-2.5 py-1.5 text-xs text-fg-secondary hover:border-border-hover hover:text-fg"
-            onClick={() => resetWorkspaceLayoutToDefaults()}
+            onClick={() => {
+              resetWorkspaceLayoutToDefaults();
+              resetScale();
+            }}
           >
             恢复默认布局
           </button>

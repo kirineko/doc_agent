@@ -35,3 +35,26 @@ export const ADD_PROJECT_SHORTCUT_KEY = "o";
 export function isAddProjectShortcut(event: KeyboardEvent): boolean {
   return isModShortcut(event, ADD_PROJECT_SHORTCUT_KEY);
 }
+
+function hasModKey(event: KeyboardEvent): boolean {
+  return IS_MAC ? event.metaKey : event.ctrlKey;
+}
+
+export function isUiScaleShortcutBlocked(event: KeyboardEvent): boolean {
+  return event.isComposing || event.keyCode === 229;
+}
+
+export function isZoomInShortcut(event: KeyboardEvent): boolean {
+  if (!hasModKey(event) || event.altKey) return false;
+  return event.key === "=" || event.key === "+" || event.key === "Add";
+}
+
+export function isZoomOutShortcut(event: KeyboardEvent): boolean {
+  if (!hasModKey(event) || event.altKey) return false;
+  return event.key === "-" || event.key === "_";
+}
+
+export function isZoomResetShortcut(event: KeyboardEvent): boolean {
+  if (!hasModKey(event) || event.shiftKey || event.altKey) return false;
+  return event.key === "0";
+}

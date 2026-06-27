@@ -15,16 +15,22 @@ import { UpdateProgressOverlay } from "./components/UpdateProgressOverlay";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { WorkspaceLayout } from "./components/WorkspaceLayout";
 import { useAppUpdater } from "./hooks/useAppUpdater";
+import { useUiScale } from "./hooks/useUiScale";
 import { useWorkspace } from "./hooks/useWorkspace";
 import { hasAnyLlmKey } from "./lib/credentials";
 import {
   isAddProjectShortcut,
   isCommandPaletteShortcut,
   isNewSessionShortcut,
+  isUiScaleShortcutBlocked,
+  isZoomInShortcut,
+  isZoomOutShortcut,
+  isZoomResetShortcut,
 } from "./lib/keyboardShortcuts";
 
 function App() {
   const ws = useWorkspace();
+  const { zoomIn, zoomOut, resetScale } = useUiScale();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelFlyoutOpen, setModelFlyoutOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -90,6 +96,24 @@ function App() {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      if (!isUiScaleShortcutBlocked(event)) {
+        if (isZoomInShortcut(event)) {
+          event.preventDefault();
+          zoomIn();
+          return;
+        }
+        if (isZoomOutShortcut(event)) {
+          event.preventDefault();
+          zoomOut();
+          return;
+        }
+        if (isZoomResetShortcut(event)) {
+          event.preventDefault();
+          resetScale();
+          return;
+        }
+      }
+
       if (commandPaletteOpen) {
         if (isCommandPaletteShortcut(event)) {
           event.preventDefault();
@@ -119,7 +143,16 @@ function App() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [commandPaletteOpen, ws.activeProjectId, ws.createSession, ws.addProjectFromDialog, ws.promptAddProject]);
+  }, [
+    commandPaletteOpen,
+    ws.activeProjectId,
+    ws.createSession,
+    ws.addProjectFromDialog,
+    ws.promptAddProject,
+    zoomIn,
+    zoomOut,
+    resetScale,
+  ]);
 
   return (
     <div className="flex h-full flex-col bg-app">
