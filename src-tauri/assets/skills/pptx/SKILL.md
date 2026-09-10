@@ -204,4 +204,4 @@ Check the markdown output for:
 
 - **PptxGenJS 保存**：只用 `await pptx.writeFile({ fileName })`（已接入沙箱）；勿用 `fs` 或 stream。
 - **缩略图/渲染**：不可用；按上方 Layout QA 降级。
-- **图片**：只支持 base64 `data:` 形式（无网络/无本地 path 加载），见 pptxgenjs.md Images 一节。
+- **图片**：先 `doc_image_info` / `doc_image_resize`，再 `fs.readFileSync(..., 'base64')` 以 `data:` 形式 `addImage`（无网络/无 path 加载）。见 pptxgenjs.md Images 一节。

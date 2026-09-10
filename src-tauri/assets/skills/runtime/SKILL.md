@@ -39,7 +39,9 @@ Bundle 按代码关键字注入（含 `pptxgenjs` / `PptxGenJS` / `docx` / `exce
 | `doc_write_bytes(path, Uint8Array)` | 写二进制 |
 | `doc_exists(path)` | 沙箱内路径是否存在（bool） |
 | `doc_list(path?)` | 列目录直接子项 → `[{ name, is_dir }, …]`（默认 `"."`） |
-| `fs.readFileSync(path, 'utf-8' \| 'base64')` | 文本或 base64；无 encoding → Buffer 字节 |
+| `fs.readFileSync(path, 'utf-8' \| 'base64')` | 文本或 base64；无 encoding → `Uint8Array`（带 `toString('base64')`） |
+| `doc_image_info(path)` | 读文件头 → `{ width, height, mime, bytes }`（PNG/JPEG/GIF/WebP） |
+| `doc_image_resize(path, { maxEdge, quality, out })` | 按长边缩放写入沙箱，默认 `.cache/images/<stem>-<maxEdge>-<hash>.jpg` |
 | `fs.writeFileSync(path, data, 'utf-8')` | 文本或字节写入 |
 | `fs.existsSync(path)` | 同 `doc_exists` |
 | `fs.readdirSync(path)` | 同 `doc_list` 的 name 数组（无 `is_dir` 时用 `doc_list`） |
@@ -55,10 +57,30 @@ Bundle 按代码关键字注入（含 `pptxgenjs` / `PptxGenJS` / `docx` / `exce
 
 `setTimeout`/`setImmediate`：**无真实延迟**（微任务）；`console.*` → `doc_log`；`Buffer`、`TextEncoder`/`TextDecoder`、`btoa`/`atob`、`crypto.getRandomValues`。
 
+## 图片与二进制
+
+`atob` / `btoa` / `Buffer` / `TextEncoder` / `TextDecoder` / 无 encoding 的 `fs.readFileSync` 由宿主原生实现，不要在 JS 里逐字节循环。
+
+`fs.readFileSync` 三种返回：
+
+| 调用 | 返回 |
+|------|------|
+| `fs.readFileSync(p)` | `Uint8Array`，带 `toString('base64')` |
+| `fs.readFileSync(p, 'utf-8')` | 文本字符串 |
+| `fs.readFileSync(p, 'base64')` | base64 字符串（同 `doc_read`） |
+
+**禁止**在 JS 里扫 JPEG SOF / PNG IHDR 取宽高。用 `doc_image_info(path)`。大图先 `doc_image_resize(path, { maxEdge: 1600 })` 再 `addImage`。把多 MB 原图直接 base64 送进 pptxgenjs **会超时**。
+
+```javascript
+const info = doc_image_info("assets/photo.jpg");          // { width, height, mime, bytes }
+const r = doc_image_resize("assets/photo.jpg", { maxEdge: 1600 });
+const b64 = fs.readFileSync(r.path, "base64");
+```
+
 ## 限制
 
 - 无 `fetch`、无任意 npm 包、无 `child_process`
-- 单次默认超时 30s（可传 `timeout_secs`）
+- 单次默认超时 30s，上限 120s；请求值超出范围会截断到 120 并在结果中返回 `timeout_clamped: { requested, applied }`
 - OOXML 模板编辑：先 `ooxml_unpack`（省略 `out_dir`），用返回的 `out_dir` 拼 XML 路径（自动目录在 `.cache/ooxml/` 下，段名为短 hash）；列 slide 用 `doc_list('<out_dir>/ppt/slides')`
 
 ## 故障修复

@@ -190,6 +190,7 @@ impl ToolRegistry {
                 crate::tools::web::search_tool(),
                 crate::tools::web::extract_tool(),
                 crate::tools::image_read::tool(),
+                crate::tools::image_info::tool(),
                 crate::tools::image_download::tool(),
             ],
         }

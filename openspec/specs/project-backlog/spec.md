@@ -101,7 +101,7 @@
 
 ### BL-010 Stop 期间 skill_run / html_to_pdf 可中断
 
-- **现状**：用户点 Stop 后，若正在执行 `skill_run` 或 `html_to_pdf`，需等 handler 返回或 30s 超时；stop turn design 的 Non-Goal 遗留。
+- **现状**：用户点 Stop 后，若正在执行 `skill_run` 或 `html_to_pdf`，需等 handler 返回或 30s 超时；stop turn design 的 Non-Goal 遗留。2026-09 `fix-skill-run-image-perf` 部分缓解（loop limit + op 取消标志），根治仍待办。
 - **建议**：线程安全的中断信号 + runtime/print 协作式取消；复杂度高，单独评估。
 - **建议 change**：`skill-run-interrupt-on-cancel`
 - **关联**：`agent/turn_control.rs`、`tools/runtime/mod.rs`
@@ -114,7 +114,7 @@
 
 ### BL-012 boa heap 内存上限
 
-- **现状**：design 提过内存上限；代码仅 32MB **栈**，无 heap 限制；大 exceljs 脚本有 OOM 拖垮进程风险。
+- **现状**：design 提过内存上限；代码仅 32MB **栈**，无 heap 限制；大 exceljs 脚本有 OOM 拖垮进程风险。2026-09 `fix-skill-run-image-perf` 部分缓解（loop limit + op 取消标志），根治仍待办。
 - **建议**：可配置 heap 上限 + 友好错误；或文档化脚本规模限制。
 - **关联**：`script-runtime/spec.md`、`tools/runtime/mod.rs`
 

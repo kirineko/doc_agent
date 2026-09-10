@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ToolChainPanel } from "../components/ToolChainPanel";
 
@@ -68,6 +69,32 @@ describe("ToolChainPanel", () => {
     expect(
       screen.queryByText("当前 report.docx 已被会话「周报」占用，请稍后重试。"),
     ).not.toBeVisible();
+  });
+
+  it("shows script timeout headline and hint after expanding detail", async () => {
+    render(
+      <ToolChainPanel
+        items={[
+          {
+            id: "call_timeout",
+            name: "skill_run",
+            args: { code: "function main() { while (true) {} }" },
+            status: "error",
+            summary: JSON.stringify({
+              error: "script timeout",
+              detail: "script timeout",
+              hint: "脚本在 120s 内未完成…用 doc_image_resize 缩图",
+            }),
+          },
+        ]}
+      />,
+    );
+    const headline = screen.getByRole("alert").querySelector(".font-medium");
+    expect(headline).toHaveTextContent("script timeout");
+    expect(headline).toBeVisible();
+    expect(screen.queryByText(/doc_image_resize/)).not.toBeVisible();
+    await userEvent.click(screen.getByText("详情"));
+    expect(screen.getByText(/doc_image_resize/)).toBeVisible();
   });
 
   it("scrolls to bottom when a new tool card is appended", () => {

@@ -143,12 +143,20 @@ To cast a shadow upward (e.g. on a footer bar), use `angle: 270` with a positive
 
 ### Image Sources
 
-**本运行时只支持 base64 `data:` 形式**（无网络、无 path 加载）。沙箱内图片文件用 `fs.readFileSync(p, 'base64')` 读取：
+**本运行时只支持 base64 `data:` 形式**（无网络、无 path 加载）。推荐流程：`doc_image_info` 取尺寸 → 大图 `doc_image_resize` → `fs.readFileSync(resized, 'base64')` → `addImage`。**不要**手写 JPEG/PNG 文件头解析。
 
 ```javascript
-// ✅ 沙箱文件 → base64
-const b64 = fs.readFileSync("images/chart.png", "base64");
-slide.addImage({ data: "image/png;base64," + b64, x: 1, y: 1, w: 5, h: 3 });
+// 推荐：先取尺寸并缩图，再按宽高比放入指定区域
+function fitImage(path, box /* {x,y,w,h} inches */) {
+  const r = doc_image_resize(path, { maxEdge: 1600 });      // 大图缩到 1600px 长边
+  const ratio = r.width / r.height;
+  let w = box.w, h = w / ratio;
+  if (h > box.h) { h = box.h; w = h * ratio; }
+  const b64 = fs.readFileSync(r.path, "base64");
+  const mime = r.path.endsWith(".png") ? "image/png" : "image/jpeg";
+  return { data: `${mime};base64,${b64}`, x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}
+slide.addImage(fitImage("assets/photo.jpg", { x: 0.5, y: 1.2, w: 9, h: 4 }));
 
 // ❌ 不支持：path 文件路径 / URL（运行时无 fetch）
 // slide.addImage({ path: "images/chart.png", ... });

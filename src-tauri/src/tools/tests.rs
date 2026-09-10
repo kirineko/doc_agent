@@ -200,6 +200,13 @@ async function main() {{
         assert!(one_of
             .iter()
             .any(|schema| schema["required"] == json!(["path"])));
+        let timeout = &skill_run.parameters["properties"]["timeout_secs"];
+        assert_eq!(timeout["minimum"], 1);
+        assert_eq!(timeout["maximum"], 120);
+        assert!(
+            skill_run.description.contains("doc_image_resize"),
+            "skill_run description should mention doc_image_resize"
+        );
     }
 
     #[test]
@@ -1245,6 +1252,7 @@ async function main() {
         assert_eq!(out["doc"], "pptxgenjs.md");
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("PptxGenJS"));
+        assert!(content.contains("doc_image_resize"));
     }
 
     #[test]
@@ -1302,6 +1310,47 @@ return { ok: true };
             dir.path().join(&skill_run_session_script()).exists(),
             "successful skill_run should retain script.js for cross-turn reuse"
         );
+    }
+
+    #[test]
+    fn timeout_180_is_clamped_and_reported() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({
+                "code": "function main() { return 1; }",
+                "timeout_secs": 180
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["result"], 1);
+        assert_eq!(out["timeout_clamped"]["requested"], 180);
+        assert_eq!(out["timeout_clamped"]["applied"], 120);
+    }
+
+    #[test]
+    fn timeout_60_has_no_clamp_field() {
+        let dir = tempdir().unwrap();
+        let sandbox = setup(&dir);
+        let ctx = ToolContext::new(&sandbox);
+        let registry = ToolRegistry::default_tools();
+        let out = exec_tool(
+            &registry,
+            &ctx,
+            "skill_run",
+            json!({
+                "code": "function main() { return 1; }",
+                "timeout_secs": 60
+            }),
+        )
+        .unwrap();
+        assert_eq!(out["result"], 1);
+        assert!(out.get("timeout_clamped").is_none());
     }
 
     #[test]
@@ -3309,6 +3358,8 @@ async function main() {
         let content = out["content"].as_str().unwrap();
         assert!(content.contains("boa_engine"));
         assert!(content.contains("doc_list"));
+        assert!(content.contains("doc_image_resize"));
+        assert!(content.contains("maxEdge"));
     }
 
     #[test]

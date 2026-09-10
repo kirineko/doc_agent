@@ -1,14 +1,20 @@
 use serde_json::{json, Value};
 
-pub fn build_script_error(code: &str, detail: &str, script_path: Option<&str>) -> Value {
+pub fn build_script_error(
+    code: &str,
+    detail: &str,
+    script_path: Option<&str>,
+    timeout_secs: u64,
+) -> Value {
     let (line, column) = extract_line_column(detail).unwrap_or((0, 0));
     let source = if line > 0 {
         get_source_line(code, line)
     } else {
         None
     };
+    let kind = classify_error(detail);
     let mut out = json!({
-        "error": classify_error(detail),
+        "error": kind,
         "detail": detail,
     });
     if line > 0 {
@@ -31,12 +37,24 @@ pub fn build_script_error(code: &str, detail: &str, script_path: Option<&str>) -
              For API questions see skill_read {{\"skill\":\"runtime\"}}."
         ));
     }
+    if kind == "script timeout" {
+        out["hint"] = json!(format!(
+            "脚本在 {timeout_secs}s 内未完成（上限 120s）。本运行时是解释器，对多 MB 二进制逐字节处理极慢；\
+             这通常不是代码 bug。请：1) 用 doc_image_info(path) 取尺寸而非解析文件头；\
+             2) 大图先 doc_image_resize(path, {{maxEdge: 1600}}) 再 addImage；\
+             3) 减少单次脚本处理的文件数。加大 timeout_secs 通常无效。"
+        ));
+    }
     out
 }
 
 fn classify_error(detail: &str) -> &'static str {
     let lower = detail.to_lowercase();
-    if lower.contains("syntax") || lower.contains("unexpected") {
+    if lower.contains("script timeout") {
+        "script timeout"
+    } else if lower.contains("loop iteration limit") {
+        "loop iteration limit exceeded"
+    } else if lower.contains("syntax") || lower.contains("unexpected") {
         "JavaScript parse error"
     } else {
         "JavaScript runtime error"
@@ -114,6 +132,7 @@ mod tests {
             code,
             "SyntaxError: unexpected identifier at line 2, col 10",
             Some(".cache/skill-run/script.js"),
+            30,
         );
         assert_eq!(err["error"], "JavaScript parse error");
         assert_eq!(err["line"], 2);
@@ -128,5 +147,29 @@ mod tests {
             extract_line_column("SyntaxError: foo at line 204, col 58"),
             Some((204, 58))
         );
+    }
+
+    #[test]
+    fn timeout_is_classified_separately() {
+        let err = build_script_error("", "script timeout", Some("script.js"), 30);
+        assert_eq!(err["error"], "script timeout");
+        assert_eq!(err["detail"], "script timeout");
+        assert_ne!(err["error"], "JavaScript runtime error");
+    }
+
+    #[test]
+    fn timeout_hint_mentions_resize() {
+        let err = build_script_error("", "script timeout", Some("script.js"), 120);
+        let hint = err["hint"].as_str().unwrap_or("");
+        assert!(hint.contains("doc_image_info"), "hint: {hint}");
+        assert!(hint.contains("doc_image_resize"), "hint: {hint}");
+        assert!(hint.contains("120s"), "hint: {hint}");
+        assert!(!hint.contains("加大 timeout_secs 通常是首选"));
+    }
+
+    #[test]
+    fn loop_iteration_limit_is_classified_separately() {
+        let err = build_script_error("", "loop iteration limit exceeded", None, 30);
+        assert_eq!(err["error"], "loop iteration limit exceeded");
     }
 }

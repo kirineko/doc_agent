@@ -7,6 +7,7 @@ use boa_engine::{Context, JsResult, JsValue};
 use serde_json::json;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 const MAX_LOG_CHARS: usize = 2_000;
@@ -16,6 +17,7 @@ thread_local! {
         const { RefCell::new(None) };
     // execute_script 每次 spawn 独立线程，写入记录天然按脚本隔离。
     static WRITTEN_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static CANCEL_FLAG: RefCell<Option<Arc<AtomicBool>>> = const { RefCell::new(None) };
 }
 
 pub fn set_runtime_write_gate(
@@ -24,14 +26,35 @@ pub fn set_runtime_write_gate(
     RUNTIME_WRITE_GATE.with(|cell| *cell.borrow_mut() = gate);
 }
 
+pub fn set_cancel_flag(flag: Option<Arc<AtomicBool>>) {
+    CANCEL_FLAG.with(|cell| *cell.borrow_mut() = flag);
+}
+
+pub fn check_cancelled(_ctx: &mut Context) -> JsResult<()> {
+    let cancelled = CANCEL_FLAG.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    });
+    if cancelled {
+        Err(boa_engine::error::JsNativeError::typ()
+            .with_message("script cancelled by host")
+            .into())
+    } else {
+        Ok(())
+    }
+}
+
 pub fn register(context: &mut Context, sandbox: &Sandbox) -> JsResult<()> {
     WRITTEN_PATHS.with(|cell| cell.borrow_mut().clear());
     let root = sandbox.root().to_path_buf();
     register_read(context, root.clone())?;
     register_write(context, root.clone())?;
     register_exists(context, root.clone())?;
-    register_list(context, root)?;
+    register_list(context, root.clone())?;
     register_log(context)?;
+    super::ops_binary::register(context, root.clone())?;
+    super::ops_image::register(context, root)?;
     Ok(())
 }
 
@@ -40,12 +63,26 @@ pub fn take_written_paths() -> Vec<String> {
     WRITTEN_PATHS.with(|cell| std::mem::take(&mut *cell.borrow_mut()))
 }
 
+pub(crate) fn apply_write_gate(path: &str) -> Result<(), String> {
+    if let Some(gate) = RUNTIME_WRITE_GATE.with(|cell| cell.borrow().clone()) {
+        gate.before_write(path)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn record_written_path(path: &str) {
+    WRITTEN_PATHS.with(|cell| {
+        cell.borrow_mut().push(path.replace('\\', "/"));
+    });
+}
+
 fn register_read(context: &mut Context, root: PathBuf) -> JsResult<()> {
     context.register_global_builtin_callable(
         js_string!("__doc_read"),
         1,
         NativeFunction::from_copy_closure_with_captures(
             |_this, args, root, ctx| {
+                check_cancelled(ctx)?;
                 let path = args
                     .first()
                     .ok_or_else(|| {
@@ -75,6 +112,7 @@ fn register_write(context: &mut Context, root: PathBuf) -> JsResult<()> {
         2,
         NativeFunction::from_copy_closure_with_captures(
             |_this, args, root, ctx| {
+                check_cancelled(ctx)?;
                 let path = args
                     .first()
                     .ok_or_else(|| {
@@ -140,6 +178,7 @@ fn register_exists(context: &mut Context, root: PathBuf) -> JsResult<()> {
         1,
         NativeFunction::from_copy_closure_with_captures(
             |_this, args, root, ctx| {
+                check_cancelled(ctx)?;
                 let path = args
                     .first()
                     .ok_or_else(|| {
@@ -171,6 +210,7 @@ fn register_list(context: &mut Context, root: PathBuf) -> JsResult<()> {
         1,
         NativeFunction::from_copy_closure_with_captures(
             |_this, args, root, ctx| {
+                check_cancelled(ctx)?;
                 let rel = args
                     .first()
                     .map(|v| v.to_string(ctx))
@@ -201,6 +241,7 @@ fn register_log(context: &mut Context) -> JsResult<()> {
         js_string!("__doc_log"),
         1,
         NativeFunction::from_copy_closure(|_this, args, ctx| {
+            check_cancelled(ctx)?;
             if let Some(v) = args.first() {
                 if let Ok(s) = v.to_string(ctx) {
                     let mut text = s.to_std_string_escaped();

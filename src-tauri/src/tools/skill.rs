@@ -49,6 +49,7 @@ pub fn run_tool() -> ToolSpec {
             File helpers: doc_exists, doc_list, fs.existsSync, fs.readdirSync. \
             Save files: await wb.xlsx.writeFile('out.xlsx') (shimmed), doc_write(path, base64), doc_write_bytes(path, bytes). \
             Buffer.from(buf).toString('base64') and fs.writeFileSync are shimmed. No fetch/npm/shell. \
+            Images: use doc_image_info/doc_image_resize before addImage; never parse image headers in JS. \
             After writing .docx files, check style_warnings and verify content with office_read_to_markdown before finishing.",
         parameters: json!({
             "type": "object",
@@ -61,7 +62,13 @@ pub fn run_tool() -> ToolSpec {
                     "type": "string",
                     "description": "Project-relative path to a JavaScript file, e.g. the script_path returned by a previous run, after repair."
                 },
-                "timeout_secs": { "type": "integer", "default": 30 }
+                "timeout_secs": {
+                    "type": "integer",
+                    "default": 30,
+                    "minimum": 1,
+                    "maximum": 120,
+                    "description": "Hard cap 120. Larger values are clamped and reported as timeout_clamped."
+                }
             },
             "oneOf": [
                 { "required": ["code"], "not": { "required": ["path"] } },
@@ -121,11 +128,11 @@ fn resolve_script_source(ctx: &ToolContext, args: &Value) -> Result<ScriptSource
 
 fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
     let source = resolve_script_source(ctx, &args)?;
-    let timeout_secs = args
+    let requested = args
         .get("timeout_secs")
         .and_then(|v| v.as_u64())
-        .unwrap_or(30)
-        .clamp(1, 120);
+        .unwrap_or(30);
+    let timeout_secs = requested.clamp(1, 120);
 
     let write_gate = ctx.write_gate.clone();
     let result = runtime::execute_script(
@@ -162,10 +169,12 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
                 response["style_hint"] =
                     json!("检测到排版问题，请修正后重新生成（参考 docx skill 的中文排版章节）");
             }
+            attach_timeout_clamped(&mut response, requested, timeout_secs);
             Ok(response)
         }
         Err(err) => {
-            let error_value = err.to_json_value();
+            let mut error_value = err.to_json_value();
+            attach_timeout_clamped(&mut error_value, requested, timeout_secs);
             if source.from_inline
                 || source
                     .diagnostic_path
@@ -176,6 +185,15 @@ fn run_handler(ctx: &ToolContext, args: Value) -> Result<Value, ToolError> {
             }
             Err(ToolError::Structured(error_value))
         }
+    }
+}
+
+fn attach_timeout_clamped(value: &mut Value, requested: u64, applied: u64) {
+    if requested != applied {
+        value["timeout_clamped"] = json!({
+            "requested": requested,
+            "applied": applied
+        });
     }
 }
 

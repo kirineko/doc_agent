@@ -5,6 +5,7 @@ pub mod excel;
 pub mod fs;
 pub mod html_export;
 pub mod image_download;
+pub mod image_info;
 pub mod image_read;
 pub mod io_plan;
 pub mod markdown_html;

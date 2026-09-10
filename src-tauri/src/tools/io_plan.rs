@@ -112,7 +112,7 @@ pub fn plan_tool_io(
             plan.dynamic_writes = true;
             plan_skill_run(ctx, args, &mut plan)?;
         }
-        "image_read" => {
+        "image_read" | "image_info" => {
             add_read_paths_array(ctx, args, "paths", &mut plan)?;
         }
         "image_download" => {
@@ -173,7 +173,7 @@ fn minimal_args_for(tool_name: &str) -> Value {
             serde_json::json!({ "path": "a.md", "out_path": "out/index.html", "profile": "report" })
         }
         "skill_run" => serde_json::json!({ "code": "async function main(){}" }),
-        "image_read" => serde_json::json!({ "paths": [".cache/attachments/x.png"] }),
+        "image_read" | "image_info" => serde_json::json!({ "paths": [".cache/attachments/x.png"] }),
         "image_download" => {
             serde_json::json!({ "urls": ["https://example.com/a.png"], "dir": "images" })
         }
