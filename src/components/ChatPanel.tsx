@@ -17,7 +17,8 @@ import { useComposerFocus } from "../hooks/useComposerFocus";
 import { SLASH_COMMANDS, isSlashCommandEntry, isSlashTemplate } from "../lib/slashCommands";
 import { flattenSlashGroups, searchSlashCommands } from "../lib/slashFuzzy";
 import { PARALLEL_LIMIT_MESSAGE, STOPPING_TIMEOUT_SECONDS, type SessionRunStatus } from "../lib/sessionRunState";
-import { ClarifyQuestion, Message, ModelInfo, Project, ToolCallRecord } from "../types";
+import { ClarifyQuestion, Message, ModelInfo, Project, RetryNotice, ToolCallRecord, TurnError } from "../types";
+import { retryNoticeText, TurnErrorCard } from "./TurnErrorCard";
 import { type SessionConfig } from "../lib/sessionConfig";
 import { ChatInputToolbar } from "./ChatInputToolbar";
 import { ComposerContextBar } from "./ComposerContextBar";
@@ -41,6 +42,8 @@ interface ChatPanelProps {
   activeClarify?: { question: ClarifyQuestion };
   streamingReasoning: string;
   streamingContent: string;
+  turnError?: TurnError | null;
+  retryNotice?: RetryNotice | null;
   activity?: string;
   initializing?: boolean;
   showInitCapsule?: boolean;
@@ -98,6 +101,8 @@ export function ChatPanel({
   activeClarify,
   streamingReasoning,
   streamingContent,
+  turnError = null,
+  retryNotice = null,
   activity,
   initializing,
   showInitCapsule = false,
@@ -439,6 +444,10 @@ export function ChatPanel({
             projectId={projectId}
             onPreviewImage={setPreviewImageSrc}
           />
+          {retryNotice ? (
+            <p className="text-xs text-fg-secondary">{retryNoticeText(retryNotice)}</p>
+          ) : null}
+          {turnError ? <TurnErrorCard error={turnError} /> : null}
 
           <div ref={bottomRef} className="h-px shrink-0" aria-hidden />
         </div>

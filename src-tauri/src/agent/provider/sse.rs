@@ -1,13 +1,17 @@
+use crate::agent::provider::failure::{FailureKind, ProviderFailure};
 use crate::agent::turn_control::CancelSignal;
 use crate::agent::types::AssistantTurn;
 use futures_util::{Stream, StreamExt};
 use serde_json::Value;
+use std::time::Duration;
 use thiserror::Error;
+
+pub(crate) const IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
 #[derive(Debug, Error)]
 pub enum SseError {
-    #[error("http stream error: {0}")]
-    Http(String),
+    #[error("{0}")]
+    Http(ProviderFailure),
     #[error("json error: {0}")]
     Json(String),
     #[error("cancelled")]
@@ -36,10 +40,26 @@ pub async fn cancelable<T>(
 }
 
 pub(crate) async fn consume_stream<S, B, E, F>(
+    stream: S,
+    cancel: Option<&CancelSignal>,
+    google_model: Option<&str>,
+    on_delta: F,
+) -> Result<AssistantTurn, SseError>
+where
+    S: Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+    F: FnMut(Option<&str>, Option<&str>, Option<&[Value]>) + Send,
+{
+    consume_stream_with_idle(stream, cancel, google_model, on_delta, IDLE_TIMEOUT).await
+}
+
+pub(crate) async fn consume_stream_with_idle<S, B, E, F>(
     mut stream: S,
     cancel: Option<&CancelSignal>,
     google_model: Option<&str>,
     mut on_delta: F,
+    idle: Duration,
 ) -> Result<AssistantTurn, SseError>
 where
     S: Stream<Item = Result<B, E>> + Unpin,
@@ -56,21 +76,35 @@ where
             (!delta.tools.is_empty()).then_some(delta.tools.as_slice()),
         );
     };
-    while let Some(chunk) = cancelable(cancel, stream.next()).await? {
-        let chunk = chunk.map_err(|e| {
-            SseError::Http(if google_model.is_some() {
-                "Gemini 连接中断，请检查系统代理或 TUN".into()
-            } else {
-                e.to_string()
-            })
-        })?;
-        for data in buffer.push(chunk.as_ref())? {
-            if data == "[DONE]" {
-                continue;
+    loop {
+        match cancelable(cancel, tokio::time::timeout(idle, stream.next())).await? {
+            Ok(Some(chunk)) => {
+                let chunk = chunk.map_err(|e| {
+                    SseError::Http(if google_model.is_some() {
+                        ProviderFailure::new(
+                            FailureKind::Network,
+                            "Gemini 连接中断，请检查系统代理或 TUN",
+                        )
+                    } else {
+                        ProviderFailure::new(FailureKind::Network, e.to_string())
+                    })
+                })?;
+                for data in buffer.push(chunk.as_ref())? {
+                    if data == "[DONE]" {
+                        continue;
+                    }
+                    let value: Value = serde_json::from_str(&data)
+                        .map_err(|_| SseError::Json("invalid SSE JSON".into()))?;
+                    emit(acc.apply(&value)?);
+                }
             }
-            let value: Value = serde_json::from_str(&data)
-                .map_err(|_| SseError::Json("invalid SSE JSON".into()))?;
-            emit(acc.apply(&value)?);
+            Ok(None) => break,
+            Err(_elapsed) => {
+                return Err(SseError::Http(ProviderFailure::new(
+                    FailureKind::Timeout,
+                    format!("{} 秒内未收到任何数据", idle.as_secs()),
+                )));
+            }
         }
     }
     if cancel.is_some_and(|s| s.is_cancelled()) {
@@ -277,5 +311,55 @@ mod tests {
         assert_eq!(usage.prompt, 1200);
         assert_eq!(usage.completion, 300);
         assert_eq!(usage.total, 1500);
+    }
+
+    #[tokio::test]
+    async fn idle_timeout_after_silence() {
+        let stream = futures_util::stream::pending::<Result<Vec<u8>, String>>();
+        let err = super::consume_stream_with_idle(
+            stream,
+            None,
+            None,
+            |_, _, _| {},
+            Duration::from_millis(50),
+        )
+        .await
+        .unwrap_err();
+        let super::SseError::Http(failure) = err else {
+            panic!("expected Http, got {err:?}");
+        };
+        assert_eq!(failure.kind, FailureKind::Timeout);
+        assert!(failure.message.contains("秒内未收到任何数据"));
+    }
+
+    #[tokio::test]
+    async fn keep_alive_resets_idle_timer() {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<Result<Vec<u8>, String>>();
+        let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        });
+        tokio::pin!(stream);
+        let reader = super::consume_stream_with_idle(
+            stream,
+            None,
+            None,
+            |_, _, _| {},
+            Duration::from_millis(80),
+        );
+        let driver = async {
+            tx.send(Ok(b": keep-alive\n\n".to_vec())).unwrap();
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            tx.send(Ok(b": keep-alive\n\n".to_vec())).unwrap();
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            tx.send(Ok(
+                b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"
+                    .to_vec(),
+            ))
+            .unwrap();
+            drop(tx);
+            reader.await
+        };
+        let turn = driver.await.unwrap();
+        assert_eq!(turn.content, "ok");
     }
 }

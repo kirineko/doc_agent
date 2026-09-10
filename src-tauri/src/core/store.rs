@@ -853,8 +853,13 @@ impl Store {
     }
 }
 
-fn now() -> String {
+/// 统一的 RFC3339 UTC 时间戳（DB `created_at` 与日志共用）。
+pub fn now_rfc3339() -> String {
     Utc::now().to_rfc3339()
+}
+
+fn now() -> String {
+    now_rfc3339()
 }
 
 pub fn project_root_from_path(root: &str) -> PathBuf {

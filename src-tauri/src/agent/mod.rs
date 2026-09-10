@@ -7,6 +7,7 @@ pub mod loop_tool_batch;
 pub mod model_catalog;
 pub mod model_config;
 pub mod provider;
+pub mod provider_retry;
 pub mod run_limiter;
 pub mod session_title;
 pub mod suggest;

@@ -271,7 +271,7 @@ fn build_compact_input(to_compact: &[Message], tool_calls: &[ToolCallRecord]) ->
 }
 
 /// Truncate at or before `byte_index` so the index lies on a UTF-8 char boundary.
-fn floor_char_boundary(s: &str, byte_index: usize) -> usize {
+pub(crate) fn floor_char_boundary(s: &str, byte_index: usize) -> usize {
     let mut at = byte_index.min(s.len());
     while at > 0 && !s.is_char_boundary(at) {
         at -= 1;

@@ -190,8 +190,51 @@ export type AgentEvent =
       session_id: string;
       trigger: "auto" | "manual";
     }
-  | { kind: "error"; session_id: string; turn_id: string; message: string }
+  | {
+      kind: "error";
+      session_id: string;
+      turn_id: string;
+      message: string;
+      code?: FailureKind;
+      retryable?: boolean;
+      detail?: string;
+      hint?: string;
+    }
+  | {
+      kind: "provider_retry";
+      session_id: string;
+      turn_id: string;
+      attempt: number;
+      max: number;
+      code: FailureKind;
+      delay_ms: number;
+    }
   | { kind: "session_title_updated"; session_id: string; title: string };
+
+export type FailureKind =
+  | "auth"
+  | "rate_limit"
+  | "bad_request"
+  | "payload_too_large"
+  | "context_length"
+  | "server"
+  | "network"
+  | "timeout"
+  | "stream_error"
+  | "stream_incomplete";
+
+/** `error` 事件去掉路由字段后的载荷，UI 直接渲染 */
+export type TurnError = Omit<
+  Extract<AgentEvent, { kind: "error" }>,
+  "kind" | "session_id" | "turn_id"
+>;
+
+export type RetryNotice = {
+  attempt: number;
+  max: number;
+  kind: FailureKind;
+  delayMs: number;
+};
 
 function fallbackModel(
   info: Omit<ModelInfo, "supports_effort" | "api_model"> & { api_model?: string },

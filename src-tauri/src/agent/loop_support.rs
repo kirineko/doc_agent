@@ -299,7 +299,39 @@ pub(super) fn maybe_autotitle_session<R: Runtime>(
 }
 
 pub(super) fn emit<R: Runtime>(app: &AppHandle<R>, event: AgentEvent) {
+    #[cfg(test)]
+    {
+        TEST_EVENTS.lock().expect("test events").push(event.clone());
+    }
     let _ = app.emit("agent-event", event);
+}
+
+#[cfg(test)]
+static TEST_EVENTS: std::sync::Mutex<Vec<AgentEvent>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+pub(crate) fn take_test_events_for(session_id: Option<&str>) -> Vec<AgentEvent> {
+    let mut all = TEST_EVENTS.lock().expect("test events");
+    match session_id {
+        None => std::mem::take(&mut *all),
+        Some(id) => {
+            let mut kept = Vec::new();
+            let mut taken = Vec::new();
+            for event in all.drain(..) {
+                let matches = serde_json::to_value(&event)
+                    .ok()
+                    .and_then(|v| v.get("session_id")?.as_str().map(|s| s == id))
+                    .unwrap_or(false);
+                if matches {
+                    taken.push(event);
+                } else {
+                    kept.push(event);
+                }
+            }
+            *all = kept;
+            taken
+        }
+    }
 }
 
 pub(super) fn emit_assistant_step_done<R: Runtime>(

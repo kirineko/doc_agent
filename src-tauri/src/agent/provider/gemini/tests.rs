@@ -344,11 +344,18 @@ fn invalid_calls_and_conflicting_signatures_are_rejected() {
         ))
         .is_err());
     let mut acc = Accumulator::new(Some("gemini-3.8-flash"));
-    assert!(acc
+    let err = acc
         .apply(&json!({"error":{"message":"secret"}}))
-        .unwrap_err()
-        .to_string()
-        .contains("error"));
+        .unwrap_err();
+    let crate::agent::provider::sse::SseError::Http(failure) = err else {
+        panic!("expected Http, got {err:?}");
+    };
+    assert_eq!(
+        failure.kind,
+        crate::agent::provider::failure::FailureKind::StreamError
+    );
+    assert!(failure.detail.is_none());
+    assert!(!failure.message.contains("secret"));
 }
 
 #[tokio::test]

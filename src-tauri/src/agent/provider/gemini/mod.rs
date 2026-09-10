@@ -11,6 +11,7 @@ mod tests;
 #[cfg(test)]
 mod transport_tests;
 
+use super::failure::{FailureKind, ProviderFailure};
 use super::openai_compat::{extra_body_for, OpenAiCompatClient};
 use super::{LlmProvider, ProviderError};
 use crate::agent::types::{AgentEvent, AssistantTurn, ChatRequest};
@@ -24,16 +25,14 @@ pub fn new_google_http_client() -> Result<reqwest::Client, ProviderError> {
     reqwest::Client::builder()
         .use_rustls_tls()
         .https_only(true)
+        .connect_timeout(std::time::Duration::from_secs(15))
         .build()
-        .map_err(|_| ProviderError::Http("无法创建 Gemini HTTP 客户端".into()))
-}
-
-pub(super) fn map_transport_error(err: reqwest::Error) -> ProviderError {
-    if err.is_timeout() {
-        ProviderError::Http("Gemini 请求超时，请检查系统代理或 TUN".into())
-    } else {
-        ProviderError::Http("Gemini 网络连接失败，请检查系统代理、TUN 或网络".into())
-    }
+        .map_err(|_| {
+            ProviderError::Http(ProviderFailure::new(
+                FailureKind::Network,
+                "无法创建 Gemini HTTP 客户端",
+            ))
+        })
 }
 
 #[async_trait]

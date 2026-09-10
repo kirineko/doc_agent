@@ -82,7 +82,7 @@
 
 ### BL-004 关键错误仅 console.error
 
-- **现状**：`useWorkspace.ts` 多处 `.catch(console.error)`，发送/加载失败用户不可见。
+- **现状**：`useWorkspace.ts` 多处 `.catch(console.error)`，发送/加载失败用户不可见。2026-09 `improve-provider-error-handling` 覆盖 provider 失败路径；send/load 其余 `.catch(console.error)` 仍待办。
 - **建议**：关键路径 surfaced 为 toast 或 `SendHintBanner`。
 - **关联**：`useWorkspace.ts`、`workspace-ui/spec.md`
 

@@ -1,5 +1,6 @@
 pub mod asset_scope;
 pub mod cache_paths;
+pub mod error_log;
 pub mod file_locks;
 pub mod project_files;
 pub mod project_import;

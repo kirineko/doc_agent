@@ -4,7 +4,7 @@ import {
   isCompactionInProgressNotice,
 } from "./compactionNotice";
 import { toolLabel } from "./toolLabels";
-import { AgentEvent } from "../types";
+import { AgentEvent, RetryNotice, TurnError } from "../types";
 
 /** 本轮由 Agent 产生或修改的交付物（已去重）。 */
 export interface TurnArtifact {
@@ -20,6 +20,8 @@ export interface AgentStreamState {
   turnArtifacts: TurnArtifact[];
   busy: boolean;
   compactionNotice?: string | null;
+  turnError?: TurnError | null;
+  retryNotice?: RetryNotice | null;
 }
 
 export const initialAgentStreamState: AgentStreamState = {
@@ -29,6 +31,8 @@ export const initialAgentStreamState: AgentStreamState = {
   turnArtifacts: [],
   busy: false,
   compactionNotice: null,
+  turnError: null,
+  retryNotice: null,
 };
 
 function clearStreamingBuffers(
@@ -47,6 +51,11 @@ function dropStreamingPlaceholders(liveTools: LiveToolCall[]): LiveToolCall[] {
   return liveTools.filter((item) => !item.id.startsWith("streaming-"));
 }
 
+function turnErrorFrom(event: Extract<AgentEvent, { kind: "error" }>): TurnError {
+  const { kind: _kind, session_id: _session, turn_id: _turn, ...turnError } = event;
+  return turnError;
+}
+
 export function applyAgentEvent(
   state: AgentStreamState,
   event: AgentEvent,
@@ -60,11 +69,13 @@ export function applyAgentEvent(
     case "reasoning_token":
       return {
         ...state,
+        retryNotice: null,
         streamingReasoning: state.streamingReasoning + event.delta,
       };
     case "content_token":
       return {
         ...state,
+        retryNotice: null,
         streamingContent: state.streamingContent + event.delta,
       };
     case "tool_call_stream": {
@@ -79,6 +90,7 @@ export function applyAgentEvent(
       const exists = state.liveTools.some((item) => item.id === id);
       return {
         ...state,
+        retryNotice: null,
         liveTools: exists
           ? state.liveTools.map((item) => (item.id === id ? entry : item))
           : [...state.liveTools, entry],
@@ -163,11 +175,13 @@ export function applyAgentEvent(
     case "turn_complete":
       return {
         ...clearStreamingBuffers(state, false),
+        retryNotice: null,
         liveTools: dropStreamingPlaceholders(state.liveTools),
       };
     case "turn_cancelled":
       return {
         ...clearStreamingBuffers(state, false),
+        retryNotice: null,
         liveTools: dropStreamingPlaceholders(state.liveTools),
         compactionNotice: isCompactionInProgressNotice(state.compactionNotice)
           ? null
@@ -199,10 +213,21 @@ export function applyAgentEvent(
       return {
         ...state,
         busy: false,
+        retryNotice: null,
         compactionNotice: isCompactionInProgressNotice(state.compactionNotice)
           ? null
           : state.compactionNotice,
-        streamingContent: `${state.streamingContent}\n\n> ${event.message}`,
+        turnError: turnErrorFrom(event),
+      };
+    case "provider_retry":
+      return {
+        ...state,
+        retryNotice: {
+          attempt: event.attempt,
+          max: event.max,
+          kind: event.code,
+          delayMs: event.delay_ms,
+        },
       };
     default:
       return state;
@@ -218,6 +243,8 @@ export function markAgentBusy(state: AgentStreamState): AgentStreamState {
     turnArtifacts: [],
     streamingReasoning: "",
     streamingContent: "",
+    turnError: null,
+    retryNotice: null,
   };
 }
 

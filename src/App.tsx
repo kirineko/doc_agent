@@ -228,6 +228,8 @@ function App() {
             activeClarify={ws.activeClarify}
             streamingReasoning={ws.stream.streamingReasoning}
             streamingContent={ws.stream.streamingContent}
+            turnError={ws.stream.turnError}
+            retryNotice={ws.stream.retryNotice}
             activity={ws.activity}
             initializing={ws.initializing}
             showInitCapsule={ws.showInitCapsule}

@@ -15,6 +15,7 @@ pub struct AppState {
     pub turns: Arc<TurnRegistry>,
     pub file_locks: Arc<FileLockRegistry>,
     pub run_limiter: Arc<RunLimiter>,
+    pub data_dir: PathBuf,
 }
 
 impl AppState {
@@ -23,11 +24,12 @@ impl AppState {
         let store = Store::open(data_dir.join("doc_agent.db")).map_err(|e| e.to_string())?;
         Ok(Self {
             store: Arc::new(Mutex::new(store)),
-            secrets: Secrets::open_in_data_dir(data_dir).map_err(|e| e.to_string())?,
+            secrets: Secrets::open_in_data_dir(data_dir.clone()).map_err(|e| e.to_string())?,
             tools: ToolRegistry::default_tools(),
             turns: Arc::new(TurnRegistry::new()),
             file_locks: Arc::new(FileLockRegistry::new()),
             run_limiter: Arc::new(RunLimiter::new()),
+            data_dir,
         })
     }
 }

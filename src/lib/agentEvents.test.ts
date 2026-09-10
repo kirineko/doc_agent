@@ -475,6 +475,114 @@ describe("applyAgentEvent", () => {
     expect(next.compactionNotice).toBeNull();
   });
 
+  it("stores structured error on turnError without appending streamingContent", () => {
+    const withContent = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "content_token",
+        session_id: sessionId,
+        turn_id: "t1",
+        delta: "hello",
+      },
+      sessionId,
+    );
+    const next = applyAgentEvent(
+      withContent,
+      {
+        kind: "error",
+        session_id: sessionId,
+        turn_id: "t1",
+        message: "模型服务限流：Rate limit reached",
+        code: "rate_limit",
+        retryable: true,
+        hint: "请稍后再试",
+        detail: '{"error":"x"}',
+      },
+      sessionId,
+    );
+    expect(next.turnError).toEqual({
+      message: "模型服务限流：Rate limit reached",
+      code: "rate_limit",
+      retryable: true,
+      hint: "请稍后再试",
+      detail: '{"error":"x"}',
+    });
+    expect(next.busy).toBe(false);
+    expect(next.streamingContent).toBe("hello");
+  });
+
+  it("accepts legacy error events with only message", () => {
+    const next = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "error",
+        session_id: sessionId,
+        turn_id: "t1",
+        message: "quota exceeded",
+      },
+      sessionId,
+    );
+    expect(next.turnError).toEqual({
+      message: "quota exceeded",
+      code: undefined,
+      retryable: undefined,
+      detail: undefined,
+      hint: undefined,
+    });
+    expect(next.streamingContent).toBe("");
+  });
+
+  it("sets then clears retryNotice after a content token", () => {
+    const retrying = applyAgentEvent(
+      initialAgentStreamState,
+      {
+        kind: "provider_retry",
+        session_id: sessionId,
+        turn_id: "t1",
+        attempt: 1,
+        max: 2,
+        code: "network",
+        delay_ms: 1000,
+      },
+      sessionId,
+    );
+    expect(retrying.retryNotice).toEqual({
+      attempt: 1,
+      max: 2,
+      kind: "network",
+      delayMs: 1000,
+    });
+    const afterToken = applyAgentEvent(
+      retrying,
+      {
+        kind: "content_token",
+        session_id: sessionId,
+        turn_id: "t1",
+        delta: "hi",
+      },
+      sessionId,
+    );
+    expect(afterToken.retryNotice).toBeNull();
+  });
+
+  it("does not mutate streamingContent when recording turnError", () => {
+    const started = {
+      ...initialAgentStreamState,
+      streamingContent: "partial answer",
+    };
+    const next = applyAgentEvent(
+      started,
+      {
+        kind: "error",
+        session_id: sessionId,
+        turn_id: "t1",
+        message: "boom",
+      },
+      sessionId,
+    );
+    expect(next.streamingContent).toBe("partial answer");
+  });
+
   it("shows manual compaction notice", () => {
     const next = applyAgentEvent(
       initialAgentStreamState,

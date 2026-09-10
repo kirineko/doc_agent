@@ -43,7 +43,7 @@ impl Frames {
 
     pub fn finish(&self) -> Result<(), SseError> {
         if self.pending.iter().any(|b| !b.is_ascii_whitespace()) {
-            return Err(SseError::Http("SSE ended inside a frame".into()));
+            return Err(SseError::Json("SSE ended inside a frame".into()));
         }
         Ok(())
     }

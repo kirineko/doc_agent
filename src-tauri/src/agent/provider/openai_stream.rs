@@ -40,7 +40,7 @@ impl Accumulator {
     pub fn apply(&mut self, value: &Value) -> Result<Delta, SseError> {
         if value.get("error").is_some() {
             return Err(SseError::Http(
-                "Provider returned an error in the response stream".into(),
+                super::failure::ProviderFailure::from_stream_error(value, self.google.is_some()),
             ));
         }
         if let Some(usage) = parse_usage(value, self.google.is_some()) {
@@ -97,10 +97,12 @@ impl Accumulator {
     }
 
     pub fn finish(mut self) -> Result<AssistantTurn, SseError> {
-        let reason = self
-            .finish_reason
-            .as_deref()
-            .ok_or_else(|| SseError::Http("Provider stream ended before finish_reason".into()))?;
+        let reason = self.finish_reason.as_deref().ok_or_else(|| {
+            SseError::Http(super::failure::ProviderFailure::new(
+                super::failure::FailureKind::StreamIncomplete,
+                "模型响应未正常结束",
+            ))
+        })?;
         if let Some(state) = &mut self.google {
             if reason == "length" {
                 self.tools.calls.clear();
@@ -111,7 +113,10 @@ impl Accumulator {
                 self.content.push_str("输出被截断，未执行本步工具。");
                 self.finish_reason = Some("incomplete".into());
             } else if !matches!(reason, "stop" | "tool_calls") {
-                return Err(SseError::Http("Gemini 响应未正常完成".into()));
+                return Err(SseError::Http(super::failure::ProviderFailure::new(
+                    super::failure::FailureKind::StreamIncomplete,
+                    "Gemini 响应未正常完成",
+                )));
             } else {
                 for call in &self.tools.calls {
                     if call.call_type != "function"
@@ -178,4 +183,39 @@ pub fn parse_complete(
     acc.apply(&json!({"choices":[{"delta":choice["message"],"finish_reason":choice["finish_reason"]}],"usage":payload["usage"]}))?;
     acc.flush_text();
     acc.finish()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::provider::failure::FailureKind;
+    use crate::agent::provider::sse::SseError;
+
+    #[test]
+    fn stream_error_keeps_provider_message() {
+        let mut acc = Accumulator::new(None);
+        let value = json!({"error":{"code":"1210","message":"messages 过长"}});
+        let err = acc.apply(&value).unwrap_err();
+        let SseError::Http(failure) = err else {
+            panic!("expected Http, got {err:?}");
+        };
+        assert_eq!(failure.kind, FailureKind::StreamError);
+        assert_eq!(failure.provider_code.as_deref(), Some("1210"));
+        assert!(failure.message.contains("messages 过长"));
+        assert!(failure
+            .detail
+            .as_deref()
+            .unwrap_or("")
+            .contains("messages 过长"));
+    }
+
+    #[test]
+    fn missing_finish_reason_is_stream_incomplete() {
+        let acc = Accumulator::new(None);
+        let err = acc.finish().unwrap_err();
+        let SseError::Http(failure) = err else {
+            panic!("expected Http, got {err:?}");
+        };
+        assert_eq!(failure.kind, FailureKind::StreamIncomplete);
+    }
 }

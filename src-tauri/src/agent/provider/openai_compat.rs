@@ -1,4 +1,5 @@
 use crate::agent::model_catalog::ProviderKind;
+use crate::agent::provider::failure::{parse_retry_after, ProviderFailure};
 use crate::agent::provider::{sse, ProviderError};
 use crate::agent::types::{
     AgentEvent, AssistantTurn, ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingEffort,
@@ -9,6 +10,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
 pub const MAX_ATTACHMENT_BYTES: u64 = 50 * 1024 * 1024;
@@ -27,7 +29,10 @@ impl OpenAiCompatClient {
     pub fn new(chat_url: impl Into<String>) -> Self {
         Self {
             chat_url: chat_url.into(),
-            client: Client::new(),
+            client: Client::builder()
+                .connect_timeout(Duration::from_secs(15))
+                .build()
+                .expect("reqwest client"),
         }
     }
 
@@ -80,11 +85,7 @@ impl OpenAiCompatClient {
             },
         )
         .await
-        .map_err(|e| match e {
-            sse::SseError::Cancelled => ProviderError::Cancelled,
-            sse::SseError::Http(msg) => ProviderError::Http(msg),
-            sse::SseError::Json(msg) => ProviderError::Parse(msg),
-        })
+        .map_err(ProviderError::from)
     }
 
     pub async fn complete_chat(
@@ -117,22 +118,17 @@ impl OpenAiCompatClient {
         }
         let body = super::openai_request::build_body(request, extra, stream)?;
         let google = request.model == ModelId::Gemini38Flash;
-        let response = sse::cancelable(
-            request.cancel.as_ref(),
-            self.client
-                .post(&self.chat_url)
-                .bearer_auth(api_key)
-                .json(&body)
-                .send(),
-        )
-        .await?
-        .map_err(|e| {
-            if google {
-                super::gemini::map_transport_error(e)
-            } else {
-                ProviderError::Http(e.to_string())
-            }
-        })?;
+        let mut builder = self
+            .client
+            .post(&self.chat_url)
+            .bearer_auth(api_key)
+            .json(&body);
+        if !stream {
+            builder = builder.timeout(Duration::from_secs(120));
+        }
+        let response = sse::cancelable(request.cancel.as_ref(), builder.send())
+            .await?
+            .map_err(|e| ProviderError::Http(ProviderFailure::from_transport_err(&e, google)))?;
         if !response.status().is_success() {
             let status = response.status();
             if google {
@@ -144,12 +140,20 @@ impl OpenAiCompatClient {
                     400 => "Gemini 请求被拒绝，请检查模型、历史和工具参数",
                     _ => "Gemini 服务请求失败",
                 };
-                return Err(ProviderError::Http(format!("{message} ({status})")));
+                return Err(ProviderError::Http(ProviderFailure::gemini_status(
+                    status.as_u16(),
+                    format!("{message} ({status})"),
+                )));
             }
+            let retry_after_ms = parse_retry_after(response.headers());
             let text = sse::cancelable(request.cancel.as_ref(), response.text())
                 .await?
                 .unwrap_or_default();
-            return Err(ProviderError::Http(format!("{status}: {text}")));
+            return Err(ProviderError::Http(ProviderFailure::from_status_body(
+                status.as_u16(),
+                &text,
+                retry_after_ms,
+            )));
         }
         Ok(response)
     }
@@ -539,6 +543,7 @@ mod tests {
         );
         assert!(!ZHIPU_CHAT_URL.contains("/v4/v1/"));
         assert!(!ZHIPU_CHAT_URL.ends_with("/v1/chat/completions"));
+        let _client = OpenAiCompatClient::new(DEEPSEEK_CHAT_URL);
     }
 
     #[test]

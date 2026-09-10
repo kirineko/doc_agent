@@ -1,4 +1,5 @@
 use crate::agent::model_catalog::{ModelCatalog, ProviderKind};
+use crate::agent::provider::FailureKind;
 use crate::agent::turn_control::CancelSignal;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -328,6 +329,23 @@ pub enum AgentEvent {
         session_id: String,
         turn_id: String,
         message: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<FailureKind>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        retryable: Option<bool>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
+    },
+    ProviderRetry {
+        session_id: String,
+        turn_id: String,
+        attempt: u32,
+        max: u32,
+        #[serde(rename = "code")]
+        kind: FailureKind,
+        delay_ms: u64,
     },
     ContextUsage {
         session_id: String,
@@ -349,6 +367,25 @@ pub enum AgentEvent {
         session_id: String,
         title: String,
     },
+}
+
+impl AgentEvent {
+    /// 仅有文案、无分类信息的错误事件（非 provider 失败路径）。
+    pub fn plain_error(
+        session_id: impl Into<String>,
+        turn_id: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::Error {
+            session_id: session_id.into(),
+            turn_id: turn_id.into(),
+            message: message.into(),
+            code: None,
+            retryable: None,
+            detail: None,
+            hint: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -468,6 +505,37 @@ mod tests {
         assert_eq!(ModelId::DeepSeekV4Flash.as_str(), "deepseek-flash");
         assert_eq!(ModelId::DeepSeekV4Flash.api_model(), "deepseek-flash");
         assert!(ModelId::DeepSeekV4Flash.supports_vision());
+    }
+
+    #[test]
+    fn error_event_without_optional_fields_matches_legacy_json() {
+        use super::AgentEvent;
+        let event = AgentEvent::plain_error("s", "t", "x");
+        let json = serde_json::to_string(&event).unwrap();
+        assert_eq!(
+            json,
+            r#"{"kind":"error","session_id":"s","turn_id":"t","message":"x"}"#
+        );
+    }
+
+    #[test]
+    fn provider_retry_serializes_snake_case_kind() {
+        use super::AgentEvent;
+        use crate::agent::provider::FailureKind;
+        let event = AgentEvent::ProviderRetry {
+            session_id: "s".into(),
+            turn_id: "t".into(),
+            attempt: 1,
+            max: 2,
+            kind: FailureKind::RateLimit,
+            delay_ms: 1000,
+        };
+        let value = serde_json::to_value(&event).unwrap();
+        assert_eq!(value["kind"], "provider_retry");
+        assert_eq!(value["code"], "rate_limit");
+        assert_eq!(value["attempt"], 1);
+        assert_eq!(value["max"], 2);
+        assert_eq!(value["delay_ms"], 1000);
     }
 
     #[test]

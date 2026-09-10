@@ -33,6 +33,65 @@ fn seed_bulky_history(store: &Store, session_id: &str, pairs: usize) {
 }
 
 #[test]
+fn provider_auth_failure_emits_error_and_logs() {
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            store
+                .create_session(&project.id, "s1", "mock", true, "high")
+                .unwrap()
+                .id
+        };
+        crate::agent::loop_support::take_test_events_for(Some(&session_id));
+        crate::agent::provider::mock::script_calls_for(
+            session_id.clone(),
+            vec![crate::agent::provider::mock::ScriptedCall::fails(
+                crate::agent::provider::FailureKind::Auth,
+            )],
+        );
+        run_turn(
+            handle,
+            state.clone(),
+            session_id.clone(),
+            "hello".into(),
+            vec![],
+        )
+        .await
+        .unwrap();
+        let events = crate::agent::loop_support::take_test_events_for(Some(&session_id));
+        let error = events
+            .iter()
+            .find_map(|e| match e {
+                AgentEvent::Error { code, .. } => Some(*code),
+                _ => None,
+            })
+            .flatten();
+        assert_eq!(error, Some(crate::agent::provider::FailureKind::Auth));
+        let log =
+            std::fs::read_to_string(state.data_dir.join("logs").join("provider-errors.jsonl"))
+                .unwrap();
+        assert!(log.contains(&session_id));
+        assert!(log.contains("auth"));
+        let record: serde_json::Value = serde_json::from_str(log.trim()).unwrap();
+        assert_eq!(record["attempts"], 0);
+    });
+}
+
+#[test]
 fn max_tool_steps_is_64() {
     assert_eq!(MAX_TOOL_STEPS, 64);
 }

@@ -17,30 +17,23 @@
 ### 项目与会话
 
 - 选择一个本地文件夹作为**项目**，Agent 只能在该目录内读写文件
-- 每个项目可创建多个**独立会话**，历史消息与工具调用记录持久化保存
-- **并行执行**：应用内最多 **3 个会话**同时 running（可跨项目）；写同一文件时自动互斥并提示占用
-- 左侧栏管理项目列表（可隐藏项目）、会话列表，以及当前模型摘要；侧栏左下打开**模型 Flyout** 切换 Provider / 模型 / 思考配置
-- 顶栏「**密钥与服务**」Drawer 集中配置 DeepSeek / Kimi / MiMo / Google Gemini / 智谱 GLM / Tavily API Key；侧栏可开关 Web 搜索（需 Tavily Key）
-- 新建会话默认沿用上次选择的模型与思考配置（无记录时为 DeepSeek Flash + 思考 + high）
-- **项目级 AGENTS.md**：项目根可放置 `AGENTS.md` 作为 Agent 配置；`/init` 斜杠命令引导生成或更新；Chat 区显示配置加载状态
+- 每个项目可创建多个**独立会话**，历史消息与工具调用记录保存在本机
+- 最多 **3 个会话**可同时运行（可跨项目）；同时写同一文件时会提示占用
+- 左侧以「项目 → 会话」树管理导航；顶栏「**密钥与服务**」配置各模型与搜索 API Key
+- 输入区上方选择模型与思考强度；新建会话默认沿用上次选择
+- 可在项目根放置 `AGENTS.md` 作为项目说明；`/init` 可引导生成或更新
 
 ### 对话与界面
 
-- **三栏布局**：左侧配置 · 中间对话 · 右侧工具调用链 / 构建产物 / 项目文件（上下分栏可拖拽，比例持久化）
-- **构建产物 Tab**：按 turn 累积本轮 Agent 写入的文件与目录，支持打开与在文件管理器中定位；过滤 `.cache/` 中间产物
-- **明暗主题**：顶栏切换深色 / 浅色，偏好本地持久化
-- 流式 Markdown 渲染（代码高亮、表格、公式）
-- 模型**思考过程**默认折叠，点击可展开
-- 多轮工具调用时，每一步 assistant 回复独立展示，不会混在同一流式框中
-- **输入工具栏**：底栏 **+**（导入文件到项目根）、**图片**（附件）、**/**（斜杠命令图形菜单）；`/` 键盘弹层与图形菜单并存
-- **斜杠命令**：内置 general / Word / PPT / Excel / PDF / Web 任务模板（如 `word:edit`、`ppt:edit-ooxml`、`/compact`）；填入 prompt 并选中占位符，不自动发送
-- 输入框支持 `@` **引用项目内文件**（模糊搜索、分层浏览）；Agent 改文件后浏览区与 `@` 列表自动同步
-- **图片输入**：vision 模型下可粘贴或选择图片（PNG / JPEG / WebP / GIF），支持仅发图无文字；历史消息展示缩略图，点击可放大预览
-- **停止按钮**：Agent 执行中可停止当前 turn（stopping 态等待当前工具结束）
-- **上下文占用**：会话标题栏始终显示占用比例（空会话为 0%）；接近上限时自动压缩；`/compact` 可手动触发压缩
-- **智能推荐问**（需配置 DeepSeek Key）：空会话生成 3–4 条起步问题；每轮对话结束后生成 2–3 条 follow-up，点击填入输入框
-- **需求澄清**：模糊需求时 Agent 可通过 `clarify_ask` 暂停并收集结构化回答，确认后再继续；与 `AGENTS.md` 协作避免重复提问
-- **回合结束自动聚焦**：turn 结束或切换会话后 Chat 输入框自动聚焦（抽屉/弹层打开时不抢焦点）
+- **三栏布局**：左侧项目与会话 · 中间对话 · 右侧 Inspector（项目文件 / 工具调用链 / 构建产物），栏宽可拖拽
+- 明暗主题；流式 Markdown（代码高亮、表格、公式）；思考过程默认折叠
+- 多轮工具调用时，每一步回复独立展示
+- 输入区支持导入文件、图片附件、斜杠命令，以及 `@` 引用项目内文件
+- 可粘贴或选择图片（PNG / JPEG / WebP / GIF）；执行中可停止当前回合
+- 上下文接近上限时自动压缩；`/compact` 可手动压缩
+- 空会话可生成起步问题，每轮结束后提供后续提问（需配置 DeepSeek Key）
+- 需求不清晰时会暂停澄清，确认后再继续
+- 模型服务出错时，对话区展示独立错误卡片（可复制详情）；短暂网络波动会自动重试
 
 ### 支持的模型
 
@@ -55,47 +48,41 @@
 | Gemini 3.8 Flash | Google | ✓ | 始终开启 | low / medium / high |
 | GLM-5.3-Flash | 智谱 | ✓ | 始终开启 | low / high / max |
 
-DeepSeek Flash 的产品 id 与请求名均为 `deepseek-flash`（不绑定 V4 / V4.1 快照名）。历史会话里的 `deepseek-v4-flash` 仍按同一模型识别，不会批量改写。另可识别 DeepSeek V4 Pro、Kimi K2.6（可续聊）和 MiMo v2.5 Pro Ultraspeed（只读，发送时需新建会话改用 MiMo v2.5 Pro）。不会自动把旧会话换成新模型。
+历史会话中的 DeepSeek V4 Pro、Kimi K2.6 仍可续聊。MiMo v2.5 Pro Ultraspeed 为只读，请新建会话并改用 MiMo v2.5 Pro。
 
-在顶栏打开「**密钥与服务**」配置各 Provider API Key；在侧栏 Model Flyout 选择模型。Gemini 自动跟随系统代理或 VPN（Clash Verge 请开启系统代理或 TUN）。可选配置 **Tavily** Key 并在侧栏开启 Web 搜索。智能推荐问仍使用 DeepSeek Flash，需单独配置 DeepSeek Key。
+在顶栏「**密钥与服务**」配置 API Key，在输入区上方选择模型。Gemini 会跟随系统代理或 VPN。可选配置 Tavily 并在侧栏开启 Web 搜索。
 
 ### 文档与工具能力
 
-Agent 通过工具链操作项目内文件，主要包括：
+Agent 可在项目目录内完成：
 
 | 类别 | 能力 |
 |------|------|
-| 文件 | 列出 / 读取 / 写入 / 补丁 / 搜索；右侧栏浏览项目内文件 |
-| 图片 | 用户粘贴多模态输入；vision 模型可用 `image_read` 读取项目内图片；**`image_download`** 批量下载公网图片到项目目录（默认 `images/`）供文档引用 |
-| Office 读取 | 将 Word / Excel / PPT / PDF 等转为 Markdown 供模型理解 |
-| 旧版 Office | `office_convert` 转换 `.doc` / `.xls` / `.ppt`；`.xls` 可直接 SQL 分析 |
-| Word | `skill_run` + docx-js 创建与编辑 `.docx`（OOXML 解包 / 回包） |
-| Excel | 读取 / 写入；`excel_describe` / `excel_normalize` 清洗不规则表 |
-| PPT | `skill_run` + pptxgenjs；或斜杠 `ppt:edit-ooxml` 精准改 OOXML |
-| PDF | 合并、拆分、旋转、删除页面；`pdf_read` 智能读（文本 / vision） |
-| HTML 报告 | 项目内静态 HTML 报告；可选 `html_to_pdf` 导出 PDF |
-| Markdown 网页 | `markdown_to_html` 将 `.md` 转为 slide / report / resume 静态 HTML（内置模板，离线优先） |
-| Typst | `typst_to_pdf` 离线编译 `.typ` 为 PDF；内置中英 report/exam/paper/lecture 模板与语法手册；捆绑 Noto SC 字体保证中文无警告回退 |
-| OOXML | 解包 / 打包（含结构校验）、批注、接受修订 |
-| 数据分析 | Word 表格提取、`polars-sql` 查询、IronCalc 重算公式 |
-| 联网（可选） | Tavily `web_search` / `web_extract`（侧栏开关 + Key） |
-| Document Skills | 内置 docx / pdf / pptx / xlsx / html-report / markdown / clarify / runtime；`skill_read` + `skill_run`（exceljs、docx、pptxgenjs、pdf-lib） |
+| 文件 | 列出、读取、写入、搜索；右侧浏览项目文件 |
+| 图片 | 对话中粘贴图片；识别项目内图片；将网络图片下载到项目目录 |
+| Office 阅读 | 将 Word / Excel / PPT / PDF 转为可读文本 |
+| Word / Excel / PPT | 创建与编辑；旧版 `.doc` / `.xls` / `.ppt` 可转换 |
+| PDF | 合并、拆分、旋转、删页；文本与识图阅读 |
+| 网页与排版 | Markdown 转幻灯片 / 报告 / 简历网页；Typst 离线编译 PDF |
+| 数据分析 | 表格提取、SQL 查询、公式重算 |
+| 联网（可选） | 搜索与网页摘录（需 Tavily Key） |
 
-所有文件操作受**沙箱**约束，路径不能逃出项目根目录。网络图片须先 `image_download` 落地，再在文档工具中按本地路径引用。
+所有文件操作限定在你选择的项目文件夹内。
 
 ---
 
 ## 数据存储
 
-应用数据统一保存在系统应用数据目录（与安装包位置无关）：
+应用数据保存在系统应用数据目录（与安装包位置无关）：
 
 | 内容 | macOS | Windows |
 |------|-------|---------|
 | 会话 / 项目元数据（SQLite） | `~/Library/Application Support/com.kirineko.doc-agent/doc_agent.db` | `%APPDATA%\com.kirineko.doc-agent\doc_agent.db` |
 | API Key（`config.toml`） | 同上目录 | 同上目录 |
+| 模型服务错误日志 | `~/Library/Application Support/com.kirineko.doc-agent/logs/provider-errors.jsonl` | `%APPDATA%\com.kirineko.doc-agent\logs\provider-errors.jsonl` |
 | **文档文件** | 创建项目时选择的文件夹 | 同左 |
 
-项目内 Agent 缓存（附件、skill-run 脚本、PDF 渲染页等）统一在 **`.cache/`** 下，不出现在文件浏览与 `@` 列表中。
+项目内临时文件（附件、脚本缓存、PDF 渲染页等）在 **`.cache/`** 下，不出现在文件浏览中。
 
 ---
 
@@ -118,12 +105,12 @@ Agent 通过工具链操作项目内文件，主要包括：
 详细图文步骤见 [文档站 · 新手配置](https://docs.kirineko.tech/#setup)。
 
 1. 安装并启动 Doc Agent
-2. 在左侧点击添加项目，选择你的工作文件夹
-3. 在顶栏打开「**密钥与服务**」，配置要用的 Provider API Key（DeepSeek / Kimi / MiMo / Google Gemini / 智谱 GLM）
-4. 在侧栏 Model Flyout 选择模型（需识图时选 DeepSeek Flash、Kimi K3、MiMo v2.5、Gemini 3.8 Flash 或 GLM-5.3-Flash），新建会话即可开始对话
-5. 尝试：「列出目录里的 docx 文件」「总结 @某文件.docx 的要点」「把这几张网络图片下载到 images/ 再插入 Word」
+2. 在左侧添加项目，选择你的工作文件夹
+3. 在顶栏打开「**密钥与服务**」，配置要用的模型 API Key
+4. 在输入区上方选择模型（需要识图时选带「视觉」的型号），新建会话即可开始对话
+5. 可以试试：「列出目录里的 Word 文件」「总结 @某文件.docx 的要点」「把这几张网络图片下载到 images/ 再插入 Word」
 
-**快捷键**：`Enter` 发送 · `Shift+Enter` 换行 · `@` 引用文件 · `/` 斜杠命令 · 粘贴图片（vision 模型）
+**快捷键**：`Enter` 发送 · `Shift+Enter` 换行 · `@` 引用文件 · `/` 斜杠命令 · 粘贴图片（视觉模型）
 
 ---
 
@@ -137,7 +124,7 @@ npm run bundle:js    # 打包 skill 运行时 JS 库（构建前必须执行）
 npm run tauri dev    # 开发模式
 ```
 
-首次 Rust 编译会通过 `build.rs` 自动下载 **PDFium** 与 **Noto SC 字体**（约 40 MB，缓存于 `src-tauri/fonts/`，已 gitignore）。需联网；离线复用需保留该目录。
+首次 Rust 编译会通过 `build.rs` 自动下载 **PDFium** 与 **Noto SC 字体**（约 40 MB，缓存于 `src-tauri/fonts/`）。需联网；离线复用请保留该目录。
 
 **测试**
 

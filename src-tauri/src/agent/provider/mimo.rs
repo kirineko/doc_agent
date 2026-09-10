@@ -24,9 +24,10 @@ impl LlmProvider for MimoProvider {
         on_event: &mut (dyn FnMut(AgentEvent) + Send),
     ) -> Result<AssistantTurn, ProviderError> {
         if request.model == ModelId::MimoV25ProUltraspeed {
-            return Err(ProviderError::Http(
-                "该模型已不可调用。请新建会话选择 MiMo v2.5 Pro。".into(),
-            ));
+            return Err(ProviderError::Http(super::failure::ProviderFailure::new(
+                super::failure::FailureKind::BadRequest,
+                "该模型已不可调用。请新建会话选择 MiMo v2.5 Pro。",
+            )));
         }
         let api_key = api_key.ok_or(ProviderError::MissingApiKey)?;
         let extra = extra_body_for(&request);

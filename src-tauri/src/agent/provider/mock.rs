@@ -9,6 +9,51 @@ use tokio::time::sleep;
 
 pub struct MockProvider;
 
+/// 测试脚本：按 session 预设接下来若干次 `chat_stream` 的结果（失败 / 先吐 token 再失败 / 成功）。
+#[cfg(test)]
+static SCRIPT: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<ScriptedCall>>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+#[cfg(test)]
+#[derive(Clone)]
+pub struct ScriptedCall {
+    pub failure: Option<super::ProviderFailure>,
+    pub emit_token: bool,
+}
+
+#[cfg(test)]
+impl ScriptedCall {
+    pub fn ok() -> Self {
+        Self {
+            failure: None,
+            emit_token: false,
+        }
+    }
+
+    pub fn fails(kind: super::FailureKind) -> Self {
+        Self {
+            failure: Some(super::ProviderFailure::new(kind, kind.headline())),
+            emit_token: false,
+        }
+    }
+
+    pub fn token_then_fails(kind: super::FailureKind) -> Self {
+        Self {
+            emit_token: true,
+            ..Self::fails(kind)
+        }
+    }
+}
+
+#[cfg(test)]
+pub fn script_calls_for(session_id: impl Into<String>, calls: Vec<ScriptedCall>) {
+    SCRIPT
+        .lock()
+        .expect("mock script lock")
+        .insert(session_id.into(), calls.into());
+}
+
 #[async_trait]
 impl LlmProvider for MockProvider {
     async fn chat_stream(
@@ -17,6 +62,35 @@ impl LlmProvider for MockProvider {
         _api_key: Option<&str>,
         mut on_event: &mut (dyn FnMut(AgentEvent) + Send),
     ) -> Result<AssistantTurn, ProviderError> {
+        #[cfg(test)]
+        if let Some(step) = SCRIPT
+            .lock()
+            .expect("mock script lock")
+            .get_mut(&request.session_id)
+            .and_then(|q| q.pop_front())
+        {
+            if step.emit_token {
+                emit(
+                    &mut on_event,
+                    AgentEvent::ContentToken {
+                        session_id: request.session_id.clone(),
+                        turn_id: request.turn_id.clone(),
+                        delta: "hi".into(),
+                    },
+                );
+            }
+            if let Some(failure) = step.failure {
+                return Err(ProviderError::Http(failure));
+            }
+            return Ok(finish_turn(
+                &request.messages,
+                "ok".into(),
+                "",
+                vec![],
+                Some("stop".into()),
+            ));
+        }
+
         let session_id = request.session_id.clone();
         let turn_id = request.turn_id.clone();
         let user_text = request

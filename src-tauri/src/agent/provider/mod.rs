@@ -1,4 +1,5 @@
 pub mod deepseek;
+pub mod failure;
 pub mod gemini;
 pub mod kimi;
 pub mod mimo;
@@ -11,11 +12,13 @@ mod sse_frames;
 mod sse_tools;
 pub mod zhipu;
 
+pub use failure::{FailureKind, ProviderFailure};
+
 #[cfg(test)]
 mod live_smoke;
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 use crate::agent::types::{AssistantTurn, ChatRequest, ModelId};
 use async_trait::async_trait;
@@ -25,8 +28,8 @@ use thiserror::Error;
 pub enum ProviderError {
     #[error("missing api key")]
     MissingApiKey,
-    #[error("http error: {0}")]
-    Http(String),
+    #[error("{0}")]
+    Http(ProviderFailure),
     #[error("parse error: {0}")]
     Parse(String),
     #[error("cancelled")]

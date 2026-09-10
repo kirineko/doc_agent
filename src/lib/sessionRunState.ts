@@ -73,6 +73,8 @@ export function deriveActiveStream(
     turnArtifacts: run.turnArtifacts,
     busy: run.status === "running" || run.status === "stopping",
     compactionNotice: run.compactionNotice ?? null,
+    turnError: run.turnError ?? null,
+    retryNotice: run.retryNotice ?? null,
   };
 }
 

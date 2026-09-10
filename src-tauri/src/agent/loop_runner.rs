@@ -8,7 +8,8 @@ use crate::agent::loop_tool_batch::run_tool_batch;
 use crate::agent::model_config::{parse_effort, parse_model_id, require_callable_model};
 use crate::agent::provider::openai_compat::validate_attachments;
 use crate::agent::provider::provider_for;
-use crate::agent::provider::ProviderError;
+use crate::agent::provider::{ProviderError, ProviderFailure};
+use crate::agent::provider_retry::{chat_stream_with_retry, RetryPolicy};
 use crate::agent::run_limiter::{RunSlotGuard, GLOBAL_PARALLEL_FULL_MSG};
 use crate::agent::turn_control::{
     is_session_busy_user_error, CancelSignal, TurnRegistry, TURN_CANCELLED,
@@ -202,11 +203,7 @@ pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
                 Err(err) => {
                     let _ = app.emit(
                         "agent-event",
-                        AgentEvent::Error {
-                            session_id: session_id.clone(),
-                            turn_id: turn_id.clone(),
-                            message: err,
-                        },
+                        AgentEvent::plain_error(&session_id, &turn_id, err),
                     );
                     state.turns.unreserve(&session_id);
                     return;
@@ -215,15 +212,57 @@ pub(crate) fn spawn_reserved_resume_on_busy<R: Runtime>(
         }
         let _ = app.emit(
             "agent-event",
-            AgentEvent::Error {
-                session_id: session_id.clone(),
-                turn_id: turn_id.clone(),
-                message: "澄清取消已保存，但等待恢复超时。".into(),
-            },
+            AgentEvent::plain_error(&session_id, &turn_id, "澄清取消已保存，但等待恢复超时。"),
         );
         state.turns.unreserve(&session_id);
     });
     Ok(())
+}
+
+/// 落盘到 `logs/provider-errors.jsonl` 的一行；`failure` 展平后含 kind/status/provider_code/message/detail。
+#[derive(serde::Serialize)]
+struct ProviderErrorRecord<'a> {
+    ts: String,
+    session_id: &'a str,
+    turn_id: &'a str,
+    model: &'a str,
+    attempts: u32,
+    #[serde(flatten)]
+    failure: &'a ProviderFailure,
+}
+
+fn emit_provider_http_failure<R: Runtime>(
+    app: &AppHandle<R>,
+    state: &AppState,
+    session_id: &str,
+    turn_id: &str,
+    model: &str,
+    failure: ProviderFailure,
+    attempts: u32,
+) {
+    let record = ProviderErrorRecord {
+        ts: crate::core::store::now_rfc3339(),
+        session_id,
+        turn_id,
+        model,
+        attempts,
+        failure: &failure,
+    };
+    if let Err(err) = crate::core::error_log::append(&state.data_dir, &record) {
+        eprintln!("provider error log: {err}");
+    }
+    emit(
+        app,
+        AgentEvent::Error {
+            session_id: session_id.to_string(),
+            turn_id: turn_id.to_string(),
+            message: format!("{}：{}", failure.kind.headline(), failure.message),
+            code: Some(failure.kind),
+            retryable: Some(failure.kind.retryable()),
+            detail: failure.detail,
+            hint: Some(failure.kind.hint().into()),
+        },
+    );
 }
 
 fn finish_cancelled<R: Runtime>(
@@ -547,6 +586,7 @@ async fn continue_loop_inner<R: Runtime>(
         full_estimate.saturating_sub(token_count)
     };
 
+    let retry_policy = RetryPolicy::from_env();
     for _step in 0..MAX_TOOL_STEPS {
         if let Some(result) = return_if_cancelled(&app, &sandbox, &session_id, &turn_id, &cancel) {
             return result;
@@ -618,16 +658,33 @@ async fn continue_loop_inner<R: Runtime>(
             emit(&app_for_events, mapped);
         };
 
-        let turn = match provider
-            .chat_stream(request, api_key.as_deref(), &mut on_event)
-            .await
+        let turn = match chat_stream_with_retry(
+            provider.as_ref(),
+            request,
+            api_key.as_deref(),
+            &retry_policy,
+            &mut on_event,
+        )
+        .await
         {
             Ok(turn) => turn,
-            Err(ProviderError::Cancelled) => {
+            Err((ProviderError::Cancelled, _)) => {
                 finish_cancelled(&app, &sandbox, session_id.clone(), turn_id.clone());
                 return Ok(());
             }
-            Err(e) => return Err(e.to_string()),
+            Err((ProviderError::Http(failure), attempts)) => {
+                emit_provider_http_failure(
+                    &app,
+                    &state,
+                    &session_id,
+                    &turn_id,
+                    &model,
+                    failure,
+                    attempts,
+                );
+                return Ok(());
+            }
+            Err((e, _)) => return Err(e.to_string()),
         };
 
         let usage_reported = turn.usage.is_some();
@@ -655,11 +712,7 @@ async fn continue_loop_inner<R: Runtime>(
             emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
             emit(
                 &app,
-                AgentEvent::Error {
-                    session_id: session_id.clone(),
-                    turn_id: turn_id.clone(),
-                    message: "输出被截断，未执行本步工具。".into(),
-                },
+                AgentEvent::plain_error(&session_id, &turn_id, "输出被截断，未执行本步工具。"),
             );
             return Err("输出被截断，未执行本步工具。".into());
         }
@@ -784,11 +837,7 @@ async fn continue_loop_inner<R: Runtime>(
 
     emit(
         &app,
-        AgentEvent::Error {
-            session_id,
-            turn_id,
-            message: "Reached maximum tool steps".into(),
-        },
+        AgentEvent::plain_error(session_id, turn_id, "Reached maximum tool steps"),
     );
     Ok(())
 }

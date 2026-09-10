@@ -58,6 +58,50 @@ describe("sessionRunsReducer", () => {
     expect(state.bySession.s1?.status).toBe("idle");
   });
 
+  it("clears retry notice when cancelled during backoff", () => {
+    let state = sessionRunsReducer(initialSessionRunsState, {
+      type: "busy",
+      sessionId: "s1",
+    });
+    state = sessionRunsReducer(state, {
+      type: "event",
+      event: {
+        kind: "provider_retry",
+        session_id: "s1",
+        turn_id: "t1",
+        attempt: 1,
+        max: 2,
+        code: "network",
+        delay_ms: 1000,
+      },
+    });
+    expect(state.bySession.s1?.retryNotice).not.toBeNull();
+    state = sessionRunsReducer(state, {
+      type: "event",
+      event: { kind: "turn_cancelled", session_id: "s1", turn_id: "t1" },
+    });
+    expect(state.bySession.s1?.status).toBe("idle");
+    expect(state.bySession.s1?.busy).toBe(false);
+    expect(state.bySession.s1?.retryNotice).toBeNull();
+  });
+
+  it("shows invoke reject as a turn error card payload", () => {
+    const next = sessionRunsReducer(initialSessionRunsState, {
+      type: "event",
+      event: {
+        kind: "error",
+        session_id: "s1",
+        turn_id: "local",
+        message: "消息不能为空",
+      },
+    });
+    expect(next.bySession.s1?.turnError?.message).toBe("消息不能为空");
+    expect(next.bySession.s1?.status).toBe("idle");
+    // 新消息进入 busy 即清掉上一轮错误卡片
+    const cleared = sessionRunsReducer(next, { type: "busy", sessionId: "s1" });
+    expect(cleared.bySession.s1?.turnError).toBeNull();
+  });
+
   it("clears compaction notice for session", () => {
     const state = sessionRunsReducer(
       {
