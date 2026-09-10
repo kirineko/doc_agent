@@ -267,7 +267,7 @@ fn format_busy(blocker: &HeldLock, path: &str) -> FileBusyError {
     let title = if blocker.session_title.trim().is_empty() {
         format!(
             "{}…",
-            &blocker.session_id.chars().take(8).collect::<String>()
+            blocker.session_id.chars().take(8).collect::<String>()
         )
     } else {
         blocker.session_title.clone()
@@ -350,6 +350,31 @@ mod tests {
             .unwrap_err();
         assert!(err.message.contains("a.txt"));
         assert!(err.message.contains("A"));
+    }
+
+    #[test]
+    fn empty_title_uses_session_id_prefix() {
+        let reg = FileLockRegistry::new();
+        let _a = reg
+            .acquire_many(
+                "p1",
+                "abcdef12-3456-7890",
+                "t1",
+                "  ",
+                vec![req("p1", "a.txt", LockMode::Write)],
+            )
+            .unwrap();
+        let err = reg
+            .acquire_many(
+                "p1",
+                "s2",
+                "t2",
+                "B",
+                vec![req("p1", "a.txt", LockMode::Write)],
+            )
+            .unwrap_err();
+        assert!(err.message.contains("abcdef12…"));
+        assert_eq!(err.blocking_session_id, "abcdef12-3456-7890");
     }
 
     #[test]
