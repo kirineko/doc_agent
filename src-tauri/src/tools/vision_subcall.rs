@@ -1,10 +1,9 @@
+use crate::agent::model_config::auxiliary_thinking;
 use crate::agent::provider::openai_compat::MAX_ATTACHMENTS_PER_MESSAGE;
 use crate::agent::provider::openai_compat::{encode_attachment_data_url, is_image_path};
 use crate::agent::provider::provider_for;
 use crate::agent::provider::ProviderError;
-use crate::agent::types::{
-    ChatMessage, ChatRequest, MessageAttachment, ModelId, ThinkingConfig, ThinkingEffort,
-};
+use crate::agent::types::{ChatMessage, ChatRequest, MessageAttachment, ModelId};
 use crate::tools::{ToolContext, ToolError};
 use serde_json::Value;
 use std::sync::Arc;
@@ -70,12 +69,10 @@ pub async fn vision_subcall(
             reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
+            provider_state: None,
         }],
         tools: vec![],
-        thinking: ThinkingConfig {
-            enabled: false,
-            effort: ThinkingEffort::High,
-        },
+        thinking: auxiliary_thinking(model_id),
         response_format: None,
         max_tokens: None,
         cancel: None,
@@ -87,6 +84,11 @@ pub async fn vision_subcall(
         .await
         .map_err(|e| ToolError::Execution(e.to_string()))?;
 
+    if !turn.is_complete_text() {
+        return Err(ToolError::Execution(
+            "视觉子调用输出不完整，请重试或减少输入".into(),
+        ));
+    }
     Ok(turn.content)
 }
 

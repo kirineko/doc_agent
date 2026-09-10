@@ -1,12 +1,8 @@
 use crate::agent::turn_control::CancelSignal;
-use crate::agent::types::{AssistantTurn, TokenUsage, ToolCall};
-use futures_util::StreamExt;
-use reqwest::Response;
+use crate::agent::types::AssistantTurn;
+use futures_util::{Stream, StreamExt};
 use serde_json::Value;
-use std::time::Duration;
 use thiserror::Error;
-use tokio::time::sleep;
-use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum SseError {
@@ -18,100 +14,71 @@ pub enum SseError {
     Cancelled,
 }
 
-pub async fn consume_openai_sse<F>(
-    response: Response,
+impl From<SseError> for super::ProviderError {
+    fn from(error: SseError) -> Self {
+        match error {
+            SseError::Http(message) => Self::Http(message),
+            SseError::Json(message) => Self::Parse(message),
+            SseError::Cancelled => Self::Cancelled,
+        }
+    }
+}
+
+pub async fn cancelable<T>(
     cancel: Option<&CancelSignal>,
+    future: impl std::future::Future<Output = T>,
+) -> Result<T, SseError> {
+    tokio::select! {
+        biased;
+        _ = wait_for_cancel(cancel), if cancel.is_some() => Err(SseError::Cancelled),
+        result = future => Ok(result),
+    }
+}
+
+pub(crate) async fn consume_stream<S, B, E, F>(
+    mut stream: S,
+    cancel: Option<&CancelSignal>,
+    google_model: Option<&str>,
     mut on_delta: F,
 ) -> Result<AssistantTurn, SseError>
 where
+    S: Stream<Item = Result<B, E>> + Unpin,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
     F: FnMut(Option<&str>, Option<&str>, Option<&[Value]>) + Send,
 {
-    let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
-    let mut content = String::new();
-    let mut reasoning = String::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
-    let mut finish_reason: Option<String> = None;
-    let mut usage: Option<TokenUsage> = None;
-
-    loop {
-        if cancel.is_some_and(|c| c.is_cancelled()) {
-            return Err(SseError::Cancelled);
-        }
-
-        let chunk = tokio::select! {
-            chunk = stream.next() => chunk,
-            _ = wait_for_cancel(cancel), if cancel.is_some() => {
-                return Err(SseError::Cancelled);
+    let mut buffer = super::sse_frames::Frames::default();
+    let mut acc = super::openai_stream::Accumulator::new(google_model);
+    let mut emit = |delta: super::openai_stream::Delta| {
+        on_delta(
+            (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()),
+            (!delta.content.is_empty()).then_some(delta.content.as_str()),
+            (!delta.tools.is_empty()).then_some(delta.tools.as_slice()),
+        );
+    };
+    while let Some(chunk) = cancelable(cancel, stream.next()).await? {
+        let chunk = chunk.map_err(|e| {
+            SseError::Http(if google_model.is_some() {
+                "Gemini 连接中断，请检查系统代理或 TUN".into()
+            } else {
+                e.to_string()
+            })
+        })?;
+        for data in buffer.push(chunk.as_ref())? {
+            if data == "[DONE]" {
+                continue;
             }
-        };
-
-        let Some(chunk) = chunk else {
-            break;
-        };
-        let chunk = chunk.map_err(|e| SseError::Http(e.to_string()))?;
-        buffer.push_str(&String::from_utf8_lossy(&chunk));
-
-        while let Some(pos) = buffer.find("\n\n") {
-            let frame = buffer[..pos].to_string();
-            buffer.drain(..pos + 2);
-
-            for line in frame.lines() {
-                if !line.starts_with("data: ") {
-                    continue;
-                }
-                let data = &line[6..];
-                if data == "[DONE]" {
-                    continue;
-                }
-                let value: Value =
-                    serde_json::from_str(data).map_err(|e| SseError::Json(e.to_string()))?;
-                if let Some(parsed) = parse_usage(&value) {
-                    usage = Some(parsed);
-                }
-                let choices = value["choices"].as_array();
-                if choices.is_none() || choices.is_some_and(|c| c.is_empty()) {
-                    continue;
-                }
-                let choice = &value["choices"][0];
-                let delta = &choice["delta"];
-                if let Some(reason) = choice["finish_reason"].as_str() {
-                    finish_reason = Some(reason.to_string());
-                }
-                let reasoning_delta = delta["reasoning_content"].as_str();
-                let content_delta = delta["content"].as_str();
-                let delta_tools = delta["tool_calls"].as_array();
-
-                if let Some(r) = reasoning_delta {
-                    reasoning.push_str(r);
-                }
-                if let Some(c) = content_delta {
-                    content.push_str(c);
-                }
-                if let Some(items) = delta_tools {
-                    merge_tool_call_deltas(&mut tool_calls, items);
-                }
-
-                on_delta(
-                    reasoning_delta,
-                    content_delta,
-                    delta_tools.map(|v| v.as_slice()),
-                );
-            }
+            let value: Value = serde_json::from_str(&data)
+                .map_err(|_| SseError::Json("invalid SSE JSON".into()))?;
+            emit(acc.apply(&value)?);
         }
     }
-
-    if cancel.is_some_and(|c| c.is_cancelled()) {
+    if cancel.is_some_and(|s| s.is_cancelled()) {
         return Err(SseError::Cancelled);
     }
-
-    Ok(AssistantTurn {
-        content,
-        reasoning_content: reasoning,
-        tool_calls,
-        finish_reason,
-        usage,
-    })
+    buffer.finish()?;
+    emit(acc.flush_text());
+    acc.finish()
 }
 
 async fn wait_for_cancel(cancel: Option<&CancelSignal>) {
@@ -120,26 +87,8 @@ async fn wait_for_cancel(cancel: Option<&CancelSignal>) {
         return;
     };
     while !signal.is_cancelled() {
-        sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
-}
-
-fn parse_usage(value: &Value) -> Option<TokenUsage> {
-    let usage = &value["usage"];
-    if usage.is_null() {
-        return None;
-    }
-    let prompt = usage["prompt_tokens"].as_u64()? as u32;
-    let completion = usage["completion_tokens"].as_u64()? as u32;
-    let total = usage["total_tokens"]
-        .as_u64()
-        .map(|v| v as u32)
-        .unwrap_or(prompt.saturating_add(completion));
-    Some(TokenUsage {
-        prompt,
-        completion,
-        total,
-    })
 }
 
 /// 跟踪工具调用参数的流式接收进度，按时间节流产出 UI 更新信号，
@@ -207,31 +156,15 @@ impl Default for ToolStreamTracker {
     }
 }
 
-fn merge_tool_call_deltas(tool_calls: &mut Vec<ToolCall>, items: &[Value]) {
-    for item in items {
-        let index = item["index"].as_u64().unwrap_or(0) as usize;
-        while tool_calls.len() <= index {
-            tool_calls.push(ToolCall {
-                id: format!("call_{}", Uuid::new_v4()),
-                call_type: "function".into(),
-                function: crate::agent::types::FunctionCall {
-                    name: String::new(),
-                    arguments: String::new(),
-                },
-            });
-        }
-        if let Some(id) = item["id"].as_str() {
-            if !id.is_empty() {
-                tool_calls[index].id = id.to_string();
-            }
-        }
-        if let Some(name) = item["function"]["name"].as_str() {
-            tool_calls[index].function.name = name.to_string();
-        }
-        if let Some(args) = item["function"]["arguments"].as_str() {
-            tool_calls[index].function.arguments.push_str(args);
-        }
-    }
+#[cfg(test)]
+fn merge_tool_call_deltas(calls: &mut Vec<crate::agent::types::ToolCall>, items: &[Value]) {
+    let mut acc = super::sse_tools::ToolCalls {
+        calls: std::mem::take(calls),
+        extras: vec![],
+    };
+    acc.extras.resize(acc.calls.len(), serde_json::json!({}));
+    acc.merge(items, false).unwrap();
+    *calls = acc.calls;
 }
 
 #[cfg(test)]
@@ -340,7 +273,7 @@ mod tests {
                 "total_tokens": 1500
             }
         });
-        let usage = parse_usage(&chunk).unwrap();
+        let usage = super::super::openai_stream::parse_usage(&chunk, false).unwrap();
         assert_eq!(usage.prompt, 1200);
         assert_eq!(usage.completion, 300);
         assert_eq!(usage.total, 1500);

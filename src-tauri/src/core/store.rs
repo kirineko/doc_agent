@@ -37,7 +37,7 @@ pub struct Session {
     pub title_user_edited: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
     pub session_id: String,
@@ -51,6 +51,29 @@ pub struct Message {
     pub archived: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attachments_json: Option<String>,
+    #[serde(skip)]
+    pub provider_state_json: Option<String>,
+}
+
+impl std::fmt::Debug for Message {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Message")
+            .field("id", &self.id)
+            .field("session_id", &self.session_id)
+            .field("role", &self.role)
+            .field("content", &self.content)
+            .field("reasoning_content", &self.reasoning_content)
+            .field("tool_call_id", &self.tool_call_id)
+            .field("seq", &self.seq)
+            .field("created_at", &self.created_at)
+            .field("archived", &self.archived)
+            .field("attachments_json", &self.attachments_json)
+            .field(
+                "provider_state_json",
+                &self.provider_state_json.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +194,11 @@ impl Store {
             "ALTER TABLE sessions ADD COLUMN title_user_edited INTEGER NOT NULL DEFAULT 0",
             [],
         );
+        self.ensure_column(
+            "messages",
+            "provider_state_json",
+            "ALTER TABLE messages ADD COLUMN provider_state_json TEXT",
+        )?;
         let _ = self.conn.execute_batch(
             "UPDATE sessions SET autotitle_llm_done = 1
              WHERE id IN (
@@ -178,6 +206,29 @@ impl Store {
                GROUP BY session_id HAVING COUNT(*) >= 2
              );",
         );
+        Ok(())
+    }
+
+    fn table_has_column(&self, table: &str, column: &str) -> Result<bool, StoreError> {
+        let mut stmt = self
+            .conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .map_err(StoreError::from)?;
+        let mut rows = stmt.query([]).map_err(StoreError::from)?;
+        while let Some(row) = rows.next().map_err(StoreError::from)? {
+            let name: String = row.get(1).map_err(StoreError::from)?;
+            if name == column {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn ensure_column(&self, table: &str, column: &str, ddl: &str) -> Result<(), StoreError> {
+        if self.table_has_column(table, column)? {
+            return Ok(());
+        }
+        self.conn.execute(ddl, []).map_err(StoreError::from)?;
         Ok(())
     }
 
@@ -208,6 +259,7 @@ impl Store {
             created_at: row.get(7)?,
             archived: row.get::<_, i32>(8)? != 0,
             attachments_json: row.get(9).ok(),
+            provider_state_json: row.get(10).ok(),
         })
     }
 
@@ -500,6 +552,7 @@ impl Store {
             created_at,
             archived: false,
             attachments_json: None,
+            provider_state_json: None,
         })
     }
 
@@ -512,12 +565,34 @@ impl Store {
         tool_call_id: Option<&str>,
         attachments_json: Option<&str>,
     ) -> Result<Message, StoreError> {
+        self.add_message_with_provider_state(
+            session_id,
+            role,
+            content,
+            reasoning_content,
+            tool_call_id,
+            attachments_json,
+            None,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_message_with_provider_state(
+        &self,
+        session_id: &str,
+        role: &str,
+        content: Option<&str>,
+        reasoning_content: Option<&str>,
+        tool_call_id: Option<&str>,
+        attachments_json: Option<&str>,
+        provider_state_json: Option<&str>,
+    ) -> Result<Message, StoreError> {
         let id = Uuid::new_v4().to_string();
         let seq = self.next_seq(session_id)?;
         let created_at = now();
         self.conn.execute(
-            "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, attachments_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, attachments_json, provider_state_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
                 session_id,
@@ -527,7 +602,8 @@ impl Store {
                 tool_call_id,
                 seq,
                 created_at,
-                attachments_json
+                attachments_json,
+                provider_state_json
             ],
         )?;
         self.conn.execute(
@@ -545,12 +621,13 @@ impl Store {
             created_at,
             attachments_json: attachments_json.map(str::to_string),
             archived: false,
+            provider_state_json: provider_state_json.map(str::to_string),
         })
     }
 
     pub fn list_active_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json, provider_state_json
              FROM messages WHERE session_id = ?1 AND archived = 0 ORDER BY seq ASC",
         )?;
         let rows = stmt.query_map(params![session_id], Self::map_message_row)?;
@@ -601,7 +678,7 @@ impl Store {
 
     pub fn list_all_messages(&self, session_id: &str) -> Result<Vec<Message>, StoreError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json
+            "SELECT id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json, provider_state_json
              FROM messages WHERE session_id = ?1 ORDER BY seq ASC",
         )?;
         let rows = stmt.query_map(params![session_id], Self::map_message_row)?;
@@ -737,7 +814,7 @@ impl Store {
              FROM tool_calls tc
              JOIN messages m ON m.id = tc.message_id
              WHERE m.session_id = ?1
-             ORDER BY tc.created_at ASC",
+             ORDER BY m.seq ASC, tc.rowid ASC",
         )?;
         let rows = stmt.query_map(params![session_id], |row| {
             Ok(ToolCallRecord {
@@ -1067,5 +1144,169 @@ mod tests {
             .unwrap();
         assert!(updated.title_user_edited);
         assert!(!store.claim_autotitle_llm(&session.id).unwrap());
+    }
+
+    fn column_names(conn: &rusqlite::Connection, table: &str) -> Vec<String> {
+        let mut stmt = conn
+            .prepare(&format!("PRAGMA table_info({table})"))
+            .unwrap();
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1)).unwrap();
+        rows.collect::<Result<_, _>>().unwrap()
+    }
+
+    #[test]
+    fn provider_state_column_migrates_from_legacy_schema() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("legacy.db");
+        {
+            let conn = rusqlite::Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE projects (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    root_path TEXT NOT NULL UNIQUE,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE sessions (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    thinking_enabled INTEGER NOT NULL,
+                    thinking_effort TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE messages (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT,
+                    reasoning_content TEXT,
+                    tool_call_id TEXT,
+                    seq INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    archived INTEGER NOT NULL DEFAULT 0,
+                    attachments_json TEXT
+                );
+                CREATE TABLE tool_calls (
+                    id TEXT PRIMARY KEY,
+                    message_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    args_json TEXT NOT NULL,
+                    result_json TEXT,
+                    status TEXT NOT NULL,
+                    duration_ms INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                ",
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO projects (id, name, root_path, created_at) VALUES ('p1', 'demo', '/tmp/demo', 't')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO sessions (id, project_id, title, model, thinking_enabled, thinking_effort, created_at, updated_at)
+                 VALUES ('s1', 'p1', 'old', 'kimi-k2.6', 0, 'high', 't', 't')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json)
+                 VALUES ('m0', 's1', 'user', 'see image', NULL, NULL, 1, 't', 0, '[{\"path\":\".cache/attachments/a.png\",\"mime\":\"image/png\"}]')",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO messages (id, session_id, role, content, reasoning_content, tool_call_id, seq, created_at, archived, attachments_json)
+                 VALUES ('m1', 's1', 'assistant', 'hello', 'thought', NULL, 2, 't', 0, NULL)",
+                [],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO tool_calls (id, message_id, name, args_json, result_json, status, duration_ms, created_at)
+                 VALUES ('c1', 'm1', 'fs_list', '{}', '[]', 'done', 1, 't')",
+                [],
+            )
+            .unwrap();
+            let message_cols = column_names(&conn, "messages");
+            assert!(!message_cols.contains(&"provider_state_json".into()));
+        }
+
+        let store = Store::open(db_path.clone()).unwrap();
+        let message_cols = column_names(&store.conn, "messages");
+        assert_eq!(
+            message_cols
+                .iter()
+                .filter(|c| *c == "provider_state_json")
+                .count(),
+            1
+        );
+        let session_cols = column_names(&store.conn, "sessions");
+        assert!(!session_cols.contains(&"provider_state_json".into()));
+        let tool_cols = column_names(&store.conn, "tool_calls");
+        assert!(!tool_cols.contains(&"provider_state_json".into()));
+
+        let session = store.get_session("s1").unwrap().unwrap();
+        assert_eq!(session.model, "kimi-k2.6");
+        assert!(!session.thinking_enabled);
+        assert_eq!(session.thinking_effort, "high");
+        let messages = store.list_all_messages("s1").unwrap();
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert!(messages[0]
+            .attachments_json
+            .as_deref()
+            .unwrap()
+            .contains(".cache/attachments/a.png"));
+        assert_eq!(messages[1].content.as_deref(), Some("hello"));
+        assert_eq!(messages[1].reasoning_content.as_deref(), Some("thought"));
+        assert!(messages.iter().all(|m| m.provider_state_json.is_none()));
+        let tools = store.list_tool_calls_for_session("s1").unwrap();
+        assert_eq!(tools[0].name, "fs_list");
+        assert_eq!(tools[0].result_json.as_deref(), Some("[]"));
+        let encoded = serde_json::to_value(&messages[0]).unwrap();
+        assert!(encoded.get("provider_state_json").is_none());
+
+        let store_again = Store::open(db_path).unwrap();
+        let again = column_names(&store_again.conn, "messages");
+        assert_eq!(
+            again.iter().filter(|c| *c == "provider_state_json").count(),
+            1
+        );
+    }
+
+    #[test]
+    fn add_message_defaults_provider_state_to_none() {
+        let dir = tempdir().unwrap();
+        let store = Store::open(dir.path().join("test.db")).unwrap();
+        let project = store.create_project("demo", "/tmp/demo").unwrap();
+        let session = store
+            .create_session(&project.id, "s1", "deepseek-v4-flash", true, "high")
+            .unwrap();
+        let msg = store
+            .add_message(&session.id, "user", Some("hi"), None, None, None)
+            .unwrap();
+        assert!(msg.provider_state_json.is_none());
+        let loaded = store.list_messages(&session.id).unwrap();
+        assert!(loaded[0].provider_state_json.is_none());
+        let with_state = store
+            .add_message_with_provider_state(
+                &session.id,
+                "assistant",
+                Some("ok"),
+                None,
+                None,
+                None,
+                Some(r#"{"protocol":"google_openai","version":1}"#),
+            )
+            .unwrap();
+        assert!(with_state.provider_state_json.is_some());
+        let encoded = serde_json::to_value(&with_state).unwrap();
+        assert!(encoded.get("provider_state_json").is_none());
+        assert_eq!(encoded["content"], "ok");
     }
 }

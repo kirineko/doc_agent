@@ -40,8 +40,13 @@ TBD - created by archiving change add-multimodal-support. Update Purpose after a
 
 #### Scenario: DeepSeek 会话无 image_read
 
-- **WHEN** 会话模型为 DeepSeek V4 Flash
+- **WHEN** 会话模型为 DeepSeek V4 Pro
 - **THEN** `tools` 列表不包含 `image_read`
+
+#### Scenario: DeepSeek Flash 有 image_read
+
+- **WHEN** 会话模型为 DeepSeek Flash
+- **THEN** `tools` 列表包含 `image_read`
 
 #### Scenario: MiMo v2.5 有 image_read
 
@@ -70,4 +75,3 @@ TBD - created by archiving change add-multimodal-support. Update Purpose after a
 
 - **WHEN** `image_read` 完成后主 Agent 基于文本 tool 结果继续推理
 - **THEN** 该步 API `usage` 更新会话 `token_count`，包含 tool 结果文本的 input token
-

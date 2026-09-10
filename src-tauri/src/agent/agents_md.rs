@@ -312,6 +312,7 @@ mod tests {
             created_at: String::new(),
             archived: false,
             attachments_json: None,
+            provider_state_json: None,
         };
         let mk_call = |id: &str, args: &str| ToolCallRecord {
             id: id.into(),
@@ -378,6 +379,7 @@ mod tests {
             created_at: String::new(),
             archived: false,
             attachments_json: None,
+            provider_state_json: None,
         };
         let mk_call = |id: &str| {
             ToolCallRecord {

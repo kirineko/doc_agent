@@ -172,11 +172,16 @@ TBD - created by archiving change bootstrap-doc-agent-mvp. Update Purpose after 
 
 ### Requirement: 非 vision 粘贴 Toast
 
-当用户在非 vision 模型下粘贴图片时，系统 SHALL 展示非阻塞 toast，文案说明需切换至支持视觉的模型（Kimi K2.6 或 MiMo v2.5）。
+当用户在非 vision 模型下粘贴图片时，系统 SHALL 展示非阻塞 toast，文案说明需切换至当前可新建的视觉模型。
 
 #### Scenario: DeepSeek 下粘贴图片
 
-- **WHEN** 会话模型为 DeepSeek V4 Flash 且用户粘贴图片
+- **WHEN** 会话模型为 DeepSeek Flash 且用户粘贴图片
+- **THEN** 保存附件并展示缩略图，不出现非视觉 toast
+
+#### Scenario: 非视觉模型下粘贴图片
+
+- **WHEN** 会话模型为 MiMo v2.5 Pro 且用户粘贴图片
 - **THEN** 出现 toast 且不插入附件
 
 ### Requirement: 项目列表展示与隐藏交互
@@ -945,6 +950,11 @@ Chat 输入区 SHALL 在当前 active session 为 `running` 时展示 **停止**
 
 收到 `turn_cancelled` 后，前端 SHOULD 调用 `list_messages` 与当前 session 的 tool calls 对齐 DB，清空该 session streaming 缓冲，运行态置 idle。用户可见的 assistant 步骤 MUST 与 cancel 前已 emit 的 `assistant_step_done` 一致，不出现重复条。
 
+#### Scenario: 取消后恢复已持久化消息
+
+- **WHEN** 当前会话收到 `turn_cancelled`
+- **THEN** 该会话 streaming 缓冲清空，运行态恢复 idle，已持久化 assistant 步骤保持可见且不重复
+
 ### Requirement: 全局并行上限提示
 
 前端 SHALL 基于 per-session running map 派生当前 running/stopping 数量。当本地已知数量达到 3 时，输入区 MUST 阻止新发送并提示「当前已有 3 个任务正在执行，请稍后重试」。后端仍 MUST 作为权威校验；若后端返回全局满额错误，前端 MUST 保留用户输入，不得清空草稿。
@@ -1365,4 +1375,3 @@ The workspace UI SHALL indicate whether the active project has a non-empty `AGEN
 
 - **WHEN** 用户已将界面缩放设为 160% 并点击「恢复默认布局」
 - **THEN** 三栏恢复默认比例且界面缩放变为 100%
-

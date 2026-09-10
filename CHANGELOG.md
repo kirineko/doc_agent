@@ -6,7 +6,18 @@
 
 ---
 
-## [Unreleased]
+## [2026.9.10] — 2026-09-10
+
+### 新增 Gemini 与 GLM，并更新新建模型目录（add-native-gemini-and-glm-providers）
+
+- **新建可选模型**：DeepSeek Flash、MiMo v2.5、MiMo v2.5 Pro、Kimi K3、Gemini 3.8 Flash、GLM-5.3-Flash
+- **DeepSeek Flash**：产品 id 与请求名统一为 `deepseek-flash`，不再使用 `deepseek-v4-flash` 作为新建 id，避免后续升级到 V4.1 时再改名；旧会话中的 `deepseek-v4-flash` 仍按同一模型识别，不批量改写数据库；支持视觉与 `image_read`
+- **Gemini 3.8 Flash**（Google）：官方 OpenAI 兼容 Chat Completions；始终思考，档位 low / medium / high（默认 medium）；支持视觉、工具调用与思考摘要。自动跟随系统代理或 VPN；Clash Verge 需开启系统代理或 TUN
+- **GLM-5.3-Flash**（智谱）：标准 Chat Completions；始终思考，档位 low / high / max（默认 max）；支持视觉与工具调用
+- **Kimi K3**：替代新建入口中的 K2.6；始终思考，档位 low / high / max（默认 max）；支持视觉
+- **思考控件按能力显示**：DeepSeek 可开关且 low / high / max；MiMo 仅开关；Kimi / GLM / Gemini 始终思考，不提供关闭
+- **密钥入口**：顶栏「密钥与服务」增加 Google Gemini 与智谱 GLM；无项目也可配置。智能推荐问仍固定 DeepSeek Flash
+- **历史会话**：DeepSeek V4 Pro、Kimi K2.6 可按原模型续聊；MiMo v2.5 Pro Ultraspeed 只读，发送时提示新建 MiMo v2.5 Pro 会话。不会批量改名或自动换模型
 
 ---
 

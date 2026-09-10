@@ -35,6 +35,7 @@ import {
   writeProjectOrder,
 } from "../lib/sessionOrder";
 import {
+  applyModelPatch,
   buildCreateSessionRequest,
   isSessionModelLocked,
   readStoredSessionConfig,
@@ -62,7 +63,7 @@ import {
   messageBundleState,
   parseClarifyQuestion,
 } from "../lib/clarifyBrief";
-import { loadModels, modelSupportsVision } from "../lib/models";
+import { loadModels, modelSupportsVision, visionModelHint } from "../lib/models";
 import { isCompactMessage } from "../lib/compactMessage";
 import { COMPACTION_MANUAL_IN_PROGRESS_NOTICE } from "../lib/compactionNotice";
 import {
@@ -75,6 +76,8 @@ import {
 } from "../lib/attachments";
 import {
   API_PROVIDERS,
+  findModel,
+  formatModelThinkingLabel,
   type AgentEvent,
   type CompactSessionResponse,
   type Message,
@@ -419,11 +422,8 @@ export function useWorkspace() {
     : pendingSessionConfig;
 
   const modelSummary = useMemo(() => {
-    const model = models.find((m) => m.id === effectiveSessionConfig.model);
-    const name = model?.label ?? effectiveSessionConfig.model;
-    if (!effectiveSessionConfig.thinking_enabled) return `${name} · 思考关闭`;
-    if (model?.supports_effort) return `${name} · ${effectiveSessionConfig.thinking_effort}`;
-    return name;
+    const model = findModel(models, effectiveSessionConfig.model);
+    return formatModelThinkingLabel(model, effectiveSessionConfig);
   }, [models, effectiveSessionConfig]);
 
   const runStarter = useCallback(async (sessionId: string) => {
@@ -757,6 +757,9 @@ export function useWorkspace() {
       promptAddProject();
       return;
     }
+    if (blocker.kind === "unavailable_model") {
+      return;
+    }
     setHighlightApiKeyProvider(blocker.provider);
     setCredentialsOpen(true);
   }
@@ -852,7 +855,7 @@ export function useWorkspace() {
 
     const model = activeSession?.model ?? pendingSessionConfigRef.current.model;
     if (attachments.length > 0 && !modelSupportsVision(models, model)) {
-      setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
+      setVisionToast(visionModelHint(models));
       return;
     }
     const blocker = getSendBlocker({
@@ -945,7 +948,7 @@ export function useWorkspace() {
         return;
       }
       if (!modelSupportsVision(models, effectiveSessionConfig.model)) {
-        setVisionToast("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5");
+        setVisionToast(visionModelHint(models));
         return;
       }
       await ensureActiveSession();
@@ -1106,12 +1109,13 @@ export function useWorkspace() {
         clearPendingAttachmentsForModel(patch.model);
       }
       setPendingSessionConfig((prev) => {
-        const next = { ...prev, ...patch };
+        const catalog = models.length ? models : [];
+        const next = applyModelPatch(prev, patch, catalog);
         writeStoredSessionConfig(next);
         return next;
       });
     },
-    [clearPendingAttachmentsForModel],
+    [clearPendingAttachmentsForModel, models],
   );
 
   const dismissSendHint = useCallback(() => {

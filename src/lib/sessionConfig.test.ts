@@ -11,12 +11,18 @@ import type { ModelInfo } from "../types";
 
 const MODELS: ModelInfo[] = [
   {
-    id: "deepseek-v4-flash",
-    label: "DeepSeek V4 Flash",
+    id: "deepseek-flash",
+    label: "DeepSeek Flash",
     provider: "deepseek",
-    api_model: "deepseek-v4-flash",
-    supports_vision: false,
+    api_model: "deepseek-flash",
+    supports_vision: true,
     supports_effort: true,
+    selectable: true,
+    availability: "available",
+    supports_thinking_toggle: true,
+    thinking_efforts: ["low", "high", "max"],
+    default_thinking_enabled: true,
+    default_thinking_effort: "high",
     max_context: 100000,
   },
   {
@@ -26,6 +32,12 @@ const MODELS: ModelInfo[] = [
     api_model: "kimi-k2.6",
     supports_vision: true,
     supports_effort: false,
+    selectable: false,
+    availability: "available",
+    supports_thinking_toggle: true,
+    thinking_efforts: [],
+    default_thinking_enabled: true,
+    default_thinking_effort: "high",
     max_context: 100000,
   },
 ];
@@ -41,14 +53,55 @@ describe("session config persistence", () => {
 
   it("reads and writes last config", () => {
     writeStoredSessionConfig({
-      model: "kimi-k2.6",
-      thinking_enabled: false,
+      model: "kimi-k3",
+      thinking_enabled: true,
       thinking_effort: "max",
     });
     expect(readStoredSessionConfig()).toEqual({
+      model: "kimi-k3",
+      thinking_enabled: true,
+      thinking_effort: "max",
+    });
+  });
+
+  it("falls back when last draft used a removed model", () => {
+    writeStoredSessionConfig({
       model: "kimi-k2.6",
       thinking_enabled: false,
-      thinking_effort: "max",
+      thinking_effort: "high",
+    });
+    expect(readStoredSessionConfig()).toEqual(DEFAULT_SESSION_CONFIG);
+  });
+
+  it("accepts low and medium efforts", () => {
+    expect(
+      parseSessionConfig({
+        model: "gemini-3.8-flash",
+        thinking_enabled: true,
+        thinking_effort: "medium",
+      }),
+    ).toEqual({
+      model: "gemini-3.8-flash",
+      thinking_enabled: true,
+      thinking_effort: "medium",
+    });
+    expect(
+      parseSessionConfig({
+        model: "deepseek-flash",
+        thinking_enabled: true,
+        thinking_effort: "low",
+      })?.thinking_effort,
+    ).toBe("low");
+    expect(
+      parseSessionConfig({
+        model: "deepseek-v4-flash",
+        thinking_enabled: true,
+        thinking_effort: "high",
+      }),
+    ).toEqual({
+      model: "deepseek-flash",
+      thinking_enabled: true,
+      thinking_effort: "high",
     });
   });
 
@@ -75,7 +128,7 @@ describe("session config persistence", () => {
 describe("configForProviderFirstModel", () => {
   it("selects first model with thinking defaults", () => {
     expect(configForProviderFirstModel(MODELS, "deepseek")).toEqual({
-      model: "deepseek-v4-flash",
+      model: "deepseek-flash",
       thinking_enabled: true,
       thinking_effort: "high",
     });

@@ -1,4 +1,4 @@
-import { MODEL_OPTIONS, type ModelInfo } from "../types";
+import { canonicalModelId, MODEL_OPTIONS, type ModelInfo } from "../types";
 
 export interface SessionConfig {
   model: string;
@@ -14,16 +14,28 @@ export const DEFAULT_SESSION_CONFIG: SessionConfig = {
 
 export const SESSION_CONFIG_STORAGE_KEY = "doc-agent-last-session-config";
 
+const EFFORTS = new Set(["low", "medium", "high", "max"]);
+
 export function parseSessionConfig(value: unknown): SessionConfig | undefined {
   if (!value || typeof value !== "object") return undefined;
   const record = value as Record<string, unknown>;
   if (typeof record.model !== "string") return undefined;
   if (typeof record.thinking_enabled !== "boolean") return undefined;
-  if (record.thinking_effort !== "high" && record.thinking_effort !== "max") return undefined;
+  if (typeof record.thinking_effort !== "string" || !EFFORTS.has(record.thinking_effort)) {
+    return undefined;
+  }
   return {
-    model: record.model,
+    model: canonicalModelId(record.model),
     thinking_enabled: record.thinking_enabled,
     thinking_effort: record.thinking_effort,
+  };
+}
+
+export function defaultsForModel(model: ModelInfo): SessionConfig {
+  return {
+    model: model.id,
+    thinking_enabled: model.default_thinking_enabled,
+    thinking_effort: model.default_thinking_effort,
   };
 }
 
@@ -31,13 +43,31 @@ export function resolveSessionConfig(
   config: SessionConfig,
   modelIds: Iterable<string>,
 ): SessionConfig {
-  const known = new Set(modelIds);
-  if (known.has(config.model)) return config;
+  const known = new Set([...modelIds].map(canonicalModelId));
+  const model = canonicalModelId(config.model);
+  if (known.has(model)) return { ...config, model };
   return { ...DEFAULT_SESSION_CONFIG };
 }
 
+export function applyModelPatch(
+  prev: SessionConfig,
+  patch: Partial<SessionConfig>,
+  models: ModelInfo[],
+): SessionConfig {
+  if (patch.model) {
+    const nextModel = canonicalModelId(patch.model);
+    if (nextModel !== prev.model) {
+      const target = models.find((item) => item.id === nextModel);
+      if (target) {
+        return { ...defaultsForModel(target), ...patch, model: target.id };
+      }
+    }
+  }
+  return { ...prev, ...patch };
+}
+
 export function readStoredSessionConfig(modelIds?: Iterable<string>): SessionConfig {
-  const fallbackIds = modelIds ?? MODEL_OPTIONS.map((model) => model.id);
+  const fallbackIds = modelIds ?? MODEL_OPTIONS.filter((model) => model.selectable).map((model) => model.id);
   try {
     const raw = localStorage.getItem(SESSION_CONFIG_STORAGE_KEY);
     if (!raw) return DEFAULT_SESSION_CONFIG;
@@ -73,13 +103,9 @@ export function configForProviderFirstModel(
   models: ModelInfo[],
   provider: string,
 ): Partial<SessionConfig> | undefined {
-  const first = models.find((model) => model.provider === provider);
+  const first = models.find((model) => model.provider === provider && model.selectable !== false);
   if (!first) return undefined;
-  return {
-    model: first.id,
-    thinking_enabled: true,
-    thinking_effort: "high",
-  };
+  return defaultsForModel(first);
 }
 
 export function isSessionModelLocked(chatMessageCount: number): boolean {

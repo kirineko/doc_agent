@@ -18,6 +18,7 @@ mod provider_tests {
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             }],
             tools: vec![ToolDefinition {
                 name: "fs_list".into(),
@@ -51,6 +52,19 @@ mod provider_tests {
         assert!(events
             .iter()
             .any(|e| matches!(e, crate::agent::types::AgentEvent::ReasoningToken { .. })));
+    }
+
+    #[tokio::test]
+    async fn ultraspeed_does_not_send_http() {
+        use crate::agent::provider::mimo::MimoProvider;
+        let provider = MimoProvider::default();
+        let mut request = base_request("hello");
+        request.model = ModelId::MimoV25ProUltraspeed;
+        let err = provider
+            .chat_stream(request, Some("sk-test"), &mut |_| {})
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("MiMo v2.5 Pro"));
     }
 
     #[tokio::test]

@@ -7,7 +7,7 @@ function session(id: string, updatedAt: string): Session {
     id,
     project_id: "p1",
     title: "t",
-    model: "deepseek-v4-flash",
+    model: "deepseek-flash",
     thinking_enabled: true,
     thinking_effort: "high",
     created_at: updatedAt,

@@ -326,6 +326,11 @@ fn finish_turn(
 ) -> AssistantTurn {
     let prompt = estimate_messages_tokens(messages);
     let completion = estimate_text_tokens(&content) + estimate_text_tokens(reasoning_content);
+    let finish_reason = finish_reason.or(Some(if tool_calls.is_empty() {
+        "stop".into()
+    } else {
+        "tool_calls".into()
+    }));
     AssistantTurn {
         content,
         reasoning_content: reasoning_content.to_string(),
@@ -336,6 +341,7 @@ fn finish_turn(
             completion,
             total: prompt.saturating_add(completion),
         }),
+        provider_state: None,
     }
 }
 

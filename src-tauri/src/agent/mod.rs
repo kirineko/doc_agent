@@ -5,6 +5,7 @@ pub mod loop_runner;
 pub mod loop_support;
 pub mod loop_tool_batch;
 pub mod model_catalog;
+pub mod model_config;
 pub mod provider;
 pub mod run_limiter;
 pub mod session_title;

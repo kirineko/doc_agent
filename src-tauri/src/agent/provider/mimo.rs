@@ -1,6 +1,6 @@
-use super::openai_compat::{mimo_thinking_extra_body, OpenAiCompatClient};
+use super::openai_compat::{extra_body_for, OpenAiCompatClient, MIMO_CHAT_URL};
 use super::{LlmProvider, ProviderError};
-use crate::agent::types::{AgentEvent, AssistantTurn, ChatRequest};
+use crate::agent::types::{AgentEvent, AssistantTurn, ChatRequest, ModelId};
 use async_trait::async_trait;
 
 pub struct MimoProvider {
@@ -10,7 +10,7 @@ pub struct MimoProvider {
 impl Default for MimoProvider {
     fn default() -> Self {
         Self {
-            client: OpenAiCompatClient::new("https://api.xiaomimimo.com"),
+            client: OpenAiCompatClient::new(MIMO_CHAT_URL),
         }
     }
 }
@@ -23,8 +23,13 @@ impl LlmProvider for MimoProvider {
         api_key: Option<&str>,
         on_event: &mut (dyn FnMut(AgentEvent) + Send),
     ) -> Result<AssistantTurn, ProviderError> {
+        if request.model == ModelId::MimoV25ProUltraspeed {
+            return Err(ProviderError::Http(
+                "该模型已不可调用。请新建会话选择 MiMo v2.5 Pro。".into(),
+            ));
+        }
         let api_key = api_key.ok_or(ProviderError::MissingApiKey)?;
-        let extra = mimo_thinking_extra_body(&request);
+        let extra = extra_body_for(&request);
         let session_id = request.session_id.clone();
         let turn_id = request.turn_id.clone();
         self.client

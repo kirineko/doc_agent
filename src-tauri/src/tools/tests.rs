@@ -2279,7 +2279,7 @@ async function main() {
             .collect::<Vec<_>>();
         assert!(deepseek.contains(&"pdf_read".to_string()));
         assert!(deepseek.contains(&"pdf_render_pages".to_string()));
-        assert!(!deepseek.contains(&"image_read".to_string()));
+        assert!(deepseek.contains(&"image_read".to_string()));
 
         let kimi = registry
             .tools_for_model(ModelId::KimiK26, false)
@@ -2300,9 +2300,14 @@ async function main() {
             .any(|v| v.as_str() == Some("path")));
 
         let deepseek_defs = registry.tools_for_model(ModelId::DeepSeekV4Flash, false);
-        let pdf_ds = deepseek_defs.iter().find(|t| t.name == "pdf_read").unwrap();
-        assert!(pdf_ds.description.contains("PDFium"));
-        assert!(pdf_ds.description.contains("vision-capable"));
+        let flash_pdf = deepseek_defs.iter().find(|t| t.name == "pdf_read").unwrap();
+        assert!(flash_pdf.description.contains("20 pages"));
+        assert!(flash_pdf.description.contains("4 pages"));
+
+        let pro_defs = registry.tools_for_model(ModelId::DeepSeekV4Pro, false);
+        let pdf_pro = pro_defs.iter().find(|t| t.name == "pdf_read").unwrap();
+        assert!(pdf_pro.description.contains("PDFium"));
+        assert!(pdf_pro.description.contains("vision-capable"));
     }
 
     #[test]
@@ -2316,7 +2321,7 @@ async function main() {
         let out = exec_tool_model(
             &registry,
             &ctx,
-            ModelId::DeepSeekV4Flash,
+            ModelId::DeepSeekV4Pro,
             "pdf_read",
             json!({ "path": "doc.pdf" }),
         )
@@ -2354,7 +2359,7 @@ async function main() {
         let err = exec_tool_model(
             &registry,
             &ctx,
-            ModelId::DeepSeekV4Flash,
+            ModelId::DeepSeekV4Pro,
             "pdf_read",
             json!({ "path": "blank.pdf" }),
         )
@@ -2806,7 +2811,7 @@ async function main() {
         let pdf = exec_tool_model(
             &registry,
             &ctx,
-            ModelId::DeepSeekV4Flash,
+            ModelId::DeepSeekV4Pro,
             "pdf_read",
             json!({ "path": "doc.pdf" }),
         )

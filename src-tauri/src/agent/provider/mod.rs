@@ -1,9 +1,18 @@
 pub mod deepseek;
+pub mod gemini;
 pub mod kimi;
 pub mod mimo;
 pub mod mock;
 pub mod openai_compat;
+pub(crate) mod openai_request;
+pub(crate) mod openai_stream;
 pub mod sse;
+mod sse_frames;
+mod sse_tools;
+pub mod zhipu;
+
+#[cfg(test)]
+mod live_smoke;
 
 #[cfg(test)]
 mod tests;
@@ -39,10 +48,12 @@ pub fn provider_for(model: ModelId) -> Box<dyn LlmProvider> {
         ModelId::DeepSeekV4Flash | ModelId::DeepSeekV4Pro => {
             Box::new(deepseek::DeepSeekProvider::default())
         }
-        ModelId::KimiK26 => Box::new(kimi::KimiProvider::default()),
+        ModelId::KimiK26 | ModelId::KimiK3 => Box::new(kimi::KimiProvider::default()),
         ModelId::MimoV25 | ModelId::MimoV25Pro | ModelId::MimoV25ProUltraspeed => {
             Box::new(mimo::MimoProvider::default())
         }
+        ModelId::Gemini38Flash => Box::new(gemini::GeminiProvider),
+        ModelId::Glm53Flash => Box::new(zhipu::ZhipuProvider::default()),
         ModelId::Mock => Box::new(mock::MockProvider),
     }
 }

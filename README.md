@@ -20,8 +20,8 @@
 - 每个项目可创建多个**独立会话**，历史消息与工具调用记录持久化保存
 - **并行执行**：应用内最多 **3 个会话**同时 running（可跨项目）；写同一文件时自动互斥并提示占用
 - 左侧栏管理项目列表（可隐藏项目）、会话列表，以及当前模型摘要；侧栏左下打开**模型 Flyout** 切换 Provider / 模型 / 思考配置
-- 顶栏「**密钥与服务**」Drawer 集中配置 DeepSeek / Kimi / MiMo / Tavily API Key；侧栏可开关 Web 搜索（需 Tavily Key）
-- 新建会话默认沿用上次选择的模型与思考配置（无记录时为 DeepSeek V4 Flash + 思考 + high）
+- 顶栏「**密钥与服务**」Drawer 集中配置 DeepSeek / Kimi / MiMo / Google Gemini / 智谱 GLM / Tavily API Key；侧栏可开关 Web 搜索（需 Tavily Key）
+- 新建会话默认沿用上次选择的模型与思考配置（无记录时为 DeepSeek Flash + 思考 + high）
 - **项目级 AGENTS.md**：项目根可放置 `AGENTS.md` 作为 Agent 配置；`/init` 斜杠命令引导生成或更新；Chat 区显示配置加载状态
 
 ### 对话与界面
@@ -44,16 +44,20 @@
 
 ### 支持的模型
 
+新建会话可选：
+
 | 模型 | 提供商 | 视觉 | 思考模式 | 思考强度 |
 |------|--------|------|----------|----------|
-| DeepSeek V4 Flash | DeepSeek | — | 可开关 | high / max |
-| DeepSeek V4 Pro | DeepSeek | — | 可开关 | high / max |
-| Kimi K2.6 | Kimi | ✓ | 可开关 | — |
+| DeepSeek Flash | DeepSeek | ✓ | 可开关 | low / high / max |
 | MiMo v2.5 | MiMo | ✓ | 可开关 | — |
 | MiMo v2.5 Pro | MiMo | — | 可开关 | — |
-| MiMo v2.5 Pro Ultraspeed | MiMo | — | 可开关 | — |
+| Kimi K3 | Kimi | ✓ | 始终开启 | low / high / max |
+| Gemini 3.8 Flash | Google | ✓ | 始终开启 | low / medium / high |
+| GLM-5.3-Flash | 智谱 | ✓ | 始终开启 | low / high / max |
 
-在顶栏打开「**密钥与服务**」配置各 Provider API Key；在侧栏 Model Flyout 选择模型。可选配置 **Tavily** Key 并在侧栏开启 Web 搜索。
+DeepSeek Flash 的产品 id 与请求名均为 `deepseek-flash`（不绑定 V4 / V4.1 快照名）。历史会话里的 `deepseek-v4-flash` 仍按同一模型识别，不会批量改写。另可识别 DeepSeek V4 Pro、Kimi K2.6（可续聊）和 MiMo v2.5 Pro Ultraspeed（只读，发送时需新建会话改用 MiMo v2.5 Pro）。不会自动把旧会话换成新模型。
+
+在顶栏打开「**密钥与服务**」配置各 Provider API Key；在侧栏 Model Flyout 选择模型。Gemini 自动跟随系统代理或 VPN（Clash Verge 请开启系统代理或 TUN）。可选配置 **Tavily** Key 并在侧栏开启 Web 搜索。智能推荐问仍使用 DeepSeek Flash，需单独配置 DeepSeek Key。
 
 ### 文档与工具能力
 
@@ -115,8 +119,8 @@ Agent 通过工具链操作项目内文件，主要包括：
 
 1. 安装并启动 Doc Agent
 2. 在左侧点击添加项目，选择你的工作文件夹
-3. 在顶栏打开「**密钥与服务**」，配置 **DeepSeek**、**Kimi** 和 / 或 **MiMo** 的 API Key
-4. 在侧栏 Model Flyout 选择模型（需识图时选 Kimi K2.6 或 MiMo v2.5），新建会话即可开始对话
+3. 在顶栏打开「**密钥与服务**」，配置要用的 Provider API Key（DeepSeek / Kimi / MiMo / Google Gemini / 智谱 GLM）
+4. 在侧栏 Model Flyout 选择模型（需识图时选 DeepSeek Flash、Kimi K3、MiMo v2.5、Gemini 3.8 Flash 或 GLM-5.3-Flash），新建会话即可开始对话
 5. 尝试：「列出目录里的 docx 文件」「总结 @某文件.docx 的要点」「把这几张网络图片下载到 images/ 再插入 Word」
 
 **快捷键**：`Enter` 发送 · `Shift+Enter` 换行 · `@` 引用文件 · `/` 斜杠命令 · 粘贴图片（vision 模型）
@@ -163,12 +167,14 @@ npm run tauri build
   npm run release:check
   ```
 
-  打 tag 与推送：
+  先提交本次代码、版本文件（含两个 lockfile）和 CHANGELOG，确认工作区干净，再打 tag 与推送。tag 指向提交，不会包含未提交的更改；以下命令应在已完成发版提交的 `main` 上执行：
 
   ```bash
   VERSION=$(npm run -s calver:today)
+  test -z "$(git status --porcelain)" || exit 1
+  test "$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')" = "$VERSION" || exit 1
   git tag "$VERSION"
-  git push origin "$VERSION"
+  git push --atomic origin main "$VERSION"
   ```
 
 - tag **不要**加 `v` 前缀；细则见 `openspec/specs/project-versioning/spec.md`

@@ -15,6 +15,8 @@ export function SendHintBanner({ blocker, onDismiss }: SendHintBannerProps) {
         ? PARALLEL_LIMIT_MESSAGE
         : blocker.kind === "clarify_pending"
           ? "请先完成当前澄清问题，再发送新消息"
+          : blocker.kind === "unavailable_model"
+            ? blocker.message
           : `请先配置 ${providerLabel(blocker.provider)} API Key`;
 
   return (

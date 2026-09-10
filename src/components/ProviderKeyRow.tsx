@@ -95,6 +95,11 @@ export function ProviderKeyRow({
           </div>
         )}
         {keyError && <div className="mt-1 text-[11px] text-rose-500">{keyError}</div>}
+        {provider === "google" && (
+          <p className="mt-1 text-[10px] leading-4 text-fg-muted">
+            自动跟随系统代理或 VPN。使用 Clash Verge 时，请开启系统代理或 TUN。
+          </p>
+        )}
       </div>
     );
   }
@@ -119,6 +124,11 @@ export function ProviderKeyRow({
           onSave={() => void saveApiKey()}
         />
         {keyError && <div className="text-[11px] text-rose-500">{keyError}</div>}
+        {provider === "google" && (
+          <p className="mt-1 text-[10px] leading-4 text-fg-muted">
+            自动跟随系统代理或 VPN。使用 Clash Verge 时，请开启系统代理或 TUN。
+          </p>
+        )}
       </div>
     </div>
   );

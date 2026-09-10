@@ -1,10 +1,10 @@
 use crate::agent::loop_support::build_working_messages;
+use crate::agent::model_config::{
+    auxiliary_thinking, compaction_output_budget, parse_model_id, require_callable_model,
+};
 use crate::agent::provider::provider_for;
 use crate::agent::turn_control::{CancelSignal, TURN_CANCELLED};
-use crate::agent::types::{
-    AgentEvent, ChatMessage, ChatRequest, CompactionTrigger, ModelId, ThinkingConfig,
-    ThinkingEffort,
-};
+use crate::agent::types::{AgentEvent, ChatMessage, ChatRequest, CompactionTrigger, ModelId};
 use crate::core::sandbox::Sandbox;
 use crate::core::store::{Message, ToolCallRecord};
 use crate::state::AppState;
@@ -130,6 +130,7 @@ pub fn prepare_compaction_split<'a>(
     }
 
     preserve_start = expand_preserve_start_for_tool_group(messages, tool_calls, preserve_start);
+    preserve_start = expand_preserve_start_for_native_chain(messages, preserve_start);
     let to_compact = &messages[..preserve_start];
     let to_preserve = &messages[preserve_start..];
     if to_compact.is_empty() {
@@ -205,6 +206,33 @@ fn expand_preserve_start_for_tool_group(
                 }
             }
         }
+    }
+    preserve_start
+}
+
+fn is_real_user(message: &Message) -> bool {
+    message.role == "user" && !is_compaction_summary(message)
+}
+
+fn expand_preserve_start_for_native_chain(
+    messages: &[Message],
+    mut preserve_start: usize,
+) -> usize {
+    let first_state = messages
+        .iter()
+        .enumerate()
+        .skip(preserve_start)
+        .find(|(_, message)| message.role == "assistant" && message.provider_state_json.is_some())
+        .map(|(index, _)| index);
+    let Some(state_idx) = first_state else {
+        return preserve_start;
+    };
+    let mut user_idx = state_idx;
+    while user_idx > 0 && !is_real_user(&messages[user_idx]) {
+        user_idx -= 1;
+    }
+    if is_real_user(&messages[user_idx]) {
+        preserve_start = preserve_start.min(user_idx);
     }
     preserve_start
 }
@@ -506,7 +534,7 @@ pub async fn force_compact_session<R: Runtime>(
             .get_session(session_id)
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "session not found".to_string())?;
-        let model = crate::agent::provider::openai_compat::model_from_str(&session.model);
+        let model = require_callable_model(parse_model_id(&session.model)?)?;
         let web_enabled = crate::core::web_search::is_web_search_active(&state.secrets, &store)?;
         let history = store
             .list_active_messages(session_id)
@@ -638,7 +666,8 @@ fn fallback_preserve_start(messages: &[Message], tool_calls: &[ToolCallRecord]) 
     if let Some(summary_index) = messages.iter().rposition(is_compaction_summary) {
         preserve_start = preserve_start.min(summary_index);
     }
-    expand_preserve_start_for_tool_group(messages, tool_calls, preserve_start)
+    let preserve_start = expand_preserve_start_for_tool_group(messages, tool_calls, preserve_start);
+    expand_preserve_start_for_native_chain(messages, preserve_start)
 }
 
 async fn run_compaction_llm(
@@ -665,6 +694,7 @@ async fn run_compaction_llm(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
             ChatMessage {
                 role: "user".into(),
@@ -673,15 +703,13 @@ async fn run_compaction_llm(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
         ],
         tools: vec![],
-        thinking: ThinkingConfig {
-            enabled: false,
-            effort: ThinkingEffort::High,
-        },
+        thinking: auxiliary_thinking(model),
         response_format: None,
-        max_tokens: Some(8192),
+        max_tokens: Some(compaction_output_budget(model)?),
         cancel: Some(cancel.clone()),
     };
 
@@ -692,6 +720,9 @@ async fn run_compaction_llm(
             crate::agent::provider::ProviderError::Cancelled => TURN_CANCELLED.into(),
             other => other.to_string(),
         })?;
+    if !turn.is_complete_text() {
+        return Err("compaction did not produce a complete text response".into());
+    }
     let summary = turn.content.trim();
     if summary.is_empty() {
         return Err("compaction produced empty summary".into());

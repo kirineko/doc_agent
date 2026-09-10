@@ -4,7 +4,8 @@ import { modelSupportsVision, providerForModel } from "./models";
 describe("models helpers", () => {
   it("falls back to MODEL_OPTIONS for vision before catalog loads", () => {
     expect(modelSupportsVision([], "kimi-k2.6")).toBe(true);
-    expect(modelSupportsVision([], "deepseek-v4-flash")).toBe(false);
+    expect(modelSupportsVision([], "deepseek-flash")).toBe(true);
+    expect(modelSupportsVision([], "deepseek-v4-flash")).toBe(true);
   });
 
   it("prefers catalog entry when available", () => {
@@ -17,6 +18,12 @@ describe("models helpers", () => {
           api_model: "kimi-k2.6",
           supports_vision: false,
           supports_effort: false,
+          selectable: false,
+          availability: "available",
+          supports_thinking_toggle: true,
+          thinking_efforts: [],
+          default_thinking_enabled: true,
+          default_thinking_effort: "high",
           max_context: 100000,
         }],
         "kimi-k2.6",

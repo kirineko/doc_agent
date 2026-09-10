@@ -13,6 +13,8 @@ pub struct ThinkingConfig {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ThinkingEffort {
+    Low,
+    Medium,
     High,
     Max,
 }
@@ -20,8 +22,24 @@ pub enum ThinkingEffort {
 impl ThinkingEffort {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
             Self::High => "high",
             Self::Max => "max",
+        }
+    }
+}
+
+impl std::str::FromStr for ThinkingEffort {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "low" => Ok(Self::Low),
+            "medium" => Ok(Self::Medium),
+            "high" => Ok(Self::High),
+            "max" => Ok(Self::Max),
+            other => Err(format!("unknown thinking effort: {other}")),
         }
     }
 }
@@ -32,9 +50,12 @@ pub enum ModelId {
     DeepSeekV4Flash,
     DeepSeekV4Pro,
     KimiK26,
+    KimiK3,
     MimoV25,
     MimoV25Pro,
     MimoV25ProUltraspeed,
+    Gemini38Flash,
+    Glm53Flash,
     Mock,
 }
 
@@ -65,30 +86,45 @@ impl ModelId {
 
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::DeepSeekV4Flash => "deepseek-v4-flash",
+            Self::DeepSeekV4Flash => "deepseek-flash",
             Self::DeepSeekV4Pro => "deepseek-v4-pro",
             Self::KimiK26 => "kimi-k2.6",
+            Self::KimiK3 => "kimi-k3",
             Self::MimoV25 => "mimo-v2.5",
             Self::MimoV25Pro => "mimo-v2.5-pro",
             Self::MimoV25ProUltraspeed => "mimo-v2.5-pro-ultraspeed",
+            Self::Gemini38Flash => "gemini-3.8-flash",
+            Self::Glm53Flash => "glm-5.3-flash",
             Self::Mock => "mock",
         }
     }
 
-    fn info(self) -> &'static crate::agent::model_catalog::ModelInfo {
-        if self == Self::Mock {
-            static MOCK: crate::agent::model_catalog::ModelInfo =
-                crate::agent::model_catalog::ModelInfo {
-                    id: "mock",
-                    label: "Mock",
-                    provider: ProviderKind::Mock,
-                    api_model: "mock",
-                    supports_vision: false,
-                    supports_effort: false,
-                    max_context: 100_000,
-                };
-            return &MOCK;
+    pub fn selectable(self) -> bool {
+        self.info().selectable
+    }
+
+    pub fn is_callable(self) -> bool {
+        self == Self::Mock
+            || self.info().availability == crate::agent::model_catalog::ModelAvailability::Available
+    }
+
+    pub fn supports_thinking_toggle(self) -> bool {
+        self.info().supports_thinking_toggle
+    }
+
+    pub fn max_output_tokens(self) -> Option<u32> {
+        self.info().max_output_tokens
+    }
+
+    pub fn default_thinking(self) -> ThinkingConfig {
+        let info = self.info();
+        ThinkingConfig {
+            enabled: info.default_thinking_enabled,
+            effort: info.default_thinking_effort,
         }
+    }
+
+    pub(crate) fn info(self) -> &'static crate::agent::model_catalog::ModelInfo {
         ModelCatalog::find(self.as_str()).expect("catalog entry for model id")
     }
 }
@@ -105,12 +141,15 @@ impl std::str::FromStr for ModelId {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "deepseek-v4-flash" => Ok(Self::DeepSeekV4Flash),
+            "deepseek-v4-flash" | "deepseek-flash" => Ok(Self::DeepSeekV4Flash),
             "deepseek-v4-pro" => Ok(Self::DeepSeekV4Pro),
             "kimi-k2.6" => Ok(Self::KimiK26),
+            "kimi-k3" => Ok(Self::KimiK3),
             "mimo-v2.5" => Ok(Self::MimoV25),
             "mimo-v2.5-pro" => Ok(Self::MimoV25Pro),
             "mimo-v2.5-pro-ultraspeed" => Ok(Self::MimoV25ProUltraspeed),
+            "gemini-3.8-flash" => Ok(Self::Gemini38Flash),
+            "glm-5.3-flash" => Ok(Self::Glm53Flash),
             "mock" => Ok(Self::Mock),
             other => Err(format!("unknown model: {other}")),
         }
@@ -123,7 +162,7 @@ pub struct MessageAttachment {
     pub mime: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -136,6 +175,8 @@ pub struct ChatMessage {
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip)]
+    pub provider_state: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,13 +364,23 @@ pub struct ChatRequest {
     pub cancel: Option<CancelSignal>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AssistantTurn {
     pub content: String,
     pub reasoning_content: String,
     pub tool_calls: Vec<ToolCall>,
     pub finish_reason: Option<String>,
     pub usage: Option<TokenUsage>,
+    pub provider_state: Option<String>,
+}
+
+impl AssistantTurn {
+    /// Auxiliary calls must never persist a truncated answer as a title or summary.
+    pub fn is_complete_text(&self) -> bool {
+        self.finish_reason.as_deref() == Some("stop")
+            && self.tool_calls.is_empty()
+            && !self.content.trim().is_empty()
+    }
 }
 
 /// API-only placeholder when the user sends images without text.
@@ -389,6 +440,7 @@ impl Serialize for ChatMessage {
 #[cfg(test)]
 mod tests {
     use super::ChatMessage;
+    use super::ModelId;
     use super::IMAGE_ONLY_USER_API_TEXT;
 
     fn image_user_message(content: Option<&str>) -> ChatMessage {
@@ -399,7 +451,43 @@ mod tests {
             reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
+            provider_state: None,
         }
+    }
+
+    #[test]
+    fn deepseek_flash_alias_keeps_session_id() {
+        assert_eq!(
+            "deepseek-v4-flash".parse::<ModelId>().unwrap(),
+            ModelId::DeepSeekV4Flash
+        );
+        assert_eq!(
+            "deepseek-flash".parse::<ModelId>().unwrap(),
+            ModelId::DeepSeekV4Flash
+        );
+        assert_eq!(ModelId::DeepSeekV4Flash.as_str(), "deepseek-flash");
+        assert_eq!(ModelId::DeepSeekV4Flash.api_model(), "deepseek-flash");
+        assert!(ModelId::DeepSeekV4Flash.supports_vision());
+    }
+
+    #[test]
+    fn openai_serialize_omits_provider_state() {
+        let msg = ChatMessage {
+            role: "assistant".into(),
+            content: Some("hello".into()),
+            image_urls: vec![],
+            reasoning_content: Some("think".into()),
+            tool_calls: None,
+            tool_call_id: None,
+            provider_state: Some(r#"{"protocol":"google_openai","signature":"secret"}"#.into()),
+        };
+        let value = serde_json::to_value(&msg).expect("serialize");
+        let encoded = value.to_string();
+        assert!(value.get("provider_state").is_none());
+        assert!(!encoded.contains("google_openai"));
+        assert!(!encoded.contains("secret"));
+        assert_eq!(value["content"], "hello");
+        assert_eq!(value["reasoning_content"], "think");
     }
 
     #[test]
@@ -418,5 +506,37 @@ mod tests {
         let value = serde_json::to_value(&msg).expect("serialize");
         let parts = value["content"].as_array().expect("content array");
         assert_eq!(parts[0]["text"], "看图");
+    }
+}
+
+impl std::fmt::Debug for ChatMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChatMessage")
+            .field("role", &self.role)
+            .field("content", &self.content)
+            .field("reasoning_content", &self.reasoning_content)
+            .field("tool_calls", &self.tool_calls)
+            .field("tool_call_id", &self.tool_call_id)
+            .field(
+                "provider_state",
+                &self.provider_state.as_ref().map(|_| "<redacted>"),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for AssistantTurn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssistantTurn")
+            .field("content", &self.content)
+            .field("reasoning_content", &self.reasoning_content)
+            .field("tool_calls", &self.tool_calls)
+            .field("finish_reason", &self.finish_reason)
+            .field("usage", &self.usage)
+            .field(
+                "provider_state",
+                &self.provider_state.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
     }
 }

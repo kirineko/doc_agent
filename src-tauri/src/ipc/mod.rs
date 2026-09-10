@@ -1,7 +1,8 @@
 use crate::agent::compaction::{force_compact_session, CompactSessionResponse};
 use crate::agent::model_catalog::ModelCatalog;
+use crate::agent::model_config::{resolve_create_config, resolve_update_config};
 use crate::agent::provider::openai_compat::{
-    encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path, model_from_str,
+    encode_attachment_data_url, is_allowed_image_mime, is_upload_attachment_path,
     validate_attachments, MAX_ATTACHMENT_BYTES,
 };
 use crate::agent::suggest;
@@ -196,6 +197,11 @@ pub fn create_session(
     state: State<AppState>,
     req: CreateSessionRequest,
 ) -> Result<Session, String> {
+    let resolved = resolve_create_config(
+        req.model.as_deref(),
+        req.thinking_enabled,
+        req.thinking_effort.as_deref(),
+    )?;
     state
         .store
         .lock()
@@ -203,9 +209,9 @@ pub fn create_session(
         .create_session(
             &req.project_id,
             &req.title,
-            req.model.as_deref().unwrap_or("deepseek-v4-flash"),
-            req.thinking_enabled.unwrap_or(true),
-            req.thinking_effort.as_deref().unwrap_or("high"),
+            resolved.model.as_str(),
+            resolved.thinking_enabled,
+            resolved.thinking_effort.as_str(),
         )
         .map_err(|e| e.to_string())
 }
@@ -215,16 +221,38 @@ pub fn update_session(
     state: State<AppState>,
     req: UpdateSessionRequest,
 ) -> Result<Session, String> {
-    state
-        .store
-        .lock()
+    let store = state.store.lock().map_err(|e| e.to_string())?;
+    let current = store
+        .get_session(&req.session_id)
         .map_err(|e| e.to_string())?
-        .update_session(
-            &req.session_id,
-            req.title.as_deref(),
+        .ok_or_else(|| "session not found".to_string())?;
+    let has_chat = store
+        .session_has_chat_messages(&req.session_id)
+        .map_err(|e| e.to_string())?;
+    let (model, thinking_enabled, thinking_effort) = if has_chat {
+        (req.model, req.thinking_enabled, req.thinking_effort)
+    } else {
+        let resolved = resolve_update_config(
+            &current.model,
+            current.thinking_enabled,
+            &current.thinking_effort,
             req.model.as_deref(),
             req.thinking_enabled,
             req.thinking_effort.as_deref(),
+        )?;
+        (
+            Some(resolved.model.as_str().to_string()),
+            Some(resolved.thinking_enabled),
+            Some(resolved.thinking_effort.as_str().to_string()),
+        )
+    };
+    store
+        .update_session(
+            &req.session_id,
+            req.title.as_deref(),
+            model.as_deref(),
+            thinking_enabled,
+            thinking_effort.as_deref(),
         )
         .map_err(|e| e.to_string())
 }
@@ -327,7 +355,9 @@ pub fn get_session_context_usage(
         .get_session_token_count(&session_id)
         .map_err(|e| e.to_string())?
         .unwrap_or(0);
-    let max = model_from_str(&session.model).max_context_size();
+    let max = ModelCatalog::find(&session.model)
+        .map(|m| m.max_context)
+        .unwrap_or(0);
     let ratio = if max == 0 {
         0.0
     } else {
@@ -598,11 +628,71 @@ mod tests {
     #[test]
     fn list_models_exposes_public_catalog() {
         let models = list_models();
-        assert!(models.len() >= 6);
-        assert!(models.iter().any(|m| m.id == "deepseek-v4-flash"));
+        let ids: Vec<_> = models.iter().map(|m| m.id).collect();
+        assert_eq!(
+            ids,
+            vec![
+                "deepseek-flash",
+                "mimo-v2.5",
+                "mimo-v2.5-pro",
+                "kimi-k3",
+                "gemini-3.8-flash",
+                "glm-5.3-flash",
+                "deepseek-v4-pro",
+                "kimi-k2.6",
+                "mimo-v2.5-pro-ultraspeed",
+            ]
+        );
+        assert_eq!(models.iter().filter(|m| m.selectable).count(), 6);
+        let flash = models.iter().find(|m| m.id == "deepseek-flash").unwrap();
+        assert_eq!(flash.label, "DeepSeek Flash");
+        assert_eq!(flash.api_model, "deepseek-flash");
+        assert!(flash.supports_vision);
         assert!(models
             .iter()
-            .any(|m| m.id == "kimi-k2.6" && m.supports_vision));
+            .any(|m| m.id == "kimi-k2.6" && m.supports_vision && !m.selectable));
+        assert!(!models.iter().any(|m| m.id == "mock"));
+        let gemini = models.iter().find(|m| m.id == "gemini-3.8-flash").unwrap();
+        assert_eq!(
+            gemini.provider,
+            crate::agent::model_catalog::ProviderKind::Google
+        );
+        assert_eq!(gemini.max_context, 1_048_576);
+    }
+
+    #[test]
+    fn empty_session_keeps_historical_k26_and_rejects_retired_create() {
+        use crate::agent::model_config::{resolve_create_config, resolve_update_config};
+        assert!(resolve_create_config(Some("kimi-k2.6"), Some(false), Some("high")).is_err());
+        let kept = resolve_update_config("kimi-k2.6", false, "high", None, None, None).unwrap();
+        assert_eq!(kept.model.as_str(), "kimi-k2.6");
+        assert!(!kept.thinking_enabled);
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().to_path_buf()).unwrap();
+        let project_id = {
+            let store = state.store.lock().unwrap();
+            store
+                .create_project("demo", dir.path().join("root").to_str().unwrap())
+                .unwrap()
+                .id
+        };
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            store
+                .create_session(&project_id, "s1", "kimi-k2.6", false, "high")
+                .unwrap()
+                .id
+        };
+        {
+            let store = state.store.lock().unwrap();
+            store
+                .add_message(&session_id, "user", Some("hi"), None, None, None)
+                .unwrap();
+            let err = store
+                .update_session(&session_id, None, Some("kimi-k3"), None, None)
+                .unwrap_err();
+            assert!(err.to_string().contains("locked"));
+        }
     }
 
     #[test]

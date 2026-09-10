@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: dark;
   --bg-app: #0b1020;
   --bg-panel: #0f172a;
   --bg-elevated: #111827;
@@ -48,6 +49,7 @@
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg-app: #fbfbfa;
   --bg-panel: #ffffff;
   --bg-elevated: #ffffff;
@@ -102,6 +104,7 @@
   --color-input: var(--bg-input);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
+  --color-border-hover: var(--border-hover);
   --color-fg: var(--text-primary);
   --color-fg-secondary: var(--text-secondary);
   --color-fg-muted: var(--text-muted);
@@ -270,6 +273,13 @@ body {
 .chip-surface:hover {
   border-color: var(--border-session-active);
   color: var(--text-link);
+}
+
+.chip-surface.chip-surface-selected,
+.chip-surface.chip-surface-selected:hover {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  color: var(--text-primary);
 }
 
 .btn-primary {

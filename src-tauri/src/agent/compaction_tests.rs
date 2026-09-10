@@ -26,6 +26,29 @@ fn kimi_reserved_triggers_first() {
 }
 
 #[test]
+fn provider_state_does_not_inflate_pending_estimate() {
+    use crate::agent::compaction::estimate_chat_message_tokens;
+    use crate::agent::types::ChatMessage;
+    let message = ChatMessage {
+        role: "assistant".into(),
+        content: Some("hello".into()),
+        image_urls: vec![],
+        reasoning_content: Some("think".into()),
+        tool_calls: None,
+        tool_call_id: None,
+        provider_state: Some("sig-opaque-secret".repeat(200)),
+    };
+    let without_state = ChatMessage {
+        provider_state: None,
+        ..message.clone()
+    };
+    assert_eq!(
+        estimate_chat_message_tokens(&message),
+        estimate_chat_message_tokens(&without_state)
+    );
+}
+
+#[test]
 fn empty_context_never_triggers() {
     assert!(!should_auto_compact(
         0,
@@ -47,6 +70,98 @@ fn prepare_split_keeps_recent_messages() {
     assert_eq!(prepared.to_compact.len(), 2);
     assert_eq!(prepared.to_preserve.len(), 2);
     assert_eq!(prepared.to_preserve[0].id, "m3");
+}
+
+#[test]
+fn prepare_split_keeps_google_active_chain_from_user() {
+    let mut messages = vec![
+        msg("m1", "user", "old"),
+        msg("m2", "assistant", "old reply"),
+        msg("m3", "user", "current"),
+        msg("m4", "assistant", "call1"),
+        msg("m5", "tool", "r1"),
+        msg("m6", "assistant", "call2"),
+        msg("m7", "tool", "r2"),
+    ];
+    messages[3].provider_state_json = Some(r#"{"protocol":"google_openai","version":1,"model":"gemini-3.8-flash","message_extra_content":{},"tool_extra_content":[{"google":{"thought_signature":"sig-keep"}}]}"#.into());
+    messages[5].provider_state_json = Some(r#"{"protocol":"google_openai","version":1,"model":"gemini-3.8-flash","message_extra_content":{},"tool_extra_content":[{"google":{"thought_signature":"sig-keep-2"}}]}"#.into());
+    let tool_calls = vec![
+        ToolCallRecord {
+            id: "c1".into(),
+            message_id: "m4".into(),
+            name: "lookup_probe".into(),
+            args_json: "{}".into(),
+            result_json: Some("A17".into()),
+            status: "done".into(),
+            duration_ms: 1,
+            created_at: "now".into(),
+        },
+        ToolCallRecord {
+            id: "c2".into(),
+            message_id: "m6".into(),
+            name: "lookup_probe".into(),
+            args_json: "{}".into(),
+            result_json: Some("B29".into()),
+            status: "done".into(),
+            duration_ms: 1,
+            created_at: "now".into(),
+        },
+    ];
+    messages[4].tool_call_id = Some("c1".into());
+    messages[6].tool_call_id = Some("c2".into());
+    let prepared =
+        prepare_compaction_split(&messages, &tool_calls, MAX_PRESERVED_MESSAGES).unwrap();
+    let preserved: Vec<_> = prepared.to_preserve.iter().map(|m| m.id.as_str()).collect();
+    assert!(preserved.contains(&"m3"));
+    assert!(preserved.contains(&"m4"));
+    assert!(preserved.contains(&"m6"));
+    assert!(prepared
+        .to_compact
+        .iter()
+        .all(|m| m.id == "m1" || m.id == "m2"));
+    let compact_input = super::build_compact_input(prepared.to_compact, &tool_calls);
+    assert!(!compact_input.contains("sig-keep"));
+    assert!(!compact_input.contains("google_openai"));
+    assert!(!compact_input.contains("provider_state"));
+    // The complete preserved chain must remain encodable, not only keep its raw bytes.
+    let mut req = crate::agent::types::ChatRequest {
+        session_id: "s".into(),
+        turn_id: "t".into(),
+        model: crate::agent::types::ModelId::Gemini38Flash,
+        messages: crate::agent::provider::openai_compat::messages_from_store_text(
+            prepared.to_preserve,
+            &tool_calls,
+        ),
+        tools: vec![],
+        thinking: crate::agent::model_config::auxiliary_thinking(
+            crate::agent::types::ModelId::Gemini38Flash,
+        ),
+        response_format: None,
+        max_tokens: None,
+        cancel: None,
+    };
+    req.messages.insert(
+        0,
+        crate::agent::types::ChatMessage {
+            role: "user".into(),
+            content: Some("summary of older turns".into()),
+            image_urls: vec![],
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            provider_state: None,
+        },
+    );
+    let body = crate::agent::provider::openai_request::build_body(
+        &req,
+        &crate::agent::provider::openai_compat::extra_body_for(&req),
+        true,
+    )
+    .unwrap();
+    assert_eq!(
+        body["messages"][2]["tool_calls"][0]["extra_content"]["google"]["thought_signature"],
+        "sig-keep"
+    );
 }
 
 #[test]
@@ -172,6 +287,7 @@ fn msg(id: &str, role: &str, content: &str) -> Message {
         created_at: "now".into(),
         archived: false,
         attachments_json: None,
+        provider_state_json: None,
     }
 }
 
@@ -355,6 +471,53 @@ fn force_compact_rejects_when_run_limiter_full() {
             .await
             .unwrap_err();
         assert_eq!(err, crate::agent::run_limiter::GLOBAL_PARALLEL_FULL_MSG);
+    });
+}
+
+#[test]
+fn force_compact_rejects_retired_and_unknown_models() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempfile::tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let (ultra_id, unknown_id) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", dir.path().join("project").to_str().unwrap())
+                .unwrap();
+            std::fs::create_dir_all(&project.root_path).unwrap();
+            let ultra = store
+                .create_session(
+                    &project.id,
+                    "ultra",
+                    "mimo-v2.5-pro-ultraspeed",
+                    true,
+                    "high",
+                )
+                .unwrap();
+            store
+                .add_message(&ultra.id, "user", Some("hi"), None, None, None)
+                .unwrap();
+            let unknown = store
+                .create_session(&project.id, "unknown", "missing-model", true, "high")
+                .unwrap();
+            store
+                .add_message(&unknown.id, "user", Some("hi"), None, None, None)
+                .unwrap();
+            (ultra.id, unknown.id)
+        };
+        let ultra_err = super::force_compact_session(&app.handle(), &state, &ultra_id)
+            .await
+            .unwrap_err();
+        assert!(ultra_err.contains("MiMo v2.5 Pro"), "{ultra_err}");
+        let unknown_err = super::force_compact_session(&app.handle(), &state, &unknown_id)
+            .await
+            .unwrap_err();
+        assert!(unknown_err.contains("unknown model"), "{unknown_err}");
     });
 }
 

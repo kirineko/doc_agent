@@ -53,11 +53,16 @@ fn assistant_step_done_event_serializes() {
             created_at: "2026-01-01".into(),
             archived: false,
             attachments_json: None,
+            provider_state_json: Some(
+                r#"{"protocol":"google_openai","signature":"sig-opaque-secret"}"#.into(),
+            ),
         },
     };
     let value = serde_json::to_value(&event).unwrap();
     assert_eq!(value["kind"], "assistant_step_done");
     assert_eq!(value["message"]["id"], "m1");
+    assert!(value["message"].get("provider_state_json").is_none());
+    assert!(!value.to_string().contains("sig-opaque-secret"));
 }
 
 #[test]
@@ -1098,5 +1103,77 @@ fn mock_turn_compacts_near_context_limit_before_llm() {
             active.len() < all.len(),
             "active context should be smaller than full history"
         );
+    });
+}
+
+#[test]
+fn retired_and_unknown_models_fail_before_send() {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    rt.block_on(async {
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let app = tauri::test::mock_app();
+        let handle = app.handle().clone();
+        let project_root = dir.path().join("project");
+        std::fs::create_dir_all(&project_root).unwrap();
+        let (ultra_id, unknown_id, k26_id) = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", project_root.to_str().unwrap())
+                .unwrap();
+            let ultra = store
+                .create_session(
+                    &project.id,
+                    "ultra",
+                    "mimo-v2.5-pro-ultraspeed",
+                    true,
+                    "high",
+                )
+                .unwrap();
+            let unknown = store
+                .create_session(&project.id, "unknown", "totally-unknown", true, "high")
+                .unwrap();
+            let k26 = store
+                .create_session(&project.id, "k26", "kimi-k2.6", false, "high")
+                .unwrap();
+            (ultra.id, unknown.id, k26.id)
+        };
+
+        let ultra_err = run_turn(
+            handle.clone(),
+            state.clone(),
+            ultra_id.clone(),
+            "继续".into(),
+            vec![],
+        )
+        .await
+        .unwrap_err();
+        assert!(ultra_err.contains("MiMo v2.5 Pro"), "{ultra_err}");
+
+        let unknown_err = run_turn(
+            handle.clone(),
+            state.clone(),
+            unknown_id.clone(),
+            "继续".into(),
+            vec![],
+        )
+        .await
+        .unwrap_err();
+        assert!(unknown_err.contains("unknown model"), "{unknown_err}");
+
+        let k26_err = run_turn(handle, state.clone(), k26_id, "继续".into(), vec![])
+            .await
+            .unwrap_err();
+        assert!(
+            !k26_err.contains("unknown model") && !k26_err.contains("已不可调用"),
+            "historical K2.6 must stay callable, got {k26_err}"
+        );
+
+        let store = state.store.lock().unwrap();
+        assert!(store.list_messages(&ultra_id).unwrap().is_empty());
+        assert!(store.list_messages(&unknown_id).unwrap().is_empty());
     });
 }

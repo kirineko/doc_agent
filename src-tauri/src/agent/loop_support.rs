@@ -80,6 +80,7 @@ pub(crate) fn build_working_messages(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
         );
     }
@@ -111,6 +112,7 @@ pub(crate) fn build_working_messages(
             reasoning_content: None,
             tool_calls: None,
             tool_call_id: None,
+            provider_state: None,
         });
     }
     Ok(messages)
@@ -144,16 +146,18 @@ pub(super) fn persist_assistant(
     content: Option<&str>,
     reasoning_content: Option<&str>,
     tool_calls: Option<&[ToolCall]>,
+    provider_state: Option<&str>,
 ) -> Result<Message, String> {
     let store = state.store.lock().map_err(|e| e.to_string())?;
     let msg = store
-        .add_message(
+        .add_message_with_provider_state(
             session_id,
             "assistant",
             content,
             reasoning_content,
             None,
             None,
+            provider_state,
         )
         .map_err(|e| e.to_string())?;
     if let Some(calls) = tool_calls {
@@ -242,6 +246,7 @@ pub(super) fn persist_tool_result<R: Runtime>(
         reasoning_content: None,
         tool_calls: None,
         tool_call_id: Some(call.id.clone()),
+        provider_state: None,
     });
     Ok(())
 }
@@ -388,6 +393,57 @@ mod tests {
             build_working_messages(&[], &[], Some("/init"), &[], false, None, true).unwrap();
         let system = messages[0].content.as_ref().unwrap();
         assert!(system.contains("skill_read profile"));
+    }
+
+    #[test]
+    fn persist_assistant_stores_state_without_leaking_to_ipc_or_debug() {
+        use crate::state::AppState;
+
+        let dir = tempdir().unwrap();
+        let state = AppState::new(dir.path().join("data")).unwrap();
+        let session_id = {
+            let store = state.store.lock().unwrap();
+            let project = store
+                .create_project("demo", dir.path().join("project").to_str().unwrap())
+                .unwrap();
+            std::fs::create_dir_all(&project.root_path).unwrap();
+            store
+                .create_session(&project.id, "s1", "gemini-3.8-flash", true, "medium")
+                .unwrap()
+                .id
+        };
+        let native = r#"{"protocol":"google_openai","version":1,"model":"gemini-3.8-flash","message_extra_content":{"google":{"thought_signature":"sig-opaque-secret"}},"tool_extra_content":[]}"#;
+        let msg = persist_assistant(
+            &state,
+            &session_id,
+            Some("hello"),
+            Some("summary"),
+            None,
+            Some(native),
+        )
+        .unwrap();
+        assert!(msg
+            .provider_state_json
+            .as_deref()
+            .unwrap()
+            .contains("sig-opaque-secret"));
+        let encoded = serde_json::to_value(&msg).unwrap();
+        let encoded_text = encoded.to_string();
+        assert!(encoded.get("provider_state_json").is_none());
+        assert!(!encoded_text.contains("sig-opaque-secret"));
+        assert!(!encoded_text.contains("google_openai"));
+        assert_eq!(encoded["content"], "hello");
+        let debug = format!("{msg:?}");
+        assert!(!debug.contains("sig-opaque-secret"));
+        assert!(debug.contains("<redacted>"));
+
+        let listed = {
+            let store = state.store.lock().unwrap();
+            store.list_messages(&session_id).unwrap()
+        };
+        let listed_json = serde_json::to_value(&listed).unwrap();
+        assert!(!listed_json.to_string().contains("sig-opaque-secret"));
+        assert!(listed[0].provider_state_json.is_some());
     }
 
     #[test]

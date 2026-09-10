@@ -13,17 +13,26 @@ use std::sync::Arc;
 pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
 pub const MAX_ATTACHMENT_BYTES: u64 = 50 * 1024 * 1024;
 
+pub const DEEPSEEK_CHAT_URL: &str = "https://api.deepseek.com/v1/chat/completions";
+pub const KIMI_CHAT_URL: &str = "https://api.moonshot.cn/v1/chat/completions";
+pub const MIMO_CHAT_URL: &str = "https://api.xiaomimimo.com/v1/chat/completions";
+pub const ZHIPU_CHAT_URL: &str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+
 pub struct OpenAiCompatClient {
-    pub base_url: String,
+    pub chat_url: String,
     pub client: Client,
 }
 
 impl OpenAiCompatClient {
-    pub fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(chat_url: impl Into<String>) -> Self {
         Self {
-            base_url: base_url.into(),
+            chat_url: chat_url.into(),
             client: Client::new(),
         }
+    }
+
+    pub fn chat_url(&self) -> &str {
+        &self.chat_url
     }
 
     pub async fn stream_chat(
@@ -35,90 +44,41 @@ impl OpenAiCompatClient {
         turn_id: &str,
         on_event: &mut (dyn FnMut(AgentEvent) + Send),
     ) -> Result<AssistantTurn, ProviderError> {
-        let mut body = json!({
-            "model": request.model.api_model(),
-            "messages": request.messages,
-            "tools": request.tools.iter().map(|t| {
-                let mut function = json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                });
-                if t.strict == Some(true) {
-                    if let Some(obj) = function.as_object_mut() {
-                        obj.insert("strict".into(), json!(true));
-                    }
-                }
-                json!({
-                    "type": "function",
-                    "function": function,
-                })
-            }).collect::<Vec<_>>(),
-            "stream": true,
-            "stream_options": { "include_usage": true },
-        });
-
-        if let Some(obj) = body.as_object_mut() {
-            if let Some(response_format) = request.response_format {
-                obj.insert("response_format".into(), response_format);
-            }
-            if let Some(limit) = request.max_tokens {
-                apply_output_token_limit(obj, request.model.provider_kind(), limit);
-            }
-            if let Some(extra) = extra_body.as_object() {
-                for (k, v) in extra {
-                    obj.insert(k.clone(), v.clone());
-                }
-            }
-        }
-
-        let response = self
-            .client
-            .post(format!(
-                "{}/v1/chat/completions",
-                self.base_url.trim_end_matches('/')
-            ))
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Http(e.to_string()))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let text = response.text().await.unwrap_or_default();
-            return Err(ProviderError::Http(format!("{status}: {text}")));
-        }
-
+        let response = self.send(&request, api_key, &extra_body, true).await?;
         let mut tool_tracker = sse::ToolStreamTracker::new();
         let cancel = request.cancel.as_ref();
-        sse::consume_openai_sse(response, cancel, |reasoning, content, tools| {
-            if let Some(delta) = reasoning {
-                on_event(AgentEvent::ReasoningToken {
-                    session_id: session_id.to_string(),
-                    turn_id: turn_id.to_string(),
-                    delta: delta.to_string(),
-                });
-            }
-            if let Some(delta) = content {
-                on_event(AgentEvent::ContentToken {
-                    session_id: session_id.to_string(),
-                    turn_id: turn_id.to_string(),
-                    delta: delta.to_string(),
-                });
-            }
-            if let Some(items) = tools {
-                if let Some((index, name, args_chars)) = tool_tracker.update(items) {
-                    on_event(AgentEvent::ToolCallStream {
+        sse::consume_stream(
+            response.bytes_stream(),
+            cancel,
+            (request.model == ModelId::Gemini38Flash).then_some(request.model.api_model()),
+            |reasoning, content, tools| {
+                if let Some(delta) = reasoning {
+                    on_event(AgentEvent::ReasoningToken {
                         session_id: session_id.to_string(),
                         turn_id: turn_id.to_string(),
-                        index,
-                        name,
-                        args_chars,
+                        delta: delta.to_string(),
                     });
                 }
-            }
-        })
+                if let Some(delta) = content {
+                    on_event(AgentEvent::ContentToken {
+                        session_id: session_id.to_string(),
+                        turn_id: turn_id.to_string(),
+                        delta: delta.to_string(),
+                    });
+                }
+                if let Some(items) = tools {
+                    if let Some((index, name, args_chars)) = tool_tracker.update(items) {
+                        on_event(AgentEvent::ToolCallStream {
+                            session_id: session_id.to_string(),
+                            turn_id: turn_id.to_string(),
+                            index,
+                            name,
+                            args_chars,
+                        });
+                    }
+                }
+            },
+        )
         .await
         .map_err(|e| match e {
             sse::SseError::Cancelled => ProviderError::Cancelled,
@@ -133,49 +93,65 @@ impl OpenAiCompatClient {
         api_key: &str,
         extra_body: Value,
     ) -> Result<AssistantTurn, ProviderError> {
-        let mut body = json!({
-            "model": request.model.api_model(),
-            "messages": request.messages,
-            "stream": false,
-        });
-
-        if let Some(obj) = body.as_object_mut() {
-            if let Some(response_format) = request.response_format {
-                obj.insert("response_format".into(), response_format);
-            }
-            if let Some(limit) = request.max_tokens {
-                apply_output_token_limit(obj, request.model.provider_kind(), limit);
-            }
-            if let Some(extra) = extra_body.as_object() {
-                for (k, v) in extra {
-                    obj.insert(k.clone(), v.clone());
-                }
-            }
+        let response = self.send(&request, api_key, &extra_body, false).await?;
+        let payload: Value = sse::cancelable(request.cancel.as_ref(), response.json())
+            .await?
+            .map_err(|_| ProviderError::Parse("invalid chat completion JSON".into()))?;
+        if request.model == ModelId::Gemini38Flash {
+            super::openai_stream::parse_complete(&payload, Some(request.model.api_model()))
+                .map_err(Into::into)
+        } else {
+            parse_non_stream_turn(&payload)
         }
+    }
 
-        let response = self
-            .client
-            .post(format!(
-                "{}/v1/chat/completions",
-                self.base_url.trim_end_matches('/')
-            ))
-            .bearer_auth(api_key)
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Http(e.to_string()))?;
-
+    async fn send(
+        &self,
+        request: &ChatRequest,
+        api_key: &str,
+        extra: &Value,
+        stream: bool,
+    ) -> Result<reqwest::Response, ProviderError> {
+        if api_key.is_empty() {
+            return Err(ProviderError::MissingApiKey);
+        }
+        let body = super::openai_request::build_body(request, extra, stream)?;
+        let google = request.model == ModelId::Gemini38Flash;
+        let response = sse::cancelable(
+            request.cancel.as_ref(),
+            self.client
+                .post(&self.chat_url)
+                .bearer_auth(api_key)
+                .json(&body)
+                .send(),
+        )
+        .await?
+        .map_err(|e| {
+            if google {
+                super::gemini::map_transport_error(e)
+            } else {
+                ProviderError::Http(e.to_string())
+            }
+        })?;
         if !response.status().is_success() {
             let status = response.status();
-            let text = response.text().await.unwrap_or_default();
+            if google {
+                // Provider errors may echo request metadata or credentials. Keep them out of UI/logs.
+                let message = match status.as_u16() {
+                    401 | 403 => "Gemini 鉴权或访问权限失败",
+                    429 => "Gemini 请求过于频繁或配额不足",
+                    407 => "Gemini 代理认证失败，请检查系统代理或 TUN",
+                    400 => "Gemini 请求被拒绝，请检查模型、历史和工具参数",
+                    _ => "Gemini 服务请求失败",
+                };
+                return Err(ProviderError::Http(format!("{message} ({status})")));
+            }
+            let text = sse::cancelable(request.cancel.as_ref(), response.text())
+                .await?
+                .unwrap_or_default();
             return Err(ProviderError::Http(format!("{status}: {text}")));
         }
-
-        let payload: Value = response
-            .json()
-            .await
-            .map_err(|e| ProviderError::Parse(e.to_string()))?;
-        parse_non_stream_turn(&payload)
+        Ok(response)
     }
 }
 
@@ -232,6 +208,7 @@ fn parse_non_stream_turn(payload: &Value) -> Result<AssistantTurn, ProviderError
         tool_calls,
         finish_reason,
         usage,
+        provider_state: None,
     })
 }
 
@@ -243,14 +220,14 @@ pub fn apply_output_token_limit(
     body.remove("max_tokens");
     body.remove("max_completion_tokens");
     match provider {
-        ProviderKind::Deepseek => {
+        ProviderKind::Deepseek
+        | ProviderKind::Zhipu
+        | ProviderKind::Google
+        | ProviderKind::Mock => {
             body.insert("max_tokens".into(), json!(limit));
         }
         ProviderKind::Kimi | ProviderKind::Mimo => {
             body.insert("max_completion_tokens".into(), json!(limit));
-        }
-        ProviderKind::Mock => {
-            body.insert("max_tokens".into(), json!(limit));
         }
     }
 }
@@ -283,6 +260,35 @@ pub fn mimo_thinking_extra_body(request: &ChatRequest) -> Value {
             "type": if request.thinking.enabled { "enabled" } else { "disabled" }
         }
     })
+}
+
+pub fn glm_extra_body(request: &ChatRequest) -> Value {
+    json!({
+        "thinking": {
+            "type": "enabled",
+            "clear_thinking": false
+        },
+        "reasoning_effort": request.thinking.effort.as_str(),
+        "tool_stream": true
+    })
+}
+
+pub fn extra_body_for(request: &ChatRequest) -> Value {
+    match request.model {
+        ModelId::KimiK3 => json!({
+            "reasoning_effort": request.thinking.effort.as_str()
+        }),
+        ModelId::KimiK26 => thinking_extra_body(request, true),
+        ModelId::Glm53Flash => glm_extra_body(request),
+        ModelId::MimoV25 | ModelId::MimoV25Pro => mimo_thinking_extra_body(request),
+        ModelId::DeepSeekV4Flash | ModelId::DeepSeekV4Pro => thinking_extra_body(request, false),
+        ModelId::Gemini38Flash => json!({
+            "extra_body": { "google": { "thinking_config": {
+                "thinking_level": request.thinking.effort.as_str(), "include_thoughts": true
+            } } }
+        }),
+        ModelId::MimoV25ProUltraspeed | ModelId::Mock => json!({}),
+    }
 }
 
 pub fn parse_attachments_json(raw: Option<&str>) -> Result<Vec<MessageAttachment>, String> {
@@ -399,6 +405,7 @@ pub fn messages_from_store(
                     None
                 },
                 tool_call_id: m.tool_call_id.clone(),
+                provider_state: m.provider_state_json.clone(),
             })
         })
         .collect()
@@ -412,15 +419,12 @@ pub fn messages_from_store_text(
         .expect("text-only store messages do not read attachments")
 }
 
-pub fn effort_from_str(value: &str) -> ThinkingEffort {
-    match value {
-        "max" => ThinkingEffort::Max,
-        _ => ThinkingEffort::High,
-    }
+pub fn effort_from_str(value: &str) -> Result<ThinkingEffort, String> {
+    crate::agent::model_config::parse_effort(value)
 }
 
-pub fn model_from_str(value: &str) -> ModelId {
-    value.parse().unwrap_or(ModelId::Mock)
+pub fn model_from_str(value: &str) -> Result<ModelId, String> {
+    crate::agent::model_config::parse_model_id(value)
 }
 
 pub fn is_image_path(path: &str) -> bool {
@@ -508,15 +512,105 @@ mod tests {
             body.get("max_completion_tokens").and_then(|v| v.as_u64()),
             Some(4096)
         );
+
+        body.clear();
+        apply_output_token_limit(&mut body, ProviderKind::Zhipu, 1024);
+        assert_eq!(body.get("max_tokens").and_then(|v| v.as_u64()), Some(1024));
+        assert!(body.get("max_completion_tokens").is_none());
+    }
+
+    #[test]
+    fn chat_endpoints_keep_existing_urls_and_glm_has_no_extra_v1() {
+        assert_eq!(
+            OpenAiCompatClient::new(DEEPSEEK_CHAT_URL).chat_url(),
+            "https://api.deepseek.com/v1/chat/completions"
+        );
+        assert_eq!(
+            OpenAiCompatClient::new(KIMI_CHAT_URL).chat_url(),
+            "https://api.moonshot.cn/v1/chat/completions"
+        );
+        assert_eq!(
+            OpenAiCompatClient::new(MIMO_CHAT_URL).chat_url(),
+            "https://api.xiaomimimo.com/v1/chat/completions"
+        );
+        assert_eq!(
+            OpenAiCompatClient::new(ZHIPU_CHAT_URL).chat_url(),
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+        );
+        assert!(!ZHIPU_CHAT_URL.contains("/v4/v1/"));
+        assert!(!ZHIPU_CHAT_URL.ends_with("/v1/chat/completions"));
+    }
+
+    #[test]
+    fn extra_body_encodes_k3_glm_and_keeps_k26() {
+        let k3 = extra_body_for(&sample_request(ModelId::KimiK3, true, ThinkingEffort::Low));
+        assert_eq!(k3["reasoning_effort"], "low");
+        assert!(k3.get("thinking").is_none());
+
+        let k26 = extra_body_for(&sample_request(
+            ModelId::KimiK26,
+            true,
+            ThinkingEffort::High,
+        ));
+        assert_eq!(k26["thinking"]["type"], "enabled");
+        assert_eq!(k26["thinking"]["keep"], "all");
+        assert!(k26.get("reasoning_effort").is_none());
+
+        let glm = extra_body_for(&sample_request(
+            ModelId::Glm53Flash,
+            true,
+            ThinkingEffort::Max,
+        ));
+        assert_eq!(glm["thinking"]["type"], "enabled");
+        assert_eq!(glm["thinking"]["clear_thinking"], false);
+        assert_eq!(glm["reasoning_effort"], "max");
+        assert_eq!(glm["tool_stream"], true);
+
+        let deepseek_low = extra_body_for(&sample_request(
+            ModelId::DeepSeekV4Flash,
+            true,
+            ThinkingEffort::Low,
+        ));
+        assert_eq!(deepseek_low["reasoning_effort"], "low");
+
+        let mimo = extra_body_for(&sample_request(ModelId::MimoV25, true, ThinkingEffort::Max));
+        assert!(mimo.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn empty_reasoning_content_is_accepted() {
+        let payload = serde_json::json!({
+            "choices": [{
+                "message": {
+                    "content": "ok",
+                    "reasoning_content": "",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "lookup", "arguments": "{}" }
+                    }]
+                },
+                "finish_reason": "tool_calls"
+            }],
+            "usage": { "prompt_tokens": 10, "completion_tokens": 4, "total_tokens": 14 }
+        });
+        let turn = parse_non_stream_turn(&payload).unwrap();
+        assert_eq!(turn.content, "ok");
+        assert_eq!(turn.reasoning_content, "");
+        assert_eq!(turn.tool_calls.len(), 1);
+        assert_eq!(turn.usage.unwrap().total, 14);
     }
 
     #[test]
     fn model_and_effort_parsing() {
-        assert_eq!(model_from_str("kimi-k2.6"), ModelId::KimiK26);
-        assert_eq!(model_from_str("mimo-v2.5"), ModelId::MimoV25);
-        assert_eq!(model_from_str("unknown"), ModelId::Mock);
-        assert_eq!(effort_from_str("max"), ThinkingEffort::Max);
-        assert_eq!(effort_from_str("high"), ThinkingEffort::High);
+        assert_eq!(model_from_str("kimi-k2.6").unwrap(), ModelId::KimiK26);
+        assert_eq!(model_from_str("mimo-v2.5").unwrap(), ModelId::MimoV25);
+        assert_eq!(model_from_str("kimi-k3").unwrap(), ModelId::KimiK3);
+        assert!(model_from_str("unknown").is_err());
+        assert_eq!(effort_from_str("max").unwrap(), ThinkingEffort::Max);
+        assert_eq!(effort_from_str("high").unwrap(), ThinkingEffort::High);
+        assert_eq!(effort_from_str("low").unwrap(), ThinkingEffort::Low);
+        assert!(effort_from_str("nope").is_err());
     }
 
     #[test]
@@ -532,6 +626,7 @@ mod tests {
             created_at: "now".into(),
             archived: false,
             attachments_json: None,
+            provider_state_json: None,
         };
         let tool = Message {
             id: "tool-1".into(),
@@ -544,6 +639,7 @@ mod tests {
             created_at: "now".into(),
             archived: false,
             attachments_json: None,
+            provider_state_json: None,
         };
         let tool_calls = vec![ToolCallRecord {
             id: "call_1".into(),
@@ -579,6 +675,7 @@ mod tests {
             attachments_json: Some(
                 r#"[{"path":".cache/attachments/a.png","mime":"image/png"}]"#.into(),
             ),
+            provider_state_json: None,
         };
         let chat = messages_from_store_text(&[user], &[]);
         assert!(chat[0].image_urls.is_empty());
@@ -616,6 +713,7 @@ mod tests {
             attachments_json: Some(
                 r#"[{"path":".cache/attachments/missing.png","mime":"image/png"}]"#.into(),
             ),
+            provider_state_json: None,
         };
 
         let chat = messages_from_store(&[user], &[], Some(&sandbox))
@@ -641,6 +739,7 @@ mod tests {
             created_at: "now".into(),
             archived: false,
             attachments_json: Some("not-json".into()),
+            provider_state_json: None,
         };
 
         let chat = messages_from_store(&[user], &[], Some(&sandbox))

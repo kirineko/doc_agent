@@ -5,9 +5,8 @@ use crate::agent::compaction::{
 };
 use crate::agent::loop_support::*;
 use crate::agent::loop_tool_batch::run_tool_batch;
-use crate::agent::provider::openai_compat::{
-    effort_from_str, model_from_str, validate_attachments,
-};
+use crate::agent::model_config::{parse_effort, parse_model_id, require_callable_model};
+use crate::agent::provider::openai_compat::validate_attachments;
 use crate::agent::provider::provider_for;
 use crate::agent::provider::ProviderError;
 use crate::agent::run_limiter::{RunSlotGuard, GLOBAL_PARALLEL_FULL_MSG};
@@ -302,7 +301,7 @@ pub async fn run_turn<R: Runtime>(
         return Err("消息不能为空".into());
     }
 
-    let model_id = model_from_str(&model);
+    let model_id = require_callable_model(parse_model_id(&model)?)?;
     validate_attachments(&attachments).map_err(|e| e.to_string())?;
     if !attachments.is_empty() && !model_id.supports_vision() {
         return Err("当前模型不支持图片输入，请选用 Kimi K2.6 或 MiMo v2.5".into());
@@ -521,7 +520,7 @@ async fn continue_loop_inner<R: Runtime>(
     let session_id = turn_ctx.session_id.clone();
     let turn_id = turn_ctx.turn_id.clone();
     let sandbox = Sandbox::new(&project_root).map_err(|e| e.to_string())?;
-    let model_id = model_from_str(&model);
+    let model_id = require_callable_model(parse_model_id(&model)?)?;
     let api_key = if model_id == ModelId::Mock {
         None
     } else {
@@ -592,7 +591,7 @@ async fn continue_loop_inner<R: Runtime>(
             tools: tool_defs.clone(),
             thinking: ThinkingConfig {
                 enabled: thinking_enabled,
-                effort: effort_from_str(&thinking_effort),
+                effort: parse_effort(&thinking_effort)?,
             },
             response_format: None,
             max_tokens: None,
@@ -631,6 +630,40 @@ async fn continue_loop_inner<R: Runtime>(
             Err(e) => return Err(e.to_string()),
         };
 
+        let usage_reported = turn.usage.is_some();
+        if let Some(usage) = turn.usage {
+            token_count = usage.total;
+            pending_estimate = 0;
+            {
+                let store = state.store.lock().map_err(|e| e.to_string())?;
+                store
+                    .set_session_token_count(&session_id, token_count)
+                    .map_err(|e| e.to_string())?;
+            }
+            emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
+        }
+
+        if turn.finish_reason.as_deref() == Some("incomplete") {
+            let msg = persist_assistant(
+                &state,
+                &session_id,
+                Some(turn.content.as_str()),
+                Some(turn.reasoning_content.as_str()),
+                None,
+                turn.provider_state.as_deref(),
+            )?;
+            emit_assistant_step_done(&app, &session_id, &turn_id, &msg);
+            emit(
+                &app,
+                AgentEvent::Error {
+                    session_id: session_id.clone(),
+                    turn_id: turn_id.clone(),
+                    message: "输出被截断，未执行本步工具。".into(),
+                },
+            );
+            return Err("输出被截断，未执行本步工具。".into());
+        }
+
         let mut tool_calls = turn.tool_calls;
         let stream_indices: Vec<usize> = tool_calls
             .iter()
@@ -646,19 +679,6 @@ async fn continue_loop_inner<R: Runtime>(
             });
         }
 
-        let usage_reported = turn.usage.is_some();
-        if let Some(usage) = turn.usage {
-            token_count = usage.total;
-            pending_estimate = 0;
-            {
-                let store = state.store.lock().map_err(|e| e.to_string())?;
-                store
-                    .set_session_token_count(&session_id, token_count)
-                    .map_err(|e| e.to_string())?;
-            }
-            emit_context_usage(&app, &session_id, token_count, model_id.max_context_size());
-        }
-
         if tool_calls.is_empty() {
             let msg = persist_assistant(
                 &state,
@@ -666,6 +686,7 @@ async fn continue_loop_inner<R: Runtime>(
                 Some(turn.content.as_str()),
                 Some(turn.reasoning_content.as_str()),
                 None,
+                turn.provider_state.as_deref(),
             )?;
             if !usage_reported {
                 let mut estimated_messages = working_messages.clone();
@@ -676,6 +697,7 @@ async fn continue_loop_inner<R: Runtime>(
                     reasoning_content: Some(turn.reasoning_content.clone()),
                     tool_calls: None,
                     tool_call_id: None,
+                    provider_state: turn.provider_state.clone(),
                 });
                 token_count = estimate_chat_messages_tokens(&estimated_messages);
                 let store = state.store.lock().map_err(|e| e.to_string())?;
@@ -706,6 +728,7 @@ async fn continue_loop_inner<R: Runtime>(
             },
             Some(&turn.reasoning_content),
             Some(&tool_calls),
+            turn.provider_state.as_deref(),
         )?;
         emit_assistant_step_done(&app, &session_id, &turn_id, &assistant_msg);
 
@@ -720,6 +743,7 @@ async fn continue_loop_inner<R: Runtime>(
             reasoning_content: Some(turn.reasoning_content.clone()),
             tool_calls: Some(tool_calls.clone()),
             tool_call_id: None,
+            provider_state: turn.provider_state.clone(),
         });
         if !usage_reported {
             pending_estimate += estimate_chat_message_tokens(working_messages.last().unwrap());

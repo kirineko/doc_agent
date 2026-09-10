@@ -52,6 +52,12 @@ TBD - created by archiving change add-context-compaction. Update Purpose after a
 - **WHEN** 用户发送含 1 张图片附件的 user 消息（`attachments_json` 非空）且 API 尚未回报
 - **THEN** `pending_estimate` 仅累加该消息文本部分，不因附件文件或 base64 增大
 
+Google 用量 SHALL 以其服务端 total_tokens 为本次基线，包含其报告的思考消耗；pending 和摘要估算 MUST 不重复计算协议元数据中的正文副本，不按签名字节数估算模型 token。
+
+#### Scenario: Google 签名不造成重复估算
+- **WHEN** assistant 正文和摘要同时存在于显示字段与协议元数据
+- **THEN** pending 只统计一份可读内容，不把签名当文本累计
+
 ### Requirement: 三段式压缩与工具调用配对完整性
 
 系统 SHALL 以「摘要旧消息 + 保留最近若干轮原样」的三段式策略压缩上下文：
@@ -88,7 +94,17 @@ TBD - created by archiving change add-context-compaction. Update Purpose after a
 #### Scenario: 保留 tail 附件可再次发送
 
 - **WHEN** 压缩完成且保留 tail 含图片附件
-- **THEN** 下一次主 Agent 请求将该附件编码为 `image_url` 发往 vision 模型
+- **THEN** 下一次主 Agent 请求将该附件按 Chat Completions image_url 格式编码并发往 vision 模型
+
+Google 的活动多步工具链 SHALL 从最近的真实 user 输入边界整体保留，包含所有 assistant/tool 消息及签名元数据；不得只保护最后一对工具消息。摘要请求 MUST 不包含协议元数据、签名或附件二进制。
+
+#### Scenario: 多步工具链不被拆散
+- **WHEN** Google 当前 user turn 已完成两次工具调用，第三次调用前触发压缩
+- **THEN** 保留该 user 输入及整条活动链；只摘要更早已完成的会话段
+
+#### Scenario: clarify pending 的签名保护
+- **WHEN** 保留边界涉及尚待用户回答的 clarify 调用
+- **THEN** 其签名元数据及整个活动链均不进入摘要段
 
 ### Requirement: 结构化压缩 prompt
 
@@ -223,3 +239,14 @@ TBD - created by archiving change add-context-compaction. Update Purpose after a
 - **WHEN** 无可压缩段
 - **THEN** IPC 返回 `compacted: false` 及 `reason` 表明 nothing_to_compact
 
+### Requirement: 协议元数据随消息归档与重建
+
+系统 SHALL 将协议元数据随对应消息归档，保留 tail 中的签名元数据原样参与后续请求。摘要 SHALL 成为新的普通上下文输入，不复用摘要生成请求的签名来替代原会话状态。原始归档消息不得物理删除。
+
+#### Scenario: 旧 turn 完整摘要
+- **WHEN** Google 早期已完成 turn 被摘要且后续 tail 保留
+- **THEN** 下一请求包含摘要与完整 tail，不包含被归档旧步骤，也不制造孤立函数结果
+
+#### Scenario: 无可压缩的活动链
+- **WHEN** 所有历史均属于必须保留的活动工具链
+- **THEN** 不为腾出空间删除签名或拆分调用，按现有无可压缩内容路径明确处理

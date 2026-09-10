@@ -1,8 +1,9 @@
-use crate::agent::provider::{openai_compat::model_from_str, provider_for};
-use crate::agent::session_title::truncate_for_storage;
-use crate::agent::types::{
-    AgentEvent, ChatMessage, ChatRequest, ModelId, ThinkingConfig, ThinkingEffort,
+use crate::agent::model_config::{
+    auxiliary_thinking, parse_model_id, require_callable_model, title_output_budget,
 };
+use crate::agent::provider::provider_for;
+use crate::agent::session_title::truncate_for_storage;
+use crate::agent::types::{AgentEvent, ChatMessage, ChatRequest, ModelId};
 use crate::core::store::Message;
 use crate::state::AppState;
 use std::time::Duration;
@@ -99,7 +100,10 @@ pub async fn generate_session_title(
     session_id: &str,
     model: &str,
 ) -> Option<String> {
-    let model_id = model_from_str(model);
+    let model_id = match parse_model_id(model).and_then(require_callable_model) {
+        Ok(id) => id,
+        Err(_) => return None,
+    };
     let api_key = if model_id == ModelId::Mock {
         None
     } else {
@@ -134,6 +138,7 @@ pub async fn generate_session_title(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
             ChatMessage {
                 role: "user".into(),
@@ -142,15 +147,13 @@ pub async fn generate_session_title(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
         ],
         tools: vec![],
-        thinking: ThinkingConfig {
-            enabled: false,
-            effort: ThinkingEffort::High,
-        },
+        thinking: auxiliary_thinking(model_id),
         response_format: None,
-        max_tokens: Some(64),
+        max_tokens: title_output_budget(model_id).ok(),
         cancel: None,
     };
 
@@ -167,6 +170,9 @@ pub async fn generate_session_title(
         _ => return None,
     };
 
+    if !turn.is_complete_text() {
+        return None;
+    }
     clean_generated_title(&turn.content)
 }
 
@@ -242,6 +248,7 @@ mod tests {
                 created_at: String::new(),
                 archived: false,
                 attachments_json: None,
+                provider_state_json: None,
             },
             Message {
                 id: "2".into(),
@@ -254,6 +261,7 @@ mod tests {
                 created_at: String::new(),
                 archived: false,
                 attachments_json: None,
+                provider_state_json: None,
             },
             Message {
                 id: "3".into(),
@@ -266,6 +274,7 @@ mod tests {
                 created_at: String::new(),
                 archived: false,
                 attachments_json: None,
+                provider_state_json: None,
             },
             Message {
                 id: "4".into(),
@@ -278,6 +287,7 @@ mod tests {
                 created_at: String::new(),
                 archived: false,
                 attachments_json: None,
+                provider_state_json: None,
             },
         ];
         let snippets = snippets_from_first_two_rounds(&messages);

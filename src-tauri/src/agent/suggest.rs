@@ -71,6 +71,7 @@ pub async fn generate_suggestions(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
             ChatMessage {
                 role: "user".into(),
@@ -79,6 +80,7 @@ pub async fn generate_suggestions(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: None,
+                provider_state: None,
             },
         ],
         tools: vec![],
